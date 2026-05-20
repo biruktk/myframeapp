@@ -201,7 +201,7 @@ class AppStrings {
       );
   String get authGoogleBrowserHint => _l6(
         en:
-            'Could not complete Google sign-in. In Google Cloud Console, add this API URL under Web client → Authorized JavaScript origins (e.g. http://128.241.231.234:3001), then try again.',
+            'Could not complete Google sign-in. Check network and that the API is running, then try again.',
         zh: 'Google 登录未完成。请在 Google Cloud 的 Web 客户端「已获授权的 JavaScript 来源」中添加 API 地址（如 http://128.241.231.234:3001）后重试。',
         es: 'No se pudo completar Google. Añade el origen JavaScript de la API en Google Cloud.',
         fr: 'Connexion Google impossible. Ajoutez l’origine JavaScript de l’API dans Google Cloud.',

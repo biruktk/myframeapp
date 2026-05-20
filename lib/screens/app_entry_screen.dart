@@ -12,6 +12,8 @@ import '../l10n/app_strings.dart';
 import '../services/auth_api_service.dart';
 import '../utils/validators.dart';
 import '../services/google_sign_in_errors.dart';
+import '../services/mobile_auth_deep_link.dart';
+import 'google_sign_in_hosted_screen.dart';
 import '../settings/app_settings.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/main_shell.dart';
@@ -443,7 +445,7 @@ class _AuthScreen extends StatefulWidget {
   State<_AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderStateMixin {
+class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final TabController _tc = TabController(length: 2, vsync: this);
   final _email = TextEditingController();
   final _password = TextEditingController();
@@ -457,22 +459,31 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
   );
   var _busy = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _tc.addListener(() {
-      if (_tc.indexIsChanging) return;
-      setState(() {});
-    });
-  }
-
   /// Modern Chinese–inspired auth shell: warm paper tones + vermillion accents.
   static const _creamBg = Color(0xFFF7F2ED);
   static const _paperWhite = Color(0xFFFFFBF8);
   static const _weChatGreen = Color(0xFF07C160);
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _tc.addListener(() {
+      if (_tc.indexIsChanging) return;
+      setState(() {});
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _busy) {
+      unawaited(MobileAuthDeepLink.pumpLatestLink());
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tc.dispose();
     _email.dispose();
     _password.dispose();
@@ -666,29 +677,52 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
     }
     setState(() => _busy = true);
     try {
-      // In-app Google account picker (no external browser).
-      GoogleSignInAccount? account = await _googleSignIn.signInSilently(suppressErrors: true);
-      account ??= await _googleSignIn.signIn();
-      if (account == null) return;
+      // 1) Native account picker (best UX when Android OAuth + SHA-1 are configured).
+      try {
+        GoogleSignInAccount? account = await _googleSignIn.signInSilently(suppressErrors: true);
+        account ??= await _googleSignIn.signIn();
+        if (account != null) {
+          final idToken = (await account.authentication).idToken;
+          if (idToken != null && idToken.isNotEmpty) {
+            final r = await _auth.loginWithGoogle(idToken: idToken);
+            if (!mounted) return;
+            if (r is AuthApiSuccess) {
+              await _finishAuthSession(r, provider: 'google');
+              return;
+            }
+            if (r is AuthApiFailure) {
+              _showAuthMessage(_failureMessage(r, s));
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        if (!isGoogleNativeSetupError(e)) {
+          _showAuthMessage(googleSignInErrorMessage(e, s));
+          return;
+        }
+      }
 
-      final auth = await account.authentication;
-      final idToken = auth.idToken;
-      if (idToken == null || idToken.isEmpty) {
-        _showAuthMessage(s.authGoogleNoIdToken);
-        return;
-      }
-      final r = await _auth.loginWithGoogle(idToken: idToken);
-      if (!mounted) return;
-      if (r is AuthApiSuccess) {
-        await _finishAuthSession(r, provider: 'google');
-        return;
-      }
-      if (r is AuthApiFailure) _showAuthMessage(_failureMessage(r, s));
-    } catch (e) {
-      _showAuthMessage(googleSignInErrorMessage(e, s));
+      // 2) Fallback: Custom Tab (GIS blocked in embedded WebView).
+      await _googleSignInHosted(s);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _googleSignInHosted(AppStrings s) async {
+    final result = await GoogleSignInHostedScreen.open(context);
+    if (!mounted || result == null) {
+      _showAuthMessage(s.authGoogleCanceled);
+      return;
+    }
+    await _finishAuthSession(
+      AuthApiSuccess(
+        token: result.token,
+        user: AuthUserPayload(id: result.userId, email: result.email, name: result.name),
+      ),
+      provider: 'google',
+    );
   }
 
   void _weChatTap() {

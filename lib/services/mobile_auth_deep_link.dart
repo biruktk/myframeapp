@@ -31,6 +31,14 @@ class MobileAuthDeepLink {
     } catch (_) {}
   }
 
+  /// Call when app returns from Custom Tab — catches `myframe://auth/google` if stream missed it.
+  static Future<void> pumpLatestLink() async {
+    try {
+      final uri = await _links.getLatestLink();
+      if (uri != null) _applyUri(uri);
+    } catch (_) {}
+  }
+
   static Future<void> _hydrateColdStart() async {
     try {
       Uri? uri = await _links.getInitialLink();
