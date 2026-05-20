@@ -1,0 +1,261 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart';
+import 'package:http/http.dart' as http;
+
+import '../config/api_config.dart';
+
+class FrameApiClient {
+  FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 90)})
+      : _http = httpClient ?? http.Client();
+
+  final http.Client _http;
+  final Duration defaultTimeout;
+
+  /// POST /api/photo/upload — multipart, per `ra/api/Image_Processing_API_Integration.md`.
+  /// [baseUrlOverride] — e.g. LAN URL from pairing QR (`http://192.168.x.x:8080`).
+  Future<PhotoUploadResponse> uploadPhoto({
+    required Uint8List fileBytes,
+    required String filename,
+    required String deviceId,
+    String? baseUrlOverride,
+    String? slideshowStyle,
+    String? transport,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final checksum = sha256.convert(fileBytes).toString();
+    final effectiveTimeout = timeout ?? defaultTimeout;
+    final bases = _candidateBases(baseUrlOverride);
+    Object? lastErr;
+    for (final base in bases) {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          final uri = Uri.parse('$base/api/photo/upload');
+          final request = http.MultipartRequest('POST', uri)
+            ..fields['device_id'] = deviceId
+            ..fields['checksum'] = checksum
+            ..fields['size'] = '${fileBytes.length}'
+            ..fields.addAll({
+              if (slideshowStyle != null && slideshowStyle.isNotEmpty) 'slideshow_style': slideshowStyle,
+              if (transport != null && transport.isNotEmpty) 'transport': transport,
+            })
+            ..files.add(
+              http.MultipartFile.fromBytes(
+                'file',
+                fileBytes,
+                filename: filename,
+              ),
+            );
+          if (pairingToken != null && pairingToken.trim().isNotEmpty) {
+            request.headers['x-pairing-token'] = pairingToken.trim();
+          }
+
+          final streamed = await _http.send(request).timeout(
+                effectiveTimeout,
+                onTimeout: () => throw TimeoutException('POST /api/photo/upload', effectiveTimeout),
+              );
+          final body = await streamed.stream.bytesToString().timeout(
+                effectiveTimeout,
+                onTimeout: () => throw TimeoutException('photo upload read body', effectiveTimeout),
+              );
+          if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
+            throw FrameApiException(streamed.statusCode, body);
+          }
+          final json = jsonDecode(body) as Map<String, dynamic>;
+          return PhotoUploadResponse.fromJson(json);
+        } catch (e) {
+          lastErr = e;
+          final shouldRetry = _isTransient(e);
+          final hasNextAttempt = attempt == 0;
+          if (!shouldRetry || !hasNextAttempt) break;
+          await Future<void>.delayed(Duration(milliseconds: 300 * (1 << attempt)));
+        }
+      }
+    }
+    if (lastErr is FrameApiException) throw lastErr;
+    if (lastErr is TimeoutException) throw lastErr;
+    if (lastErr is SocketException) throw lastErr;
+    throw Exception('Upload failed after retries: $lastErr');
+  }
+
+  /// Quick reachability check before a large upload (optional).
+  Future<Map<String, dynamic>> getDeviceStatus({
+    String? baseUrlOverride,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final t = timeout ?? const Duration(seconds: 8);
+    Object? lastErr;
+    for (final base in _candidateBases(baseUrlOverride)) {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          final res = await _http
+              .get(
+                Uri.parse('$base/api/device/status'),
+                headers: pairingToken != null && pairingToken.trim().isNotEmpty
+                    ? {'x-pairing-token': pairingToken.trim()}
+                    : null,
+              )
+              .timeout(t, onTimeout: () => throw TimeoutException('GET /api/device/status', t));
+          if (res.statusCode != 200) {
+            throw FrameApiException(res.statusCode, res.body);
+          }
+          return jsonDecode(res.body) as Map<String, dynamic>;
+        } catch (e) {
+          lastErr = e;
+          if (!_isTransient(e) || attempt == 1) break;
+          await Future<void>.delayed(Duration(milliseconds: 250 * (1 << attempt)));
+        }
+      }
+    }
+    if (lastErr is FrameApiException) throw lastErr;
+    if (lastErr is TimeoutException) throw lastErr;
+    if (lastErr is SocketException) throw lastErr;
+    throw Exception('Status check failed after retries: $lastErr');
+  }
+
+  Future<DeliveryStatusResponse> getDeliveryStatus({
+    required String checksumSha256,
+    required String deviceId,
+    String? baseUrlOverride,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final t = timeout ?? const Duration(seconds: 8);
+    Object? lastErr;
+    for (final base in _candidateBases(baseUrlOverride)) {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          final uri = Uri.parse('$base/api/photo/delivery-status')
+              .replace(queryParameters: {'checksum': checksumSha256, 'device_id': deviceId});
+          final res = await _http
+              .get(
+                uri,
+                headers: pairingToken != null && pairingToken.trim().isNotEmpty
+                    ? {'x-pairing-token': pairingToken.trim()}
+                    : null,
+              )
+              .timeout(t, onTimeout: () => throw TimeoutException('GET /api/photo/delivery-status', t));
+          if (res.statusCode != 200) {
+            throw FrameApiException(res.statusCode, res.body);
+          }
+          return DeliveryStatusResponse.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+        } catch (e) {
+          lastErr = e;
+          if (!_isTransient(e) || attempt == 1) break;
+          await Future<void>.delayed(Duration(milliseconds: 250 * (1 << attempt)));
+        }
+      }
+    }
+    if (lastErr is FrameApiException) throw lastErr;
+    if (lastErr is TimeoutException) throw lastErr;
+    if (lastErr is SocketException) throw lastErr;
+    throw Exception('Delivery status failed after retries: $lastErr');
+  }
+
+  void close() => _http.close();
+
+  static String _base(String? override) {
+    final o = override?.trim();
+    if (o != null && o.isNotEmpty && !ApiConfig.isLoopbackApiBase(o)) {
+      return o.replaceAll(RegExp(r'/$'), '');
+    }
+    return ApiConfig.baseUrl.replaceAll(RegExp(r'/$'), '');
+  }
+
+  static List<String> _candidateBases(String? override) {
+    return [_base(override)];
+  }
+
+  static bool _isTransient(Object e) {
+    if (e is TimeoutException || e is SocketException) return true;
+    if (e is FrameApiException) {
+      return e.statusCode >= 500 || e.statusCode == 429;
+    }
+    return false;
+  }
+}
+
+class PhotoUploadResponse {
+  PhotoUploadResponse({
+    required this.ok,
+    this.receivedBytes,
+    this.storedPath,
+    this.checksumSha256,
+    this.deliveredToFrame,
+    this.deliveryMode,
+    /// Public URL passed to MQTT `play` (usually MYFM `.bin` under `/frame-media/`).
+    this.imageUrl,
+    /// Basename of the file the frame downloads (`*.bin` or original upload).
+    this.framePlayBasename,
+    this.myfmSidecar,
+    /// Original JPEG/PNG basename kept on server (not used in MQTT).
+    this.previewStoredPath,
+    this.myfmFileBytes,
+  });
+
+  final bool ok;
+  final int? receivedBytes;
+  final String? storedPath;
+  final String? checksumSha256;
+  final bool? deliveredToFrame;
+  final String? deliveryMode;
+  final String? imageUrl;
+  final String? framePlayBasename;
+  final bool? myfmSidecar;
+  final String? previewStoredPath;
+  final int? myfmFileBytes;
+
+  factory PhotoUploadResponse.fromJson(Map<String, dynamic> json) {
+    return PhotoUploadResponse(
+      ok: json['ok'] as bool? ?? false,
+      receivedBytes: json['received_bytes'] as int?,
+      storedPath: json['stored_path'] as String?,
+      checksumSha256: json['checksum_sha256'] as String?,
+      deliveredToFrame: json['delivered_to_frame'] as bool?,
+      deliveryMode: json['delivery_mode'] as String?,
+      imageUrl: json['image_url'] as String?,
+      framePlayBasename: json['frame_play_basename'] as String?,
+      myfmSidecar: json['myfm_sidecar'] as bool?,
+      previewStoredPath: json['preview_stored_path'] as String?,
+      myfmFileBytes: json['myfm_file_bytes'] as int?,
+    );
+  }
+}
+
+class FrameApiException implements Exception {
+  FrameApiException(this.statusCode, this.body);
+
+  final int statusCode;
+  final String body;
+
+  @override
+  String toString() => 'FrameApiException($statusCode): $body';
+}
+
+class DeliveryStatusResponse {
+  DeliveryStatusResponse({
+    required this.ok,
+    required this.found,
+    required this.deliveredToFrame,
+    this.deliveryMode,
+  });
+
+  final bool ok;
+  final bool found;
+  final bool deliveredToFrame;
+  final String? deliveryMode;
+
+  factory DeliveryStatusResponse.fromJson(Map<String, dynamic> json) {
+    return DeliveryStatusResponse(
+      ok: json['ok'] as bool? ?? false,
+      found: json['found'] as bool? ?? false,
+      deliveredToFrame: json['delivered_to_frame'] as bool? ?? false,
+      deliveryMode: json['delivery_mode'] as String?,
+    );
+  }
+}
