@@ -106,7 +106,7 @@ class _GoogleSignInHostedScreenState extends State<GoogleSignInHostedScreen>
               const Center(child: CircularProgressIndicator()),
               const SizedBox(height: 24),
               Text(
-                'Opening Google sign-in…\n\nChoose your Gmail account in the next screen, then you will return to MyFrame automatically.',
+                'Opening Google sign-in…\n\nChoose your Gmail account on the Google screen, then you will return to MyFrame automatically.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),

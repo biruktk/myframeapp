@@ -11,8 +11,15 @@ import 'mobile_auth_deep_link.dart';
 class GoogleSignInBridge {
   GoogleSignInBridge._();
 
+  /// OAuth redirect/callback use [portalGoogleBaseUrl]; API may still use VPS IP for other calls.
+  static String get portalGoogleBaseUrl {
+    const fromEnv = String.fromEnvironment('GOOGLE_SIGNIN_BASE');
+    if (fromEnv.trim().isNotEmpty) return fromEnv.trim().replaceAll(RegExp(r'/+$'), '');
+    return 'https://myframe.ink';
+  }
+
   static Uri signInPageUri() {
-    final base = ApiConfig.mobileAuthBaseUrl.replaceAll(RegExp(r'/+$'), '');
+    final base = portalGoogleBaseUrl;
     return Uri.parse('$base/mobile/google-signin');
   }
 
