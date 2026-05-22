@@ -956,19 +956,20 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
               color: Colors.black,
               child: const Icon(Icons.apple, color: Colors.white, size: 26),
             ),
-            _socialCircle(
-              tooltip: s.continueGoogle,
-              onTap: _busy ? null : _googleSignInFlow,
-              color: Colors.white,
-              borderColor: cs.outline.withValues(alpha: 0.35),
-              child: Text(
-                'G',
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: cs.primary),
+            if (Platform.isIOS)
+              _socialCircle(
+                tooltip: s.continueGoogle,
+                onTap: _busy ? null : _googleSignInFlow,
+                color: Colors.white,
+                borderColor: cs.outline.withValues(alpha: 0.35),
+                child: Text(
+                  'G',
+                  style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: cs.primary),
+                ),
               ),
-            ),
             _socialCircle(
               tooltip: s.continueWeChat,
               onTap: _busy ? null : () => unawaited(_weChatTap()),
