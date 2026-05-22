@@ -1,7 +1,7 @@
 name: myframe
 description: MyFrame Flutter mobile app (iOS + Android)
 publish_to: "none"
-version: 0.1.0+1
+version: 0.1.0+11
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -16,7 +16,7 @@ dependencies:
   http: ^1.2.2
   image_picker: ^1.1.2
   crypto: ^3.0.6
-  mobile_scanner: ^5.2.3
+  mobile_scanner: ^7.2.0
   share_plus: ^10.1.4
   shared_preferences: ^2.3.4
   path_provider: ^2.1.5
@@ -26,7 +26,6 @@ dependencies:
   flutter_blue_plus: ">=1.32.0 <2.0.0"
   permission_handler: ^11.3.1
   app_links: ^6.3.3
-  flutter_svg: ^2.0.17
   sign_in_with_apple: ^7.0.1
   qr_flutter: ^4.1.0
   app_settings: ^5.2.0
@@ -43,4 +42,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/branding/myframe_logo.svg
+    - assets/branding/myframe_logo.png
+    - assets/branding/myframe_splash_logo.png

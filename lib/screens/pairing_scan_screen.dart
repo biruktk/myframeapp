@@ -72,7 +72,7 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
         children: [
           MobileScanner(
             onDetect: _onDetect,
-            errorBuilder: (context, exception, child) {
+            errorBuilder: (context, exception) {
               return Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),

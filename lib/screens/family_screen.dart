@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -20,11 +22,11 @@ class FamilyScreen extends StatefulWidget {
 
 class _FamilyScreenState extends State<FamilyScreen> {
   var _busy = false;
+  var _storeLoadStarted = false;
 
   @override
   void initState() {
     super.initState();
-    _loadStore();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final pre = FamilyInviteDeepLink.takePendingCode();
@@ -34,9 +36,17 @@ class _FamilyScreenState extends State<FamilyScreen> {
     });
   }
 
-  Future<void> _loadStore() async {
-    if (!mounted) return;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_storeLoadStarted) return;
+    _storeLoadStarted = true;
     final app = AppSettingsScope.of(context);
+    unawaited(_loadStore(app));
+  }
+
+  Future<void> _loadStore(AppSettings app) async {
+    if (!mounted) return;
     final owner = () {
       final fromName = app.profileName.trim();
       if (fromName.isNotEmpty) return fromName;
@@ -55,29 +65,36 @@ class _FamilyScreenState extends State<FamilyScreen> {
   String _inviteWebUrl(FamilyGroupStore g) =>
       'https://${VpsDefaults.hostnameInk}/join?code=${Uri.encodeComponent(g.inviteCode)}';
 
-  Future<void> _confirmRegenerateInvite(BuildContext context, AppStrings s) async {
+  Future<void> _confirmRegenerateInvite(
+      BuildContext context, AppStrings s) async {
     final go = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         title: Text(s.familyRegenerateCodeTitle),
         content: Text(s.familyRegenerateCodeBody),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.familyRegenerateCodeConfirm)),
+          TextButton(
+              onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
+          FilledButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: Text(s.familyRegenerateCodeConfirm)),
         ],
       ),
     );
     if (go != true) return;
     setState(() => _busy = true);
     final tok = AppSettingsScope.of(context).authToken.trim();
-    await FamilyGroupStore.instance.rotateInviteOnServer(ApiConfig.baseUrl, tok);
+    await FamilyGroupStore.instance
+        .rotateInviteOnServer(ApiConfig.baseUrl, tok);
     setState(() => _busy = false);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.familyCodeRegenerated)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(s.familyCodeRegenerated)));
     }
   }
 
-  Future<void> _showJoinSheet(BuildContext context, AppStrings s, {String? prefill}) async {
+  Future<void> _showJoinSheet(BuildContext context, AppStrings s,
+      {String? prefill}) async {
     final ctrl = TextEditingController(text: prefill ?? '');
     final appTok = AppSettingsScope.of(context).authToken.trim();
     DateTime? birthdayPick;
@@ -101,9 +118,14 @@ class _FamilyScreenState extends State<FamilyScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(s.joinFamilyTitle, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  Text(s.joinFamilyTitle,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 8),
-                  Text(s.joinFamilyBody, style: TextStyle(color: Theme.of(ctx).colorScheme.onSurfaceVariant, height: 1.4)),
+                  Text(s.joinFamilyBody,
+                      style: TextStyle(
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                          height: 1.4)),
                   const SizedBox(height: 16),
                   TextField(
                     controller: ctrl,
@@ -141,7 +163,9 @@ class _FamilyScreenState extends State<FamilyScreen> {
                             if (raw.isEmpty) return;
                             if (birthdayPick == null) {
                               ScaffoldMessenger.of(ctx).showSnackBar(
-                                SnackBar(content: Text(s.joinFamilyBirthdayRequired)),
+                                SnackBar(
+                                    content:
+                                        Text(s.joinFamilyBirthdayRequired)),
                               );
                               return;
                             }
@@ -149,11 +173,14 @@ class _FamilyScreenState extends State<FamilyScreen> {
                             try {
                               final norm = FamilyGroupStore.normalizeCode(raw);
                               final bIso = isoBirthday(birthdayPick!);
-                              final r = await FamilyGroupStore.instance.joinWithCode(
+                              final r =
+                                  await FamilyGroupStore.instance.joinWithCode(
                                 raw,
                                 labelIfNew: s.joinFamilyDefaultLabel(norm),
                                 bearerToken: appTok.isNotEmpty ? appTok : null,
-                                apiOrigin: appTok.isNotEmpty ? ApiConfig.baseUrl : null,
+                                apiOrigin: appTok.isNotEmpty
+                                    ? ApiConfig.baseUrl
+                                    : null,
                                 birthdayIso: bIso,
                               );
                               if (!ctx.mounted) return;
@@ -166,14 +193,25 @@ class _FamilyScreenState extends State<FamilyScreen> {
                                     birthdayValue: bIso,
                                   );
                                   Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.joinFamilySuccess)));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                          content: Text(s.joinFamilySuccess)));
                                   setState(() {});
                                 case JoinFamilyResult.codeTooShort:
-                                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(s.joinFamilyCodeTooShort)));
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                          content:
+                                              Text(s.joinFamilyCodeTooShort)));
                                 case JoinFamilyResult.ownInviteCode:
-                                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(s.joinFamilyOwnCodeHint)));
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                          content:
+                                              Text(s.joinFamilyOwnCodeHint)));
                                 case JoinFamilyResult.networkError:
-                                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(s.joinFamilyNetworkError)));
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                          content:
+                                              Text(s.joinFamilyNetworkError)));
                               }
                             } finally {
                               if (mounted) setState(() => _busy = false);
@@ -191,19 +229,21 @@ class _FamilyScreenState extends State<FamilyScreen> {
     ctrl.dispose();
   }
 
-  Future<void> _openInviteUrlInBrowser(BuildContext context, AppStrings s, String url) async {
+  Future<void> _openInviteUrlInBrowser(
+      BuildContext context, AppStrings s, String url) async {
     final uri = Uri.tryParse(url);
     if (uri == null || !mounted) return;
     try {
-      final ok =
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!mounted) return;
       if (!ok) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.familyCouldNotOpenLink)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(s.familyCouldNotOpenLink)));
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.familyCouldNotOpenLink)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(s.familyCouldNotOpenLink)));
       }
     }
   }
@@ -235,7 +275,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
+          TextButton(
+              onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
           FilledButton(
             onPressed: () => Navigator.pop(c, true),
             child: Text(s.familyAddMemberSave),
@@ -263,13 +304,15 @@ class _FamilyScreenState extends State<FamilyScreen> {
       if (tok.isEmpty) return;
       setState(() => _busy = true);
       try {
-        await FamilyGroupStore.instance.createCloudFamily(ApiConfig.baseUrl, tok);
+        await FamilyGroupStore.instance
+            .createCloudFamily(ApiConfig.baseUrl, tok);
         if (mounted) setState(() {});
       } finally {
         if (mounted) setState(() => _busy = false);
       }
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.joinFamilySuccess)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(s.joinFamilySuccess)));
     }
 
     Future<void> leaveCloudTap() async {
@@ -281,8 +324,12 @@ class _FamilyScreenState extends State<FamilyScreen> {
           title: Text(s.familyLeaveCloud),
           content: Text(s.familyLeaveCloudBody),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
-            FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.familyLeaveCloud)),
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: Text(s.cancel)),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true),
+                child: Text(s.familyLeaveCloud)),
           ],
         ),
       );
@@ -295,7 +342,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
         if (mail.isNotEmpty) return mail.split('@').first;
         return 'You';
       };
-      await FamilyGroupStore.instance.leaveServerFamily(ApiConfig.baseUrl, tok, ownerDisplayName: owner);
+      await FamilyGroupStore.instance
+          .leaveServerFamily(ApiConfig.baseUrl, tok, ownerDisplayName: owner);
       if (mounted) setState(() => _busy = false);
     }
 
@@ -303,172 +351,235 @@ class _FamilyScreenState extends State<FamilyScreen> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(title: Text(s.familyTitle)),
       body: RefreshIndicator(
-        onRefresh: _loadStore,
+        onRefresh: () => _loadStore(app),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
           children: [
-          Text(
-            s.familySubtitle,
-            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 15, height: 1.4),
-          ),
-          const SizedBox(height: 14),
-          if (app.authToken.isNotEmpty && !g.cloudSynced) ...[
+            Text(
+              s.familySubtitle,
+              style: TextStyle(
+                  color: cs.onSurfaceVariant, fontSize: 15, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            if (app.authToken.isNotEmpty && !g.cloudSynced) ...[
+              Material(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(s.familyCloudCreateHint,
+                          style: TextStyle(
+                              color: cs.onSurfaceVariant,
+                              fontSize: 13,
+                              height: 1.35)),
+                      const SizedBox(height: 10),
+                      FilledButton(
+                        onPressed: _busy ? null : createCloudTap,
+                        child: Text(
+                            _busy ? s.authBusyLabel : s.familyCloudCreateLabel),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (app.authToken.isNotEmpty && g.cloudSynced)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Chip(
+                    avatar: Icon(Icons.cloud_done_rounded,
+                        size: 18, color: cs.primary),
+                    label: Text(s.familyCloudSynced),
+                  ),
+                ),
+              ),
+            Text(s.familyYourCircle,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 8),
             Material(
-              color: cs.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(14),
+              color: cs.surface,
+              borderRadius: BorderRadius.circular(16),
               child: Padding(
-                padding: const EdgeInsets.all(14),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(s.familyCloudCreateHint, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, height: 1.35)),
-                    const SizedBox(height: 10),
-                    FilledButton(
-                      onPressed: _busy ? null : createCloudTap,
-                      child: Text(_busy ? s.authBusyLabel : s.familyCloudCreateLabel),
+                    Text(s.familyInviteCodeLabel,
+                        style: TextStyle(
+                            color: cs.onSurfaceVariant, fontSize: 13)),
+                    const SizedBox(height: 6),
+                    SelectableText(
+                      g.inviteCode.isEmpty ? '…' : g.inviteCode,
+                      style: TextStyle(
+                          fontSize: 22,
+                          letterSpacing: 2,
+                          fontWeight: FontWeight.w800,
+                          color: cs.onSurface),
+                    ),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: QrImageView(
+                            data: _inviteWebUrl(g),
+                            size: 168,
+                            backgroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: g.inviteCode.isEmpty
+                                ? null
+                                : () async {
+                                    await Clipboard.setData(
+                                        ClipboardData(text: g.inviteCode));
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                            content: Text(s.familyCodeCopied)),
+                                      );
+                                    }
+                                  },
+                            icon: const Icon(Icons.copy_rounded),
+                            label: Text(s.familyCopyInviteCode),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: () => _inviteShare(context, s),
+                            icon: const Icon(Icons.ios_share_outlined),
+                            label: Text(s.inviteFamily),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _confirmRegenerateInvite(context, s),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: Text(s.familyRegenerateCodeShort),
+                      ),
+                    ),
+                    SelectionArea(
+                      child: Text(
+                        _inviteWebUrl(g),
+                        style: TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: cs.primary,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        TextButton.icon(
+                          onPressed: () => _openInviteUrlInBrowser(
+                              context, s, _inviteWebUrl(g)),
+                          icon: Icon(Icons.open_in_browser_rounded,
+                              color: cs.primary, size: 18),
+                          label: Text(s.familyOpenInviteLink),
+                        ),
+                        TextButton.icon(
+                          onPressed: () async {
+                            await Clipboard.setData(
+                                ClipboardData(text: _inviteWebUrl(g)));
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(s.familyInviteLinkCopied)),
+                              );
+                            }
+                          },
+                          icon: Icon(Icons.link_rounded,
+                              color: cs.primary, size: 18),
+                          label: Text(s.familyCopyInviteLink),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 12),
-          ],
-          if (app.authToken.isNotEmpty && g.cloudSynced)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Chip(
-                  avatar: Icon(Icons.cloud_done_rounded, size: 18, color: cs.primary),
-                  label: Text(s.familyCloudSynced),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: () => _showJoinSheet(context, s, prefill: null),
+              icon: const Icon(Icons.login_rounded),
+              label: Text(s.joinFamilyTitle),
+              style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
+            ),
+            if (app.authToken.isNotEmpty && g.cloudSynced) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : leaveCloudTap,
+                icon: const Icon(Icons.logout_rounded),
+                label: Text(s.familyLeaveCloud),
+                style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
+              ),
+            ],
+            if (g.joinedFamilies.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              Text(s.familyJoinedListTitle,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: 8),
+              ...g.joinedFamilies.map(
+                (j) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Material(
+                    color: cs.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    child: ListTile(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: cs.outlineVariant),
+                      ),
+                      title: Text(j.label),
+                      subtitle: Text('${s.familyInviteCodeLabel}: ${j.code}'),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.logout),
+                        tooltip: s.familyLeaveJoined,
+                        onPressed: () async {
+                          await FamilyGroupStore.instance
+                              .leaveJoinedFamilyOffline(j.code);
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          Text(s.familyYourCircle, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 8),
-          Material(
-            color: cs.surface,
-            borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(s.familyInviteCodeLabel, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
-                  const SizedBox(height: 6),
-                  SelectableText(
-                    g.inviteCode.isEmpty ? '…' : g.inviteCode,
-                    style: TextStyle(fontSize: 22, letterSpacing: 2, fontWeight: FontWeight.w800, color: cs.onSurface),
-                  ),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: QrImageView(
-                          data: _inviteWebUrl(g),
-                          size: 168,
-                          backgroundColor: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: g.inviteCode.isEmpty
-                              ? null
-                              : () async {
-                                  await Clipboard.setData(ClipboardData(text: g.inviteCode));
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(s.familyCodeCopied)),
-                                    );
-                                  }
-                                },
-                          icon: const Icon(Icons.copy_rounded),
-                          label: Text(s.familyCopyInviteCode),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => _inviteShare(context, s),
-                          icon: const Icon(Icons.ios_share_outlined),
-                          label: Text(s.inviteFamily),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: () => _confirmRegenerateInvite(context, s),
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: Text(s.familyRegenerateCodeShort),
-                    ),
-                  ),
-                  SelectionArea(
-                    child: Text(
-                      _inviteWebUrl(g),
-                      style: TextStyle(fontSize: 12, height: 1.35, color: cs.primary, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () => _openInviteUrlInBrowser(context, s, _inviteWebUrl(g)),
-                        icon: Icon(Icons.open_in_browser_rounded, color: cs.primary, size: 18),
-                        label: Text(s.familyOpenInviteLink),
-                      ),
-                      TextButton.icon(
-                        onPressed: () async {
-                          await Clipboard.setData(ClipboardData(text: _inviteWebUrl(g)));
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(s.familyInviteLinkCopied)),
-                            );
-                          }
-                        },
-                        icon: Icon(Icons.link_rounded, color: cs.primary, size: 18),
-                        label: Text(s.familyCopyInviteLink),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: () => _showJoinSheet(context, s, prefill: null),
-            icon: const Icon(Icons.login_rounded),
-            label: Text(s.joinFamilyTitle),
-            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-          ),
-          if (app.authToken.isNotEmpty && g.cloudSynced) ...[
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : leaveCloudTap,
-              icon: const Icon(Icons.logout_rounded),
-              label: Text(s.familyLeaveCloud),
-              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-            ),
-          ],
-          if (g.joinedFamilies.isNotEmpty) ...[
-            const SizedBox(height: 20),
-            Text(s.familyJoinedListTitle, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ],
+            const SizedBox(height: 12),
+            Text(s.familyMembersTitle,
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
             const SizedBox(height: 8),
-            ...g.joinedFamilies.map(
-              (j) => Padding(
+            ...g.members.map(
+              (m) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Material(
                   color: cs.surface,
@@ -478,86 +589,66 @@ class _FamilyScreenState extends State<FamilyScreen> {
                       borderRadius: BorderRadius.circular(12),
                       side: BorderSide(color: cs.outlineVariant),
                     ),
-                    title: Text(j.label),
-                    subtitle: Text('${s.familyInviteCodeLabel}: ${j.code}'),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.logout),
-                      tooltip: s.familyLeaveJoined,
-                      onPressed: () async {
-                        await FamilyGroupStore.instance.leaveJoinedFamilyOffline(j.code);
-                        setState(() {});
-                      },
+                    leading: CircleAvatar(
+                      backgroundColor: primary.withValues(alpha: 0.15),
+                      child: Icon(
+                        m.role == FamilyRoles.owner
+                            ? Icons.star_rounded
+                            : Icons.person_outline_rounded,
+                        color: primary,
+                      ),
                     ),
+                    title: Text(m.displayName),
+                    subtitle: Text(
+                      m.role == FamilyRoles.owner
+                          ? s.familyRoleOwner
+                          : s.familyRoleMember,
+                      style:
+                          TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                    ),
+                    trailing: m.role == FamilyRoles.owner
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.remove_circle_outline),
+                            onPressed: () async {
+                              await FamilyGroupStore.instance
+                                  .removeMember(m.id);
+                              setState(() {});
+                            },
+                          ),
                   ),
                 ),
               ),
             ),
-          ],
-          const SizedBox(height: 12),
-          Text(s.familyMembersTitle, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 8),
-          ...g.members.map(
-            (m) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
-                color: cs.surface,
-                borderRadius: BorderRadius.circular(12),
-                child: ListTile(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: cs.outlineVariant),
-                  ),
-                  leading: CircleAvatar(
-                    backgroundColor: primary.withValues(alpha: 0.15),
-                    child: Icon(
-                      m.role == FamilyRoles.owner ? Icons.star_rounded : Icons.person_outline_rounded,
-                      color: primary,
-                    ),
-                  ),
-                  title: Text(m.displayName),
-                  subtitle: Text(
-                    m.role == FamilyRoles.owner ? s.familyRoleOwner : s.familyRoleMember,
-                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
-                  ),
-                  trailing: m.role == FamilyRoles.owner
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.remove_circle_outline),
-                          onPressed: () async {
-                            await FamilyGroupStore.instance.removeMember(m.id);
-                            setState(() {});
-                          },
-                        ),
-                ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _addMemberDialog(context, s),
+                icon: const Icon(Icons.person_add_alt_1, size: 20),
+                label: Text(s.familyAddMemberTitle),
               ),
             ),
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _addMemberDialog(context, s),
-              icon: const Icon(Icons.person_add_alt_1, size: 20),
-              label: Text(s.familyAddMemberTitle),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: () {
+                showDialog<void>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(s.sharedFrames),
+                    content: Text(s.sharedFramesBody),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text(s.cancel)),
+                    ],
+                  ),
+                );
+              },
+              icon: const Icon(Icons.devices),
+              label: Text(s.sharedFrames),
+              style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14)),
             ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () {
-              showDialog<void>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: Text(s.sharedFrames),
-                  content: Text(s.sharedFramesBody),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
-                  ],
-                ),
-              );
-            },
-            icon: const Icon(Icons.devices),
-            label: Text(s.sharedFrames),
-            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-          ),
           ],
         ),
       ),

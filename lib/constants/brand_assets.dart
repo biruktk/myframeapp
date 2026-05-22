@@ -2,5 +2,5 @@
 class BrandAssets {
   BrandAssets._();
 
-  static const String logoPathSvg = 'assets/branding/myframe_logo.svg';
+  static const String logoPathPng = 'assets/branding/myframe_logo.png';
 }

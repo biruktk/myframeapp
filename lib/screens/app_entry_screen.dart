@@ -12,8 +12,8 @@ import '../l10n/app_strings.dart';
 import '../services/auth_api_service.dart';
 import '../utils/validators.dart';
 import '../services/google_sign_in_errors.dart';
+import '../services/google_sign_in_bridge.dart';
 import '../services/mobile_auth_deep_link.dart';
-import 'google_sign_in_hosted_screen.dart';
 import '../settings/app_settings.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/main_shell.dart';
@@ -26,12 +26,12 @@ class AppEntryScreen extends StatefulWidget {
 }
 
 class _AppEntryScreenState extends State<AppEntryScreen> {
-  bool _showSplash = true;
+  var _showSplash = true;
 
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 1200), () {
+    Timer(const Duration(milliseconds: 3200), () {
       if (!mounted) return;
       setState(() => _showSplash = false);
     });
@@ -43,6 +43,9 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
     return ListenableBuilder(
       listenable: app,
       builder: (context, _) {
+        if (_showSplash) {
+          return const _SplashScreen();
+        }
         if (!app.onboardingDone) {
           return Localizations.override(
             context: context,
@@ -51,8 +54,6 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
               onDone: () async {
                 await app.setOnboardingDone(true);
                 await app.setSignedIn(value: false);
-                if (!mounted) return;
-                setState(() => _showSplash = false);
               },
             ),
           );
@@ -62,28 +63,8 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
             context: context,
             locale: const Locale('en'),
             child: _AuthScreen(
-              onAuthenticated: () {
-                if (!mounted) return;
-                setState(() => _showSplash = false);
-              },
+              onAuthenticated: () {},
             ),
-          );
-        }
-        if (_showSplash) {
-          return _SplashScreen(
-            manualContinue: kDebugMode,
-            onContinue: () {
-              if (!mounted) return;
-              setState(() => _showSplash = false);
-            },
-            onDebugShowWelcomeAuth: kDebugMode
-                ? () async {
-                    await app.setOnboardingDone(false);
-                    await app.setSignedIn(value: false);
-                    if (!mounted) return;
-                    setState(() => _showSplash = false);
-                  }
-                : null,
           );
         }
         return const MainShell();
@@ -93,63 +74,55 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
 }
 
 class _SplashScreen extends StatelessWidget {
-  const _SplashScreen({
-    required this.manualContinue,
-    this.onContinue,
-    this.onDebugShowWelcomeAuth,
-  });
-
-  /// When `true` (debug), splash does not auto-dismiss; user taps **Continue** or a test action.
-  final bool manualContinue;
-  final VoidCallback? onContinue;
-  final Future<void> Function()? onDebugShowWelcomeAuth;
+  const _SplashScreen();
 
   @override
   Widget build(BuildContext context) {
-    final bottom = manualContinue && onContinue != null
-        ? Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FilledButton(
-                  onPressed: onContinue,
-                  child: const Text('Continue'),
-                ),
-                if (onDebugShowWelcomeAuth != null) ...[
-                  const SizedBox(height: 10),
-                  TextButton(
-                    onPressed: () => onDebugShowWelcomeAuth!(),
-                    child: const Text('Show welcome & sign-in'),
-                  ),
-                ],
-              ],
-            ),
-          )
-        : null;
-
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(flex: 2),
-            Column(
+        child: Center(
+          child: Transform.translate(
+            offset: Offset(0, -18),
+            child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const AppLogo(size: 176),
-                const SizedBox(height: 16),
-                Text(
-                  AppStrings.of(context).appName,
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
+                Image(
+                  image: AssetImage('assets/branding/myframe_splash_logo.png'),
+                  width: 124,
+                  height: 124,
+                  fit: BoxFit.contain,
                 ),
+                SizedBox(height: 22),
+                _MyFrameWordmark(fontSize: 32),
               ],
             ),
-            const Spacer(flex: 3),
-            if (bottom != null) bottom,
-          ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _MyFrameWordmark extends StatelessWidget {
+  const _MyFrameWordmark({required this.fontSize});
+
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      textAlign: TextAlign.center,
+      text: TextSpan(
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          height: 1,
+        ),
+        children: const [
+          TextSpan(text: 'My', style: TextStyle(color: Color(0xFFD91E1E))),
+          TextSpan(text: 'Frame', style: TextStyle(color: Colors.black)),
+        ],
       ),
     );
   }
@@ -173,6 +146,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
 
   static const _cardRadius = 24.0;
   static const _bgGrey = Color(0xFFF5F5F7);
+
   /// Light pink icon wells (matches product welcome mockup).
   static const _wellPink = Color(0xFFFFE4E8);
 
@@ -191,9 +165,11 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
           const SizedBox(width: 10),
           Icon(Icons.wifi_rounded, size: 32, color: cs.primary),
           const SizedBox(width: 8),
-          Icon(Icons.arrow_forward_rounded, size: 22, color: cs.primary.withValues(alpha: 0.65)),
+          Icon(Icons.arrow_forward_rounded,
+              size: 22, color: cs.primary.withValues(alpha: 0.65)),
           const SizedBox(width: 8),
-          Icon(Icons.photo_size_select_actual_rounded, size: 36, color: cs.primary),
+          Icon(Icons.photo_size_select_actual_rounded,
+              size: 36, color: cs.primary),
         ],
       ),
     );
@@ -247,11 +223,18 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, height: 1.2)),
+                    Text(title,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                            height: 1.2)),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,
-                      style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, height: 1.35),
+                      style: TextStyle(
+                          fontSize: 13,
+                          color: cs.onSurfaceVariant,
+                          height: 1.35),
                     ),
                   ],
                 ),
@@ -266,14 +249,20 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                 ),
                 child: Text(
                   '$n',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: cs.primary),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: cs.primary),
                 ),
               ),
             ],
           ),
         ),
         if (showDivider)
-          Divider(height: 1, thickness: 1, color: cs.outlineVariant.withValues(alpha: 0.5)),
+          Divider(
+              height: 1,
+              thickness: 1,
+              color: cs.outlineVariant.withValues(alpha: 0.5)),
       ],
     );
   }
@@ -295,7 +284,8 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                 alignment: Alignment.centerRight,
                 child: PopupMenuButton<String?>(
                   tooltip: s.onboardingLanguageHint,
-                  icon: Icon(Icons.language_rounded, color: cs.onSurfaceVariant),
+                  icon:
+                      Icon(Icons.language_rounded, color: cs.onSurfaceVariant),
                   onSelected: (code) async {
                     await app.setLanguageCode(code);
                     if (!context.mounted) return;
@@ -321,7 +311,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        AppLogo(size: 36, fit: BoxFit.contain),
+                        const AppLogo(size: 36, fit: BoxFit.contain),
                         const SizedBox(width: 10),
                         Text(
                           s.appName,
@@ -410,9 +400,12 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                     onPressed: _finish,
                     style: FilledButton.styleFrom(
                       minimumSize: const Size.fromHeight(52),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: Text(s.onboardingConnectNow, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                    child: Text(s.onboardingConnectNow,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 16)),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
@@ -421,10 +414,14 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                       minimumSize: const Size.fromHeight(52),
                       backgroundColor: Colors.white,
                       foregroundColor: cs.onSurfaceVariant,
-                      side: BorderSide(color: cs.outline.withValues(alpha: 0.35)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      side:
+                          BorderSide(color: cs.outline.withValues(alpha: 0.35)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
                     ),
-                    child: Text(s.onboardingLater, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                    child: Text(s.onboardingLater,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 16)),
                   ),
                 ],
               ),
@@ -445,8 +442,8 @@ class _AuthScreen extends StatefulWidget {
   State<_AuthScreen> createState() => _AuthScreenState();
 }
 
-class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  late final TabController _tc = TabController(length: 2, vsync: this);
+class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
+  var _authTab = 0;
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _regEmail = TextEditingController();
@@ -455,9 +452,12 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
   final _auth = AuthApiService();
   late final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: const <String>['email', 'profile'],
+    clientId:
+        GoogleAuthConfig.hasIosClientId ? GoogleAuthConfig.iosClientId : null,
     serverClientId: GoogleAuthConfig.serverClientId,
   );
   var _busy = false;
+  var _waitingForGoogleBrowser = false;
 
   /// Modern Chinese–inspired auth shell: warm paper tones + vermillion accents.
   static const _creamBg = Color(0xFFF7F2ED);
@@ -468,23 +468,24 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tc.addListener(() {
-      if (_tc.indexIsChanging) return;
-      setState(() {});
-    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _busy) {
-      unawaited(MobileAuthDeepLink.pumpLatestLink());
+    if (state == AppLifecycleState.resumed && _waitingForGoogleBrowser) {
+      unawaited(() async {
+        await MobileAuthDeepLink.pumpLatestLink();
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (mounted && _waitingForGoogleBrowser) {
+          MobileAuthDeepLink.cancelPendingGoogle();
+        }
+      }());
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _tc.dispose();
     _email.dispose();
     _password.dispose();
     _regEmail.dispose();
@@ -493,7 +494,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
     super.dispose();
   }
 
-  Future<void> _finishAuthSession(AuthApiSuccess data, {String provider = 'email'}) async {
+  Future<void> _finishAuthSession(AuthApiSuccess data,
+      {String provider = 'email'}) async {
     final app = AppSettingsScope.of(context);
     await app.setAccountProfile(name: data.user.name, email: data.user.email);
     await app.completeAuthenticatedSession(
@@ -530,6 +532,9 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
     if (f.errorKey == 'google_auth_not_configured') {
       return s.authGoogleNotConfigured;
     }
+    if (f.errorKey == 'unauthorized_admin_token') {
+      return 'Apple sign-in reached the server, but the API rejected it with unauthorized_admin_token. The backend Apple auth route is protected by the wrong admin-token check or missing social-auth configuration.';
+    }
     if (sc == 422 || f.errorKey == 'validation_error') {
       final m = f.message;
       if (m != null && m.trim().isNotEmpty) return m.trim();
@@ -540,14 +545,22 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
         case 'password_length':
           return s.authErrorPasswordLength;
         case 'invalid_email':
-          return (f.message != null && f.message!.trim().isNotEmpty) ? f.message!.trim() : s.authErrorInvalidCredentials;
+          return (f.message != null && f.message!.trim().isNotEmpty)
+              ? f.message!.trim()
+              : s.authErrorInvalidCredentials;
         case 'invalid_name':
-          return (f.message != null && f.message!.trim().isNotEmpty) ? f.message!.trim() : s.authErrorInvalidFields;
+          return (f.message != null && f.message!.trim().isNotEmpty)
+              ? f.message!.trim()
+              : s.authErrorInvalidFields;
         case 'invalid_credentials':
-          return (f.message != null && f.message!.trim().isNotEmpty) ? f.message!.trim() : s.authErrorInvalidFields;
+          return (f.message != null && f.message!.trim().isNotEmpty)
+              ? f.message!.trim()
+              : s.authErrorInvalidFields;
         default:
           final m400 = f.message;
-          return (m400 != null && m400.trim().isNotEmpty) ? m400.trim() : s.authErrorInvalidFields;
+          return (m400 != null && m400.trim().isNotEmpty)
+              ? m400.trim()
+              : s.authErrorInvalidFields;
       }
     }
     switch (f.errorKey) {
@@ -572,7 +585,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
   Future<void> _submitLogin() async {
     if (_busy) return;
     final s = AppStrings.of(context);
-    if (Validators.emailError(_email.text) != null || Validators.passwordError(_password.text) != null) {
+    if (Validators.emailError(_email.text) != null ||
+        Validators.passwordError(_password.text) != null) {
       _showAuthMessage(s.authErrorInvalidFields);
       return;
     }
@@ -651,13 +665,25 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
         _showAuthMessage(s.authErrorInvalidFields);
         return;
       }
-      final r = await _auth.loginWithApple(identityToken: token);
+      final fullName = [
+        credential.givenName,
+        credential.familyName,
+      ].where((part) => part != null && part.trim().isNotEmpty).join(' ');
+      final r = await _auth.loginWithApple(
+        identityToken: token,
+        authorizationCode: credential.authorizationCode,
+        userIdentifier: credential.userIdentifier,
+        email: credential.email,
+        name: fullName.isEmpty ? null : fullName,
+      );
       if (!mounted) return;
       if (r is AuthApiSuccess) {
         await _finishAuthSession(r, provider: 'apple');
         return;
       }
-      if (r is AuthApiFailure) _showAuthMessage(_failureMessage(r, s));
+      if (r is AuthApiFailure) {
+        _showAuthMessage(_failureMessage(r, s));
+      }
     } on SignInWithAppleAuthorizationException catch (e) {
       final m = e.message;
       if (m.isNotEmpty) _showAuthMessage(m);
@@ -671,17 +697,21 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
   Future<void> _googleSignInFlow() async {
     if (_busy) return;
     final s = AppStrings.of(context);
-    if (!GoogleAuthConfig.isConfigured) {
-      _showAuthMessage(s.authGoogleNotConfigured);
-      return;
-    }
     setState(() => _busy = true);
     try {
-      // 1) Native account picker (best UX when Android OAuth + SHA-1 are configured).
-      try {
-        GoogleSignInAccount? account = await _googleSignIn.signInSilently(suppressErrors: true);
-        account ??= await _googleSignIn.signIn();
-        if (account != null) {
+      // 1) Native account picker when platform OAuth is configured.
+      if (Platform.isAndroid ||
+          (Platform.isIOS && GoogleAuthConfig.hasIosClientId)) {
+        try {
+          GoogleSignInAccount? account = await _googleSignIn
+              .signInSilently(suppressErrors: true)
+              .timeout(const Duration(seconds: 8));
+          account ??=
+              await _googleSignIn.signIn().timeout(const Duration(seconds: 30));
+          if (account == null) {
+            _showAuthMessage(s.authGoogleCanceled);
+            return;
+          }
           final idToken = (await account.authentication).idToken;
           if (idToken != null && idToken.isNotEmpty) {
             final r = await _auth.loginWithGoogle(idToken: idToken);
@@ -695,11 +725,14 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
               return;
             }
           }
-        }
-      } catch (e) {
-        if (!isGoogleNativeSetupError(e)) {
-          _showAuthMessage(googleSignInErrorMessage(e, s));
-          return;
+        } catch (e) {
+          if (Platform.isIOS) {
+            // iOS still has the hosted Google flow below, so never strand users on
+            // a client-id or URL-scheme setup error.
+          } else if (!isGoogleNativeSetupError(e) && e is! TimeoutException) {
+            _showAuthMessage(googleSignInErrorMessage(e, s));
+            return;
+          }
         }
       }
 
@@ -711,25 +744,46 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
   }
 
   Future<void> _googleSignInHosted(AppStrings s) async {
-    final result = await GoogleSignInHostedScreen.open(context);
-    if (!mounted || result == null) {
-      _showAuthMessage(s.authGoogleCanceled);
-      return;
+    _waitingForGoogleBrowser = true;
+    try {
+      final result = await GoogleSignInBridge.signIn(useCustomTab: true);
+      if (!mounted) return;
+      await _finishAuthSession(
+        AuthApiSuccess(
+          token: result.token,
+          user: AuthUserPayload(
+              id: result.userId, email: result.email, name: result.name),
+        ),
+        provider: 'google',
+      );
+    } on TimeoutException {
+      if (!mounted) return;
+      MobileAuthDeepLink.cancelPendingGoogle();
+      _showAuthMessage(s.authGoogleBrowserHint);
+    } catch (e) {
+      if (!mounted) return;
+      MobileAuthDeepLink.cancelPendingGoogle();
+      final msg = e.toString();
+      if (msg.contains('google_server_secret_missing')) {
+        _showAuthMessage(
+            'Google sign-in cannot finish yet: the API is missing GOOGLE_OAUTH_CLIENT_SECRET. Set it on the VPS backend, then restart the API.');
+      } else if (msg.contains('google_hosted_route_missing')) {
+        _showAuthMessage(
+            'Google sign-in route is missing on myframe.ink. The app now uses the API host, but the public website still needs the mobile Google route or proxy.');
+      } else {
+        _showAuthMessage(s.authGoogleCanceled);
+      }
+    } finally {
+      _waitingForGoogleBrowser = false;
     }
-    await _finishAuthSession(
-      AuthApiSuccess(
-        token: result.token,
-        user: AuthUserPayload(id: result.userId, email: result.email, name: result.name),
-      ),
-      provider: 'google',
-    );
   }
 
   void _weChatTap() {
     _showAuthMessage(AppStrings.of(context).authWeChatSoon);
   }
 
-  InputDecoration _underlineField(ColorScheme cs, String label, {String? hint}) {
+  InputDecoration _underlineField(ColorScheme cs, String label,
+      {String? hint}) {
     final subtle = cs.onSurface.withValues(alpha: 0.28);
     return InputDecoration(
       labelText: label,
@@ -738,9 +792,12 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
       isDense: true,
       contentPadding: const EdgeInsets.only(top: 12, bottom: 14),
       border: UnderlineInputBorder(borderSide: BorderSide(color: subtle)),
-      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: subtle)),
-      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: cs.primary, width: 2)),
-      disabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: subtle.withValues(alpha: 0.5))),
+      enabledBorder:
+          UnderlineInputBorder(borderSide: BorderSide(color: subtle)),
+      focusedBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: cs.primary, width: 2)),
+      disabledBorder: UnderlineInputBorder(
+          borderSide: BorderSide(color: subtle.withValues(alpha: 0.5))),
     );
   }
 
@@ -756,11 +813,10 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
           Expanded(
             child: _segmentChip(
               label: s.loginLabel,
-              selected: _tc.index == 0,
+              selected: _authTab == 0,
               onTap: () {
                 if (_busy) return;
-                _tc.animateTo(0);
-                setState(() {});
+                setState(() => _authTab = 0);
               },
               cs: cs,
             ),
@@ -768,11 +824,10 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
           Expanded(
             child: _segmentChip(
               label: s.registerLabel,
-              selected: _tc.index == 1,
+              selected: _authTab == 1,
               onTap: () {
                 if (_busy) return;
-                _tc.animateTo(1);
-                setState(() {});
+                setState(() => _authTab = 1);
               },
               cs: cs,
             ),
@@ -800,7 +855,12 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
             color: selected ? _paperWhite : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             boxShadow: selected
-                ? [BoxShadow(color: cs.primary.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2))]
+                ? [
+                    BoxShadow(
+                        color: cs.primary.withValues(alpha: 0.12),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2))
+                  ]
                 : null,
           ),
           child: Center(
@@ -809,7 +869,9 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
               style: TextStyle(
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 fontSize: 15,
-                color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.55),
+                color: selected
+                    ? cs.primary
+                    : cs.onSurface.withValues(alpha: 0.55),
               ),
             ),
           ),
@@ -828,7 +890,11 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 s.authSocialDividerLabel,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: cs.onSurfaceVariant, letterSpacing: 0.2),
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: cs.onSurfaceVariant,
+                    letterSpacing: 0.2),
               ),
             ),
             Expanded(child: Divider(color: cs.outline.withValues(alpha: 0.25))),
@@ -851,14 +917,18 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
               borderColor: cs.outline.withValues(alpha: 0.35),
               child: Text(
                 'G',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: cs.primary),
+                style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: cs.primary),
               ),
             ),
             _socialCircle(
               tooltip: s.continueWeChat,
               onTap: _busy ? null : _weChatTap,
               color: _weChatGreen,
-              child: const Icon(Icons.chat_bubble_rounded, color: Colors.white, size: 22),
+              child: const Icon(Icons.chat_bubble_rounded,
+                  color: Colors.white, size: 22),
             ),
           ],
         ),
@@ -887,7 +957,11 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
             width: 56,
             height: 56,
             alignment: Alignment.center,
-            decoration: borderColor != null ? BoxDecoration(shape: BoxShape.circle, border: Border.all(color: borderColor)) : null,
+            decoration: borderColor != null
+                ? BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: borderColor))
+                : null,
             child: child,
           ),
         ),
@@ -911,15 +985,13 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                 children: [
                   const AppLogo(size: 48),
                   const SizedBox(height: 10),
-                  Text(
-                    s.appName,
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.8, color: cs.onSurface),
-                  ),
+                  const _MyFrameWordmark(fontSize: 26),
                   const SizedBox(height: 6),
                   Text(
                     s.authScreenTagline,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, height: 1.35, color: cs.onSurfaceVariant),
+                    style: TextStyle(
+                        fontSize: 14, height: 1.35, color: cs.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -929,7 +1001,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: _paperWhite,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(28)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.06),
@@ -939,7 +1012,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(28)),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -948,9 +1022,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                         child: _segmentedTabs(s, cs),
                       ),
                       Expanded(
-                        child: TabBarView(
-                          controller: _tc,
-                          physics: const BouncingScrollPhysics(),
+                        child: IndexedStack(
+                          index: _authTab,
                           children: [
                             _authScroll(
                               s,
@@ -969,7 +1042,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                                   obscureText: true,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submitLogin(),
-                                  decoration: _underlineField(cs, s.passwordLabel),
+                                  decoration:
+                                      _underlineField(cs, s.passwordLabel),
                                   enabled: !_busy,
                                 ),
                                 const SizedBox(height: 28),
@@ -978,9 +1052,14 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                                   child: FilledButton(
                                     onPressed: _busy ? null : _submitLogin,
                                     style: FilledButton.styleFrom(
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(16)),
                                     ),
-                                    child: Text(s.loginLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                                    child: Text(s.loginLabel,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16)),
                                   ),
                                 ),
                                 const SizedBox(height: 28),
@@ -995,7 +1074,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                                   controller: _regName,
                                   textInputAction: TextInputAction.next,
                                   textCapitalization: TextCapitalization.words,
-                                  decoration: _underlineField(cs, s.authUsernameLabel),
+                                  decoration:
+                                      _underlineField(cs, s.authUsernameLabel),
                                   enabled: !_busy,
                                 ),
                                 const SizedBox(height: 20),
@@ -1012,7 +1092,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                                   obscureText: true,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submitRegister(),
-                                  decoration: _underlineField(cs, s.passwordLabel),
+                                  decoration:
+                                      _underlineField(cs, s.passwordLabel),
                                   enabled: !_busy,
                                 ),
                                 const SizedBox(height: 28),
@@ -1021,9 +1102,14 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                                   child: FilledButton(
                                     onPressed: _busy ? null : _submitRegister,
                                     style: FilledButton.styleFrom(
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(16)),
                                     ),
-                                    child: Text(s.registerLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                                    child: Text(s.registerLabel,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16)),
                                   ),
                                 ),
                                 const SizedBox(height: 28),
@@ -1039,9 +1125,18 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
                           child: TextButton.icon(
                             onPressed: _busy ? null : _quickTestEnter,
                             icon: _busy
-                                ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary))
-                                : Icon(Icons.science_outlined, size: 18, color: cs.primary.withValues(alpha: 0.8)),
-                            label: Text(_busy ? s.authBusyLabel : s.authQuickTestButton, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
+                                ? SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: cs.primary))
+                                : Icon(Icons.science_outlined,
+                                    size: 18,
+                                    color: cs.primary.withValues(alpha: 0.8)),
+                            label: Text(
+                                _busy ? s.authBusyLabel : s.authQuickTestButton,
+                                style: TextStyle(
+                                    color: cs.onSurfaceVariant, fontSize: 13)),
                           ),
                         ),
                     ],
@@ -1055,7 +1150,8 @@ class _AuthScreenState extends State<_AuthScreen> with SingleTickerProviderState
     );
   }
 
-  Widget _authScroll(AppStrings s, ColorScheme cs, {required List<Widget> children}) {
+  Widget _authScroll(AppStrings s, ColorScheme cs,
+      {required List<Widget> children}) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,

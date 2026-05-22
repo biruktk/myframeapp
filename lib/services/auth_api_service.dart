@@ -8,7 +8,8 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 
 class AuthUserPayload {
-  const AuthUserPayload({required this.id, required this.email, required this.name});
+  const AuthUserPayload(
+      {required this.id, required this.email, required this.name});
   final String id;
   final String email;
   final String name;
@@ -47,6 +48,8 @@ class AuthApiService {
   AuthApiService({String? baseUrl})
       : _origin = (baseUrl ?? ApiConfig.baseUrl).replaceAll(RegExp(r'/+$'), '');
 
+  static const _requestTimeout = Duration(seconds: 20);
+
   final String _origin;
 
   Uri _u(String path) {
@@ -64,9 +67,11 @@ class AuthApiService {
         str.contains('network') ||
         str.contains('connection');
     if (looksNet) {
-      return AuthApiFailure(statusCode: 0, errorKey: 'network_error', message: e.toString());
+      return AuthApiFailure(
+          statusCode: 0, errorKey: 'network_error', message: e.toString());
     }
-    return AuthApiFailure(statusCode: 0, errorKey: 'unknown', message: e.toString());
+    return AuthApiFailure(
+        statusCode: 0, errorKey: 'unknown', message: e.toString());
   }
 
   Future<AuthApiResult> register({
@@ -76,15 +81,23 @@ class AuthApiService {
   }) async {
     final uri = _u('/api/auth/register');
     try {
-      final res = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({'email': email.trim(), 'password': password, 'name': name.trim()}),
-      );
-      if (kDebugMode) debugPrint('Login response: ${res.statusCode} ${res.body}');
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'email': email.trim(),
+              'password': password,
+              'name': name.trim()
+            }),
+          )
+          .timeout(_requestTimeout);
+      if (kDebugMode) {
+        debugPrint('Login response: ${res.statusCode} ${res.body}');
+      }
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
       if (kDebugMode) debugPrint('register exception: $e\n$st');
@@ -98,15 +111,19 @@ class AuthApiService {
   }) async {
     final uri = _u('/api/auth/login');
     try {
-      final res = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({'email': email.trim(), 'password': password}),
-      );
-      if (kDebugMode) debugPrint('Login response: ${res.statusCode} ${res.body}');
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'email': email.trim(), 'password': password}),
+          )
+          .timeout(_requestTimeout);
+      if (kDebugMode) {
+        debugPrint('Login response: ${res.statusCode} ${res.body}');
+      }
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
       if (kDebugMode) debugPrint('login exception: $e\n$st');
@@ -114,18 +131,37 @@ class AuthApiService {
     }
   }
 
-  Future<AuthApiResult> loginWithApple({required String identityToken}) async {
+  Future<AuthApiResult> loginWithApple({
+    required String identityToken,
+    String? authorizationCode,
+    String? userIdentifier,
+    String? email,
+    String? name,
+  }) async {
     final uri = _u('/api/auth/apple');
     try {
-      final res = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({'identityToken': identityToken.trim()}),
-      );
-      if (kDebugMode) debugPrint('Apple auth response: ${res.statusCode} ${res.body}');
+      final body = <String, String>{
+        'identityToken': identityToken.trim(),
+        if (authorizationCode != null && authorizationCode.trim().isNotEmpty)
+          'authorizationCode': authorizationCode.trim(),
+        if (userIdentifier != null && userIdentifier.trim().isNotEmpty)
+          'userIdentifier': userIdentifier.trim(),
+        if (email != null && email.trim().isNotEmpty) 'email': email.trim(),
+        if (name != null && name.trim().isNotEmpty) 'name': name.trim(),
+      };
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(_requestTimeout);
+      if (kDebugMode) {
+        debugPrint('Apple auth response: ${res.statusCode} ${res.body}');
+      }
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
       if (kDebugMode) debugPrint('apple auth exception: $e\n$st');
@@ -136,15 +172,19 @@ class AuthApiService {
   Future<AuthApiResult> loginWithGoogle({required String idToken}) async {
     final uri = _u('/api/auth/google');
     try {
-      final res = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({'idToken': idToken.trim()}),
-      );
-      if (kDebugMode) debugPrint('Google auth response: ${res.statusCode} ${res.body}');
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'idToken': idToken.trim()}),
+          )
+          .timeout(_requestTimeout);
+      if (kDebugMode) {
+        debugPrint('Google auth response: ${res.statusCode} ${res.body}');
+      }
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
       if (kDebugMode) debugPrint('google auth exception: $e\n$st');
@@ -155,15 +195,19 @@ class AuthApiService {
   Future<AuthApiResult> testLogin() async {
     final uri = _u('/api/auth/test-login');
     try {
-      final res = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: '{}',
-      );
-      if (kDebugMode) debugPrint('Test login response: ${res.statusCode} ${res.body}');
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: '{}',
+          )
+          .timeout(_requestTimeout);
+      if (kDebugMode) {
+        debugPrint('Test login response: ${res.statusCode} ${res.body}');
+      }
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
       if (kDebugMode) debugPrint('test login exception: $e\n$st');
@@ -228,11 +272,16 @@ class AuthApiService {
 
     final map = _asJsonMap(decoded);
     if (map == null) {
-      return AuthApiFailure(statusCode: status, errorKey: 'bad_payload', message: 'not_a_json_object');
+      return AuthApiFailure(
+          statusCode: status,
+          errorKey: 'bad_payload',
+          message: 'not_a_json_object');
     }
 
     final tokenRaw = map['token'];
-    final token = tokenRaw is String ? tokenRaw : (tokenRaw != null ? tokenRaw.toString() : '');
+    final token = tokenRaw is String
+        ? tokenRaw
+        : (tokenRaw != null ? tokenRaw.toString() : '');
     final userMap = _asJsonMap(map['user']);
     final fieldErrs = _fieldErrors(map['fields']);
 
@@ -247,7 +296,10 @@ class AuthApiService {
       if (id.isNotEmpty && email.isNotEmpty) {
         return AuthApiSuccess(
           token: token,
-          user: AuthUserPayload(id: id, email: email, name: name.isEmpty ? email.split('@').first : name),
+          user: AuthUserPayload(
+              id: id,
+              email: email,
+              name: name.isEmpty ? email.split('@').first : name),
         );
       }
     }
@@ -255,15 +307,31 @@ class AuthApiService {
     final err = map['error']?.toString() ?? 'unknown';
     final msg = map['message']?.toString();
 
+    if (err == 'unauthorized_admin_token') {
+      return AuthApiFailure(
+          statusCode: status,
+          errorKey: err,
+          message: msg,
+          fieldErrors: fieldErrs);
+    }
     if ((status == 401 || status == 403) && err != 'account_suspended') {
-      return AuthApiFailure(statusCode: status, errorKey: 'invalid_credentials', message: msg, fieldErrors: fieldErrs);
+      return AuthApiFailure(
+          statusCode: status,
+          errorKey: 'invalid_credentials',
+          message: msg,
+          fieldErrors: fieldErrs);
     }
     if (status == 409 || err == 'email_taken') {
-      return AuthApiFailure(statusCode: status, errorKey: 'email_taken', message: msg, fieldErrors: fieldErrs);
+      return AuthApiFailure(
+          statusCode: status,
+          errorKey: 'email_taken',
+          message: msg,
+          fieldErrors: fieldErrs);
     }
 
-    final effectiveKey =
-        status == 422 ? 'validation_error' : (status >= 500 ? 'server_error' : err);
+    final effectiveKey = status == 422
+        ? 'validation_error'
+        : (status >= 500 ? 'server_error' : err);
 
     return AuthApiFailure(
       statusCode: status,

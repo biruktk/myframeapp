@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import '../config/google_auth_config.dart';
 import '../services/google_sign_in_bridge.dart';
 import '../services/mobile_auth_deep_link.dart';
 
@@ -17,7 +16,8 @@ class GoogleSignInHostedScreen extends StatefulWidget {
   }
 
   @override
-  State<GoogleSignInHostedScreen> createState() => _GoogleSignInHostedScreenState();
+  State<GoogleSignInHostedScreen> createState() =>
+      _GoogleSignInHostedScreenState();
 }
 
 class _GoogleSignInHostedScreenState extends State<GoogleSignInHostedScreen>
@@ -50,14 +50,6 @@ class _GoogleSignInHostedScreenState extends State<GoogleSignInHostedScreen>
   Future<void> _openSignIn() async {
     if (_opened || !mounted) return;
     _opened = true;
-    if (!GoogleAuthConfig.isConfigured) {
-      setState(() {
-        _error = 'Google Sign-In is not configured.';
-        _waiting = false;
-      });
-      return;
-    }
-
     try {
       final result = await GoogleSignInBridge.signIn(useCustomTab: true);
       if (!mounted) return;
@@ -108,7 +100,8 @@ class _GoogleSignInHostedScreenState extends State<GoogleSignInHostedScreen>
               Text(
                 'Opening Google sign-in…\n\nChoose your Gmail account on the Google screen, then you will return to MyFrame automatically.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ],
             if (_error != null) ...[

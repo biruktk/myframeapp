@@ -46,13 +46,18 @@ class _BleTileRow {
   }
 }
 
-class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with TickerProviderStateMixin, WidgetsBindingObserver {
-  static const MethodChannel _nativeBleMethod = MethodChannel('myframe/native_ble/methods');
-  static const EventChannel _nativeBleEvents = EventChannel('myframe/native_ble/events');
+class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
+  static const MethodChannel _nativeBleMethod =
+      MethodChannel('myframe/native_ble/methods');
+  static const EventChannel _nativeBleEvents =
+      EventChannel('myframe/native_ble/events');
   static const Duration _scanSessionDuration = Duration(seconds: 30);
+  static final bool _useNativeBle = Platform.isAndroid;
 
   final Map<String, ScanResult> _found = {};
-  final Map<String, ({String name, int rssi, List<String> serviceUuids})> _nativeFound = {};
+  final Map<String, ({String name, int rssi, List<String> serviceUuids})>
+      _nativeFound = {};
   StreamSubscription<List<ScanResult>>? _sub;
   StreamSubscription<dynamic>? _nativeSub;
   StreamSubscription<BluetoothAdapterState>? _adapterSub;
@@ -93,32 +98,34 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
       if (!mounted) return;
       setState(() => _scanning = v);
     });
-    _nativeSub = _nativeBleEvents.receiveBroadcastStream().listen((event) {
-      if (event is! Map) return;
-      final type = event['type']?.toString();
-      if (type == 'error') {
-        final msg = event['message']?.toString() ?? 'native_scan_error';
-        if (!mounted) return;
-        setState(() => _error = msg);
-        return;
-      }
-      if (type != 'result') return;
-      final id = event['id']?.toString() ?? '';
-      if (id.isEmpty) return;
-      final name = event['name']?.toString() ?? '';
-      final rssi = (event['rssi'] as num?)?.toInt() ?? -127;
-      final rawSvcs = event['serviceUuids'];
-      final svcs = <String>[];
-      if (rawSvcs is List) {
-        for (final e in rawSvcs) {
-          if (e != null) svcs.add(e.toString());
+    if (_useNativeBle) {
+      _nativeSub = _nativeBleEvents.receiveBroadcastStream().listen((event) {
+        if (event is! Map) return;
+        final type = event['type']?.toString();
+        if (type == 'error') {
+          final msg = event['message']?.toString() ?? 'native_scan_error';
+          if (!mounted) return;
+          setState(() => _error = msg);
+          return;
         }
-      }
-      if (!mounted) return;
-      setState(() {
-        _nativeFound[id] = (name: name, rssi: rssi, serviceUuids: svcs);
+        if (type != 'result') return;
+        final id = event['id']?.toString() ?? '';
+        if (id.isEmpty) return;
+        final name = event['name']?.toString() ?? '';
+        final rssi = (event['rssi'] as num?)?.toInt() ?? -127;
+        final rawSvcs = event['serviceUuids'];
+        final svcs = <String>[];
+        if (rawSvcs is List) {
+          for (final e in rawSvcs) {
+            if (e != null) svcs.add(e.toString());
+          }
+        }
+        if (!mounted) return;
+        setState(() {
+          _nativeFound[id] = (name: name, rssi: rssi, serviceUuids: svcs);
+        });
       });
-    });
+    }
     _adapterSub = FlutterBluePlus.adapterState.listen((state) {
       if (!mounted) return;
       setState(() {
@@ -167,7 +174,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
       if (_adapterState == BluetoothAdapterState.on) {
         unawaited(_startUserBleScan());
       }
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       unawaited(_stopUserScan());
     }
   }
@@ -196,7 +204,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
     for (final e in _nativeFound.entries) {
       if (byId.containsKey(e.key)) {
         final existing = byId[e.key]!;
-        if (existing.effectiveName.trim().isEmpty && e.value.name.trim().isNotEmpty) {
+        if (existing.effectiveName.trim().isEmpty &&
+            e.value.name.trim().isNotEmpty) {
           byId[e.key] = _BleTileRow(
             id: e.key,
             rssi: existing.rssi,
@@ -232,7 +241,9 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
       await FlutterBluePlus.stopScan();
     } catch (_) {}
     try {
-      await _nativeBleMethod.invokeMethod<bool>('stopNativeBleScan');
+      if (_useNativeBle) {
+        await _nativeBleMethod.invokeMethod<bool>('stopNativeBleScan');
+      }
     } catch (_) {}
   }
 
@@ -283,7 +294,9 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
         return;
       }
 
-      await _nativeBleMethod.invokeMethod<bool>('startNativeBleScan');
+      if (_useNativeBle) {
+        await _nativeBleMethod.invokeMethod<bool>('startNativeBleScan');
+      }
 
       _sub ??= FlutterBluePlus.scanResults.listen((results) {
         var changed = false;
@@ -312,11 +325,15 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
         androidScanMode: AndroidScanMode.lowLatency,
         androidCheckLocationServices: true,
       );
-      if (kDebugMode) debugPrint('[BLE] scan active (${_scanSessionDuration.inSeconds}s low-latency)');
+      if (kDebugMode)
+        debugPrint(
+            '[BLE] scan active (${_scanSessionDuration.inSeconds}s low-latency)');
     } catch (e) {
       final raw = e.toString();
       if (kDebugMode) debugPrint('[BLE] scan error $raw');
-      final tooFrequent = raw.toLowerCase().contains('scanning too frequently') || raw.contains('status=6');
+      final tooFrequent =
+          raw.toLowerCase().contains('scanning too frequently') ||
+              raw.contains('status=6');
       if (mounted) {
         setState(() {
           _error = tooFrequent ? 'Scanner busy. Retrying automatically…' : raw;
@@ -437,11 +454,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
       if (kDebugMode) debugPrint('[BLE] GATT connect (15s timeout)…');
       await device.connect(timeout: const Duration(seconds: 15));
       if (kDebugMode) {
-        debugPrint('[BLE] connected remoteId=${device.remoteId.str} isConnected=${device.isConnected} mtu=${device.mtuNow}');
+        debugPrint(
+            '[BLE] connected remoteId=${device.remoteId.str} isConnected=${device.isConnected} mtu=${device.mtuNow}');
       }
       _connSub = device.connectionState.listen((state) {
         if (!mounted) return;
-        if (kDebugMode) debugPrint('[BLE] connectionState → ${state.name} (${device.remoteId.str})');
+        if (kDebugMode)
+          debugPrint(
+              '[BLE] connectionState → ${state.name} (${device.remoteId.str})');
         if (state == BluetoothConnectionState.disconnected) {
           setState(() {
             _connectedDevice = null;
@@ -458,7 +478,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
       if (kDebugMode) debugPrint('[BLE] discoverServices (15s)…');
       final services = await device.discoverServices(timeout: 15);
       if (kDebugMode) {
-        debugPrint('[BLE] services count=${services.length}: ${services.map((s) => s.uuid.str).join(", ")}');
+        debugPrint(
+            '[BLE] services count=${services.length}: ${services.map((s) => s.uuid.str).join(", ")}');
       }
       BluetoothCharacteristic? notifyChar;
       for (final s in services) {
@@ -471,7 +492,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
         if (notifyChar != null) break;
       }
       if (notifyChar != null) {
-        if (kDebugMode) debugPrint('[BLE] setNotifyValue on ${notifyChar.uuid.str}');
+        if (kDebugMode)
+          debugPrint('[BLE] setNotifyValue on ${notifyChar.uuid.str}');
         try {
           await notifyChar.setNotifyValue(true);
           _notifySub = notifyChar.lastValueStream.listen((data) {
@@ -484,14 +506,19 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
             });
           });
         } catch (e) {
-          if (kDebugMode) debugPrint('[BLE] setNotifyValue failed (continuing as connected): $e');
+          if (kDebugMode)
+            debugPrint(
+                '[BLE] setNotifyValue failed (continuing as connected): $e');
         }
       }
-      if (kDebugMode) debugPrint('[BLE] _connectForRealtimeData success for ${device.remoteId.str}');
+      if (kDebugMode)
+        debugPrint(
+            '[BLE] _connectForRealtimeData success for ${device.remoteId.str}');
       return true;
     } catch (e, st) {
       if (kDebugMode) {
-        debugPrint('[BLE] _connectForRealtimeData FAILED remoteId=${device.remoteId.str}: $e');
+        debugPrint(
+            '[BLE] _connectForRealtimeData FAILED remoteId=${device.remoteId.str}: $e');
         debugPrint('[BLE] stack: $st');
       }
       if (!mounted) return false;
@@ -540,7 +567,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
     final items = _buildRows();
     final perm = _permOutcome;
     final isBtOn = _adapterState == BluetoothAdapterState.on;
-    final receiving = _lastRxAt != null && DateTime.now().difference(_lastRxAt!) < const Duration(seconds: 3);
+    final receiving = _lastRxAt != null &&
+        DateTime.now().difference(_lastRxAt!) < const Duration(seconds: 3);
     final connected = _connectedDevice?.isConnected == true;
     final liveStatus = !isBtOn
         ? 'Bluetooth Off'
@@ -574,9 +602,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(s.blePermissionNearbyTitle, style: TextStyle(fontWeight: FontWeight.w800, color: cs.onErrorContainer)),
+                    Text(s.blePermissionNearbyTitle,
+                        style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: cs.onErrorContainer)),
                     const SizedBox(height: 8),
-                    Text(s.blePermissionNearbyBody, style: TextStyle(color: cs.onErrorContainer, height: 1.35)),
+                    Text(s.blePermissionNearbyBody,
+                        style: TextStyle(
+                            color: cs.onErrorContainer, height: 1.35)),
                     const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
@@ -586,9 +619,11 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                           FilledButton.tonalIcon(
                             onPressed: () {
                               if (Platform.isIOS) {
-                                AppSettings.openAppSettings(type: AppSettingsType.settings);
+                                AppSettings.openAppSettings(
+                                    type: AppSettingsType.settings);
                               } else {
-                                AppSettings.openAppSettings(type: AppSettingsType.bluetooth);
+                                AppSettings.openAppSettings(
+                                    type: AppSettingsType.bluetooth);
                               }
                             },
                             icon: const Icon(Icons.bluetooth),
@@ -596,12 +631,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                           ),
                         if (perm.needsLocationSettings)
                           FilledButton.tonalIcon(
-                            onPressed: () => AppSettings.openAppSettings(type: AppSettingsType.location),
+                            onPressed: () => AppSettings.openAppSettings(
+                                type: AppSettingsType.location),
                             icon: const Icon(Icons.location_on_outlined),
                             label: Text(s.openLocationSystemSettings),
                           ),
                         OutlinedButton.icon(
-                          onPressed: () => AppSettings.openAppSettings(type: AppSettingsType.settings),
+                          onPressed: () => AppSettings.openAppSettings(
+                              type: AppSettingsType.settings),
                           icon: const Icon(Icons.app_settings_alt_outlined),
                           label: Text(s.openAppPermissionSettings),
                         ),
@@ -657,7 +694,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                     ],
                     Text(
                       liveStatus,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800, fontSize: 16),
                     ),
                   ],
                 ),
@@ -665,7 +703,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                 Text(
                   s.scanDeviceBody,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12, height: 1.35),
+                  style: TextStyle(
+                      color: cs.onSurfaceVariant, fontSize: 12, height: 1.35),
                 ),
                 const SizedBox(height: 12),
                 Wrap(
@@ -674,12 +713,16 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                   runSpacing: 8,
                   children: [
                     OutlinedButton.icon(
-                      onPressed: (_startingScan || _scanSuspended) ? null : () => unawaited(_manualStopScan()),
+                      onPressed: (_startingScan || _scanSuspended)
+                          ? null
+                          : () => unawaited(_manualStopScan()),
                       icon: const Icon(Icons.stop_circle_outlined),
                       label: Text(s.bleStopScan),
                     ),
                     FilledButton.tonalIcon(
-                      onPressed: (_startingScan || _scanSuspended) ? null : () => unawaited(_manualRestartScan()),
+                      onPressed: (_startingScan || _scanSuspended)
+                          ? null
+                          : () => unawaited(_manualRestartScan()),
                       icon: const Icon(Icons.restart_alt),
                       label: Text(s.bleRestartScan),
                     ),
@@ -691,11 +734,18 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    _chip(context, icon: Icons.bluetooth_searching, text: _scanning ? s.bleScanningEllipsis : 'Scan idle'),
-                    _chip(context, icon: Icons.devices, text: '${items.length} nearby'),
-                    if (_lastDetectedId != null) _chip(context, icon: Icons.check_circle, text: 'Detected'),
-                    if (connected) _chip(context, icon: Icons.link, text: 'Connected'),
-                    if (receiving) _chip(context, icon: Icons.sync, text: 'Receiving'),
+                    _chip(context,
+                        icon: Icons.bluetooth_searching,
+                        text: _scanning ? s.bleScanningEllipsis : 'Scan idle'),
+                    _chip(context,
+                        icon: Icons.devices, text: '${items.length} nearby'),
+                    if (_lastDetectedId != null)
+                      _chip(context,
+                          icon: Icons.check_circle, text: 'Detected'),
+                    if (connected)
+                      _chip(context, icon: Icons.link, text: 'Connected'),
+                    if (receiving)
+                      _chip(context, icon: Icons.sync, text: 'Receiving'),
                   ],
                 ),
                 if (kDebugMode && perm != null) ...[
@@ -752,16 +802,22 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
             Card(
               color: cs.errorContainer,
               child: ListTile(
-                title: Text(_connectFailureMessage!, style: TextStyle(color: cs.onErrorContainer)),
+                title: Text(_connectFailureMessage!,
+                    style: TextStyle(color: cs.onErrorContainer)),
                 trailing: FilledButton(
-                  onPressed: _connectingDeviceId != null ? null : () => unawaited(_retryFailedConnect()),
+                  onPressed: _connectingDeviceId != null
+                      ? null
+                      : () => unawaited(_retryFailedConnect()),
                   child: Text(s.bleTryAgain),
                 ),
               ),
             ),
           ],
           const SizedBox(height: 10),
-          if (!_scanning && items.isEmpty && (_permOutcome?.allGranted ?? false) && _error == null)
+          if (!_scanning &&
+              items.isEmpty &&
+              (_permOutcome?.allGranted ?? false) &&
+              _error == null)
             ListTile(
               leading: const Icon(Icons.bluetooth_searching),
               title: Text(s.noDeviceFoundTitle),
@@ -770,7 +826,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
           for (final row in items)
             Card(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -787,26 +844,39 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                row.displayTitle.isEmpty ? s.bleUnknownDeviceLabel : row.displayTitle,
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                                row.displayTitle.isEmpty
+                                    ? s.bleUnknownDeviceLabel
+                                    : row.displayTitle,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700, fontSize: 16),
                               ),
                               const SizedBox(height: 2),
                               Text(
                                 '[${BleDisplayName.macSuffixHex4(row.id)}]',
-                                style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                    color: cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600),
                               ),
                               if (kDebugMode) ...[
                                 const SizedBox(height: 4),
                                 Text(
-                                  s.bleDebugAdvertLine(row.effectiveName.isEmpty ? '(empty)' : row.effectiveName, row.id),
-                                  style: TextStyle(fontSize: 11, color: cs.tertiary),
+                                  s.bleDebugAdvertLine(
+                                      row.effectiveName.isEmpty
+                                          ? '(empty)'
+                                          : row.effectiveName,
+                                      row.id),
+                                  style: TextStyle(
+                                      fontSize: 11, color: cs.tertiary),
                                 ),
                               ],
                             ],
                           ),
                         ),
                         FilledButton(
-                          onPressed: (_connectingDeviceId != null || _scanSuspended) ? null : () => unawaited(_selectRow(row)),
+                          onPressed:
+                              (_connectingDeviceId != null || _scanSuspended)
+                                  ? null
+                                  : () => unawaited(_selectRow(row)),
                           child: Text(s.bleConnect),
                         ),
                       ],
@@ -814,9 +884,13 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
                     const SizedBox(height: 8),
                     Row(
                       children: [
-                        Expanded(child: _RssiStrengthBar(rssi: row.scan?.rssi ?? row.rssi)),
+                        Expanded(
+                            child: _RssiStrengthBar(
+                                rssi: row.scan?.rssi ?? row.rssi)),
                         const SizedBox(width: 10),
-                        Text('${row.scan?.rssi ?? row.rssi} dBm', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                        Text('${row.scan?.rssi ?? row.rssi} dBm',
+                            style: TextStyle(
+                                fontSize: 12, color: cs.onSurfaceVariant)),
                       ],
                     ),
                   ],
@@ -828,7 +902,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
     );
   }
 
-  Widget _chip(BuildContext context, {required IconData icon, required String text}) {
+  Widget _chip(BuildContext context,
+      {required IconData icon, required String text}) {
     final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -841,7 +916,11 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen> with Tick
         children: [
           Icon(icon, size: 14, color: cs.primary),
           const SizedBox(width: 6),
-          Text(text, style: TextStyle(color: cs.primary, fontWeight: FontWeight.w700, fontSize: 12)),
+          Text(text,
+              style: TextStyle(
+                  color: cs.primary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12)),
         ],
       ),
     );
