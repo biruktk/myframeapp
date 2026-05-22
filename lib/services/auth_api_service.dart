@@ -192,6 +192,29 @@ class AuthApiService {
     }
   }
 
+  Future<AuthApiResult> loginWithWeChat({required String code}) async {
+    final uri = _u('/api/auth/wechat');
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'code': code.trim()}),
+          )
+          .timeout(_requestTimeout);
+      if (kDebugMode) {
+        debugPrint('WeChat auth response: ${res.statusCode} ${res.body}');
+      }
+      return _parseBody(res.statusCode, res.body);
+    } catch (e, st) {
+      if (kDebugMode) debugPrint('wechat auth exception: $e\n$st');
+      return _failureFromCatch(e, 'POST /api/auth/wechat', uri);
+    }
+  }
+
   Future<AuthApiResult> testLogin() async {
     final uri = _u('/api/auth/test-login');
     try {

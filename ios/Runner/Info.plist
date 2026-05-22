@@ -80,6 +80,9 @@
 	<array>
 		<string>https</string>
 		<string>http</string>
+		<string>weixin</string>
+		<string>wechat</string>
+		<string>weixinULAPI</string>
 	</array>
 	<key>GIDClientID</key>
 	<string>824694546060-bot3gdoo5mc5pvb2u26jksp3djt43i6q.apps.googleusercontent.com</string>
@@ -95,17 +98,27 @@
 				<string>myframe</string>
 			</array>
 		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>GoogleSignIn</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.824694546060-bot3gdoo5mc5pvb2u26jksp3djt43i6q</string>
-			</array>
-		</dict>
-	</array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>GoogleSignIn</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.824694546060-bot3gdoo5mc5pvb2u26jksp3djt43i6q</string>
+				</array>
+			</dict>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>wechat</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>wx452059b9ecaf1fc0</string>
+				</array>
+			</dict>
+		</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>MyFrame needs access to your photo library to send images to the frame.</string>
 	<key>CFBundleDocumentTypes</key>

@@ -14,6 +14,7 @@ import '../utils/validators.dart';
 import '../services/google_sign_in_errors.dart';
 import '../services/google_sign_in_bridge.dart';
 import '../services/mobile_auth_deep_link.dart';
+import '../services/wechat_sign_in_service.dart';
 import '../settings/app_settings.dart';
 import '../widgets/app_logo.dart';
 import '../widgets/main_shell.dart';
@@ -792,8 +793,39 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     }
   }
 
-  void _weChatTap() {
-    _showAuthMessage(AppStrings.of(context).authWeChatSoon);
+  Future<void> _weChatTap() async {
+    if (_busy) return;
+    final s = AppStrings.of(context);
+    setState(() => _busy = true);
+    try {
+      final code = await WeChatSignInService.instance.requestAuthCode();
+      final r = await _auth.loginWithWeChat(code: code);
+      if (!mounted) return;
+      if (r is AuthApiSuccess) {
+        await _finishAuthSession(r, provider: 'wechat');
+        return;
+      }
+      if (r is AuthApiFailure) {
+        _showAuthMessage(_failureMessage(r, s));
+      }
+    } on TimeoutException {
+      if (!mounted) return;
+      _showAuthMessage('WeChat sign-in timed out. Try again.');
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString();
+      if (msg.contains('wechat_not_installed')) {
+        _showAuthMessage('WeChat is not installed on this iPhone.');
+      } else if (msg.contains('wechat_register_failed')) {
+        _showAuthMessage('WeChat could not be registered for this app.');
+      } else if (msg.contains('wechat_launch_failed')) {
+        _showAuthMessage('Could not open WeChat.');
+      } else {
+        _showAuthMessage('WeChat sign-in failed.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   InputDecoration _underlineField(ColorScheme cs, String label,
@@ -939,7 +971,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
             ),
             _socialCircle(
               tooltip: s.continueWeChat,
-              onTap: _busy ? null : _weChatTap,
+              onTap: _busy ? null : () => unawaited(_weChatTap()),
               color: _weChatGreen,
               child: const Icon(Icons.chat_bubble_rounded,
                   color: Colors.white, size: 22),

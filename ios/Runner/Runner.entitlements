@@ -6,6 +6,10 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:myframe.ink</string>
+	</array>
 	<key>com.apple.developer.in-app-payments</key>
 	<array/>
 </dict>
