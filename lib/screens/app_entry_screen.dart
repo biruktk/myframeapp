@@ -705,10 +705,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
         return;
       }
 
-      // iOS: native when configured, otherwise hosted Google in Custom Tab.
-      if (Platform.isIOS && GoogleAuthConfig.hasIosClientId) {
-        final ok = await _googleSignInNativeOnly(s);
-        if (ok) return;
+      // iOS: native in-app picker (same as Android).
+      if (Platform.isIOS) {
+        await _googleSignInNativeOnly(s);
+        return;
       }
       await _googleSignInHosted(s);
     } finally {

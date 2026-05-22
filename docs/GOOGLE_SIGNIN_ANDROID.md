@@ -45,7 +45,13 @@ Use comma-separated IDs if Android and Web IDs differ.
 
 Add your Gmail under **Test users**.
 
-## 5. Rebuild app
+## 5. iOS client (in-app picker on iPhone)
+
+**Credentials → iOS** — bundle ID `com.myframe.minyuex`
+
+Client ID is baked into the app (`google_auth_config.dart`, `ios/Runner/Info.plist`).
+
+## 6. Rebuild app
 
 ```bash
 cd app

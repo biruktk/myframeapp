@@ -11,7 +11,8 @@ class GoogleAuthConfig {
   static const String _defaultWebClientId =
       '824694546060-rjs2fvoshtngpprrbbtedda9uda28qsm.apps.googleusercontent.com';
 
-  static const String _defaultIosClientId = '';
+  static const String _defaultIosClientId =
+      '824694546060-bot3gdoo5mc5pvb2u26jksp3djt43i6q.apps.googleusercontent.com';
 
   /// Web OAuth client ID (type: Web application).
   static const String serverClientId = String.fromEnvironment(
