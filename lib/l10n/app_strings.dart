@@ -218,8 +218,9 @@ class AppStrings {
       );
   String get authGoogleAndroidSetup => _l6(
         en:
-            'In-app Google Sign-In needs an Android OAuth client in Google Cloud.\n'
-            'Package: com.myframe.minyuex — add your debug/release SHA-1 (app/scripts/print-google-sha1.sh), then reinstall the app.',
+            'Google Cloud needs two clients:\n'
+            '1) Android — package com.myframe.minyuex, SHA-1 68:29:F9:6E:9D:40:58:02:32:2E:21:E0:19:88:76:DD:02:9C:4B:77\n'
+            '2) Web — same Client ID as in the app (serverClientId). Wait 10 min, then: flutter clean && flutter run',
         zh:
             '应用内 Google 登录需在 Google Cloud 创建 Android OAuth 客户端。\n'
             '包名 com.myframe.minyuex，添加 SHA-1 后重新安装应用。',

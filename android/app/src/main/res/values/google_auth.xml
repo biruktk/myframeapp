@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Web OAuth client ID — required for Google Sign-In idToken on Android (matches lib/config/google_auth_config.dart). -->
-    <string name="default_web_client_id" translatable="false">824694546060-9rlpc8r18kv38t0lvdkktbeai8nn7s58.apps.googleusercontent.com</string>
+    <string name="default_web_client_id" translatable="false">824694546060-rjs2fvoshtngpprrbbtedda9uda28qsm.apps.googleusercontent.com</string>
 </resources>

@@ -699,47 +699,61 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     final s = AppStrings.of(context);
     setState(() => _busy = true);
     try {
-      // 1) Native account picker when platform OAuth is configured.
-      if (Platform.isAndroid ||
-          (Platform.isIOS && GoogleAuthConfig.hasIosClientId)) {
-        try {
-          GoogleSignInAccount? account = await _googleSignIn
-              .signInSilently(suppressErrors: true)
-              .timeout(const Duration(seconds: 8));
-          account ??=
-              await _googleSignIn.signIn().timeout(const Duration(seconds: 30));
-          if (account == null) {
-            _showAuthMessage(s.authGoogleCanceled);
-            return;
-          }
-          final idToken = (await account.authentication).idToken;
-          if (idToken != null && idToken.isNotEmpty) {
-            final r = await _auth.loginWithGoogle(idToken: idToken);
-            if (!mounted) return;
-            if (r is AuthApiSuccess) {
-              await _finishAuthSession(r, provider: 'google');
-              return;
-            }
-            if (r is AuthApiFailure) {
-              _showAuthMessage(_failureMessage(r, s));
-              return;
-            }
-          }
-        } catch (e) {
-          if (Platform.isIOS) {
-            // iOS still has the hosted Google flow below, so never strand users on
-            // a client-id or URL-scheme setup error.
-          } else if (!isGoogleNativeSetupError(e) && e is! TimeoutException) {
-            _showAuthMessage(googleSignInErrorMessage(e, s));
-            return;
-          }
-        }
+      // Android: native account picker only (no second browser step).
+      if (Platform.isAndroid) {
+        await _googleSignInNativeOnly(s);
+        return;
       }
 
-      // 2) Fallback: Custom Tab (GIS blocked in embedded WebView).
+      // iOS: native when configured, otherwise hosted Google in Custom Tab.
+      if (Platform.isIOS && GoogleAuthConfig.hasIosClientId) {
+        final ok = await _googleSignInNativeOnly(s);
+        if (ok) return;
+      }
       await _googleSignInHosted(s);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// In-app Google account picker → API. Returns true when session finished.
+  Future<bool> _googleSignInNativeOnly(AppStrings s) async {
+    try {
+      GoogleSignInAccount? account;
+      try {
+        account = await _googleSignIn
+            .signInSilently(suppressErrors: true)
+            .timeout(const Duration(seconds: 8));
+      } on TimeoutException {
+        account = null;
+      }
+      account ??=
+          await _googleSignIn.signIn().timeout(const Duration(seconds: 30));
+      if (account == null) {
+        _showAuthMessage(s.authGoogleCanceled);
+        return false;
+      }
+      final idToken = (await account.authentication).idToken;
+      if (idToken == null || idToken.isEmpty) {
+        _showAuthMessage(s.authGoogleNoIdToken);
+        return false;
+      }
+      final r = await _auth.loginWithGoogle(idToken: idToken);
+      if (!mounted) return false;
+      if (r is AuthApiSuccess) {
+        await _finishAuthSession(r, provider: 'google');
+        return true;
+      }
+      if (r is AuthApiFailure) {
+        _showAuthMessage(_failureMessage(r, s));
+      }
+      return false;
+    } on TimeoutException {
+      _showAuthMessage(s.authGoogleCanceled);
+      return false;
+    } catch (e) {
+      _showAuthMessage(googleSignInErrorMessage(e, s));
+      return false;
     }
   }
 

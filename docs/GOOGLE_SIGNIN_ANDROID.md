@@ -1,73 +1,64 @@
-# Google Sign-In (Android / iOS)
+# Google Sign-In (Android) — one in-app picker
 
-## Error 400 `invalid_request` (what you saw)
+You need **two** OAuth clients in the same Google Cloud project (not one).
 
-That screen means Google rejected the sign-in request. Fix it in **Google Cloud Console** (one-time):
+## 1. Android client (in-app picker)
 
-### 1. OAuth consent screen
+[Credentials](https://console.cloud.google.com/apis/credentials) → **Create OAuth client ID** → **Android**
 
-[OAuth consent screen](https://console.cloud.google.com/apis/credentials/consent)
+| Field | Value |
+|--------|--------|
+| Package name | `com.myframe.minyuex` |
+| SHA-1 | Run on the PC that builds the APK: `bash app/scripts/print-google-sha1.sh` |
 
-- App name: **MyFrame** (or your product name)
-- User support email: your email
-- Developer contact: your email
-- If status is **Testing**: add **Test users** → `birukindrias@gmail.com` (every account that will sign in)
-
-### 2. Web OAuth client (used for mobile browser fallback)
-
-[Credentials](https://console.cloud.google.com/apis/credentials) → your **Web application** client  
-(`824694546060-…apps.googleusercontent.com`)
-
-**Authorized redirect URIs** (must match `PUBLIC_BASE_URL` on the VPS — often):
+**This machine (debug) SHA-1:**
 
 ```
-https://myframe.ink/mobile/google-oauth-callback
+68:29:F9:6E:9D:40:58:02:32:2E:21:E0:19:88:76:DD:02:9C:4B:77
 ```
 
-(If `PUBLIC_BASE_URL=http://128.241.231.234:3001`, use that host instead, with no trailing slash.)
+Copy the **Android client ID** (if different from Web).
 
-**Authorized JavaScript origins** (only if you still use the old GIS button page):
+## 2. Web client (idToken + server)
 
-```
-http://128.241.231.234:3001
-```
+**Create OAuth client ID** → **Web application**
 
-Copy the Web client **Client secret** into VPS `backend/.env`:
+- **Authorized redirect URIs:** `https://myframe.ink/mobile/google-oauth-callback`
+- **Authorized JavaScript origins:** `https://myframe.ink` (no path, no trailing `/`)
+
+Copy:
+
+- **Client ID** → Flutter `google_auth_config.dart` + `google_auth.xml` (`default_web_client_id`)
+- **Client secret** → VPS `backend/.env` as `GOOGLE_OAUTH_CLIENT_SECRET`
+
+## 3. `backend/.env` (VPS)
 
 ```env
-GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-xxxxxxxx
+GOOGLE_OAUTH_CLIENT_IDS=WEB_CLIENT_ID,ANDROID_CLIENT_ID
+GOOGLE_OAUTH_CLIENT_SECRET=GOCSPX-...
 PUBLIC_BASE_URL=https://myframe.ink
 ```
 
-Then on the VPS:
+Use comma-separated IDs if Android and Web IDs differ.
+
+## 4. Consent screen (Testing)
+
+Add your Gmail under **Test users**.
+
+## 5. Rebuild app
 
 ```bash
-cd /var/www/myframe/backend
-git pull
-npm run build
-pm2 restart myframe-api
-curl -s http://127.0.0.1:3001/health
-# expect: "googleOAuthRedirect": true
+cd app
+flutter clean
+flutter run
 ```
 
-Wait ~5–10 minutes after saving Google Console, then try again in the app.
+Wait **10 minutes** after saving Google Console before testing.
 
-### 3. Native in-app Gmail picker (optional, best UX)
+## Troubleshooting
 
-**Create OAuth client ID** → **Android**
-
-- Package: `com.myframe.minyuex`
-- SHA-1: run `app/scripts/print-google-sha1.sh` on the machine that builds the APK
-
-Keep the **Web** client ID in `GOOGLE_OAUTH_CLIENT_IDS` and in the app (`google_auth_config.dart` / `google_auth.xml`).
-
-## App flow
-
-1. Tries **native** Google account picker (needs Android OAuth + SHA-1).
-2. If that fails → opens **Custom Tab** → `/mobile/google-signin` → redirects to Google → returns via `myframe://auth/google`.
-
-Rebuild after Flutter changes:
-
-```bash
-cd app && flutter clean && flutter run
-```
+| Symptom | Fix |
+|--------|-----|
+| “needs Android OAuth + SHA-1” | Android client missing or SHA-1 from **another PC’s** keystore |
+| Picks account then fails | Web client ID in app ≠ Web client in Console; sync `google_auth_config.dart` |
+| API 401 invalid token | `GOOGLE_OAUTH_CLIENT_IDS` on VPS must include **Web** client ID |
