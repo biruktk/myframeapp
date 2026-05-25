@@ -33,13 +33,14 @@ bool _ok(PermissionStatus s) => s.isGranted || s.isLimited;
 Future<BleScanPermissionOutcome> requestBleScanPermissions() async {
   if (Platform.isIOS) {
     final bt = await Permission.bluetooth.request();
-    final ok = _ok(bt);
+    final blockedBySettings = bt.isPermanentlyDenied || bt.isRestricted;
+    final ok = _ok(bt) || !blockedBySettings;
     return BleScanPermissionOutcome(
       allGranted: ok,
       bluetoothScanDenied: false,
       bluetoothConnectDenied: false,
       locationDenied: false,
-      bluetoothDenied: !_ok(bt),
+      bluetoothDenied: blockedBySettings,
       anyPermanentlyDenied: bt.isPermanentlyDenied,
     );
   }

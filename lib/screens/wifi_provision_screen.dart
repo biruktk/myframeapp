@@ -10,6 +10,7 @@ import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
 import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
+import '../services/frame_recovery_service.dart';
 import '../services/wifi_credential_cache.dart';
 import 'frame_profile_setup_screen.dart';
 
@@ -43,6 +44,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   bool _showManualEntry = false;
   bool _didAutoLaunch = false;
   final Map<String, bool> _savedPasswordForSsid = {};
+  bool _recoveryBusy = false;
 
   @override
   void initState() {
@@ -342,6 +344,50 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     nav.pop(profileOk == true);
   }
 
+  Future<void> _reconfigureServer({required bool resetLabel}) async {
+    final paired = DeviceStore.instance.cached;
+    if (paired == null) {
+      setState(() => _status = 'No paired frame selected');
+      return;
+    }
+    setState(() {
+      _recoveryBusy = true;
+      _status = resetLabel ? 'Resetting server settings on the frame…' : 'Reconfiguring server…';
+    });
+    try {
+      final msg = await FrameRecoveryService.instance.reconfigureServer(paired);
+      if (!mounted) return;
+      setState(() => _status = msg);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = e.toString());
+    } finally {
+      if (mounted) setState(() => _recoveryBusy = false);
+    }
+  }
+
+  Future<void> _sendLoginAck() async {
+    final paired = DeviceStore.instance.cached;
+    if (paired == null) {
+      setState(() => _status = 'No paired frame selected');
+      return;
+    }
+    setState(() {
+      _recoveryBusy = true;
+      _status = 'Sending login_ack…';
+    });
+    try {
+      final msg = await FrameRecoveryService.instance.sendLoginAck(paired);
+      if (!mounted) return;
+      setState(() => _status = msg);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _status = e.toString());
+    } finally {
+      if (mounted) setState(() => _recoveryBusy = false);
+    }
+  }
+
   Widget _rssiBars(int rssi, ColorScheme cs) {
     final t = ((rssi + 100) / 60).clamp(0.0, 1.0);
     final filled = (t * 4).round().clamp(0, 4);
@@ -569,7 +615,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: _busy ? null : _connect,
+                        onPressed: _busy || _recoveryBusy ? null : _connect,
                         icon: _busy
                             ? const SizedBox(
                                 width: 16,
@@ -580,9 +626,33 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                         label: Text(_busy ? s.connectingWifi : s.connectWifiButton),
                       ),
                     ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _busy || _recoveryBusy ? null : () => _reconfigureServer(resetLabel: true),
+                        icon: _recoveryBusy
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Text('🔧'),
+                        label: const Text('Reset & Reconfigure'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _busy || _recoveryBusy ? null : _sendLoginAck,
+                        icon: const Text('📡'),
+                        label: const Text('Send login_ack'),
+                      ),
+                    ),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+                      onPressed: _busy || _recoveryBusy ? null : () => Navigator.of(context).pop(false),
                       child: Text(s.skipForNow),
                     ),
                   ],

@@ -364,25 +364,31 @@ class _FamilyScreenState extends State<FamilyScreen> {
             const SizedBox(height: 14),
             if (app.authToken.isNotEmpty && !g.cloudSynced) ...[
               Material(
-                color: cs.surfaceContainerHighest,
+                color: cs.surface,
                 borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(s.familyCloudCreateHint,
-                          style: TextStyle(
-                              color: cs.onSurfaceVariant,
-                              fontSize: 13,
-                              height: 1.35)),
-                      const SizedBox(height: 10),
-                      FilledButton(
-                        onPressed: _busy ? null : createCloudTap,
-                        child: Text(
-                            _busy ? s.authBusyLabel : s.familyCloudCreateLabel),
-                      ),
-                    ],
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: cs.outlineVariant),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(s.familyCloudCreateHint,
+                            style: TextStyle(
+                                color: cs.onSurfaceVariant,
+                                fontSize: 13,
+                                height: 1.35)),
+                        const SizedBox(height: 10),
+                        FilledButton(
+                          onPressed: _busy ? null : createCloudTap,
+                          child: Text(
+                              _busy ? s.authBusyLabel : s.familyCloudCreateLabel),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

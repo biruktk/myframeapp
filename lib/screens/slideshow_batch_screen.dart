@@ -114,7 +114,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
         final photo = await _api.uploadPhoto(
           fileBytes: uploadJpeg,
           filename: 'slideshow_$ts.jpg',
-          deviceId: pFrame.deviceId,
+          deviceId: pFrame.resolvedFrameTargetId,
           baseUrlOverride: pFrame.resolvedApiBaseUrl!,
           slideshowStyle: slideshow,
           transport: TransportKind.wifi.apiValue,

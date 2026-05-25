@@ -27,7 +27,7 @@ class ImageEditorScreen extends StatefulWidget {
   const ImageEditorScreen({
     super.key,
     required this.imageBytes,
-    this.deviceId = 'YX-133P-001',
+    this.deviceId = '',
     this.transport = TransportKind.wifi,
     this.slideshow = SlideshowStyle.fade,
     this.overlay = const SendOverlayOptions(),
@@ -98,6 +98,15 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     if (n != null && n.isNotEmpty) return n;
     if (_paired != null) return _paired!.listDisplayTitle(s);
     return s.frameDefaultDisplayName;
+  }
+
+  Future<void> _finishSuccessfulSend(String status) async {
+    if (!mounted) return;
+    setState(() => _status = status);
+    unawaited(UsageMetricsStore.instance.markPhotoSentNow());
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    if (!mounted) return;
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -262,7 +271,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
       final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
       final httpName = 'photo_$ts.jpg';
-      final deviceId = _paired?.deviceId ?? widget.deviceId;
+      final deviceId = _paired?.resolvedFrameTargetId ?? widget.deviceId;
 
       Future<void> applyHttpOk(PhotoUploadResponse res) async {
         final hash = res.checksumSha256 != null && res.checksumSha256!.length >= 8
@@ -294,11 +303,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         }
 
         if (res.deliveredToFrame == true) {
-          setState(
-            () =>
-                _status = '${s.uploadSuccessLine(res.receivedBytes ?? 0, hash)}${statusExtras(res)}',
+          await _finishSuccessfulSend(
+            '${s.uploadSuccessLine(res.receivedBytes ?? 0, hash)}${statusExtras(res)}',
           );
-          unawaited(UsageMetricsStore.instance.markPhotoSentNow());
           return;
         }
         setState(
@@ -324,12 +331,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           );
           if (delivery.deliveredToFrame) {
             if (!mounted) return;
-            setState(
-              () =>
-                  _status =
-                      '${s.uploadSuccessLine(res.receivedBytes ?? 0, hash)}${statusExtras(res)}',
+            await _finishSuccessfulSend(
+              '${s.uploadSuccessLine(res.receivedBytes ?? 0, hash)}${statusExtras(res)}',
             );
-            unawaited(UsageMetricsStore.instance.markPhotoSentNow());
             return;
           }
           if (delivery.deliveryMode == 'frame_push_failed' ||
@@ -512,14 +516,30 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: AspectRatio(
-                    aspectRatio: 3 / 4,
-                    child: _previewBytes == null
-                        ? const ColoredBox(color: Color(0xFFE5E7EB))
-                        : Image.memory(
-                            _previewBytes!,
-                            fit: BoxFit.contain,
-                          ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: cs.outlineVariant),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: AspectRatio(
+                      aspectRatio: 3 / 4,
+                      child: _previewBytes == null
+                          ? const ColoredBox(color: Color(0xFFE5E7EB))
+                          : InteractiveViewer(
+                              minScale: 1,
+                              maxScale: 4,
+                              panEnabled: true,
+                              boundaryMargin: const EdgeInsets.all(24),
+                              child: Center(
+                                child: Image.memory(
+                                  _previewBytes!,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                    ),
                   ),
                 ),
                 Padding(

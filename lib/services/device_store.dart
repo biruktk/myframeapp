@@ -512,6 +512,36 @@ class PairedFrame {
   final String? mqttBrokerUser;
   final String? mqttBrokerPassword;
 
+  /// For backend frame commands, target the Wi-Fi/MQTT MAC rather than the BLE MAC.
+  String get resolvedFrameTargetId {
+    final id = deviceId.trim();
+    final ble = bleRemoteId?.trim() ?? '';
+    final idMac = _normalizedHexMac(id);
+    final bleMac = _normalizedHexMac(ble);
+
+    // ESP32-class devices commonly expose BLE as base+2 relative to the Wi-Fi
+    // station MAC used for MQTT topics. Example: BLE `...161E`, MQTT `...161C`.
+    if (idMac != null && bleMac != null) {
+      if (idMac != bleMac) return idMac;
+      return _esp32WifiMacFromBleMac(bleMac) ?? idMac;
+    }
+    if (idMac != null) return idMac;
+    if (bleMac != null) return _esp32WifiMacFromBleMac(bleMac) ?? bleMac;
+    return id.isNotEmpty ? id : ble;
+  }
+
+  static String? _normalizedHexMac(String raw) {
+    final hex = raw.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (hex.length != 12) return null;
+    return hex;
+  }
+
+  static String? _esp32WifiMacFromBleMac(String bleMac) {
+    final value = int.tryParse(bleMac, radix: 16);
+    if (value == null || value < 2) return null;
+    return (value - 2).toRadixString(16).toUpperCase().padLeft(12, '0');
+  }
+
   Map<String, dynamic> toJson() => {
         'deviceId': deviceId,
         'pairingToken': pairingToken,

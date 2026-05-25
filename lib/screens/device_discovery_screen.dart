@@ -334,9 +334,17 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
       final tooFrequent =
           raw.toLowerCase().contains('scanning too frequently') ||
               raw.contains('status=6');
+      final iosPermissionish = Platform.isIOS &&
+          (raw.toLowerCase().contains('unauthorized') ||
+              raw.toLowerCase().contains('permission') ||
+              raw.toLowerCase().contains('not permitted'));
       if (mounted) {
         setState(() {
-          _error = tooFrequent ? 'Scanner busy. Retrying automatically…' : raw;
+          _error = tooFrequent
+              ? 'Scanner busy. Retrying automatically…'
+              : (iosPermissionish
+                  ? 'Bluetooth access is blocked for MyFrame on this iPhone. Open iPhone Settings, allow Bluetooth, then restart the scan.'
+                  : raw);
           _scanning = false;
         });
       }
@@ -579,6 +587,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                 : _scanning
                     ? s.bleScanningEllipsis
                     : 'Idle';
+    final permissionTitle = Platform.isIOS
+        ? 'Bluetooth access required on iPhone'
+        : s.blePermissionNearbyTitle;
+    final permissionBody = Platform.isIOS
+        ? 'iPhone needs Bluetooth permission so MyFrame can discover nearby frames. Open iPhone Settings, allow Bluetooth for MyFrame, then restart the scan.'
+        : s.blePermissionNearbyBody;
+    final bluetoothSettingsLabel =
+        Platform.isIOS ? 'Open iPhone Settings' : s.openBluetoothSystemSettings;
 
     return Scaffold(
       appBar: AppBar(
@@ -602,12 +618,12 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(s.blePermissionNearbyTitle,
+                    Text(permissionTitle,
                         style: TextStyle(
                             fontWeight: FontWeight.w800,
                             color: cs.onErrorContainer)),
                     const SizedBox(height: 8),
-                    Text(s.blePermissionNearbyBody,
+                    Text(permissionBody,
                         style: TextStyle(
                             color: cs.onErrorContainer, height: 1.35)),
                     const SizedBox(height: 12),
@@ -627,7 +643,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                               }
                             },
                             icon: const Icon(Icons.bluetooth),
-                            label: Text(s.openBluetoothSystemSettings),
+                            label: Text(bluetoothSettingsLabel),
                           ),
                         if (perm.needsLocationSettings)
                           FilledButton.tonalIcon(

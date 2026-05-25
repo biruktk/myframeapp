@@ -181,6 +181,65 @@ class BlufiProvisioningService {
     }
   }
 
+  Future<BlufiProvisionResult> reconfigureServer({
+    required PairedFrame paired,
+    required SelfHostedMqttConfig selfHostedMqtt,
+  }) async {
+    try {
+      final granted = await _ensurePerms();
+      if (!granted) {
+        return const BlufiProvisionResult(ok: false, message: 'Bluetooth permission denied');
+      }
+      if (!await FlutterBluePlus.isSupported) {
+        return const BlufiProvisionResult(ok: false, message: 'Bluetooth LE not supported');
+      }
+      if (!await FlutterBluePlus.isOn) {
+        return const BlufiProvisionResult(ok: false, message: 'Bluetooth is off');
+      }
+      try {
+        await FlutterBluePlus.stopScan();
+      } catch (_) {}
+      final candidates = await _scanProvisionCandidates(paired);
+      if (candidates.isEmpty) {
+        return const BlufiProvisionResult(
+          ok: false,
+          message: 'No frame found over Bluetooth. Turn it on, stay close, and try again.',
+        );
+      }
+      Object? lastFailure;
+      for (final remote in candidates) {
+        try {
+          await _connectWithRetry(remote);
+          final services = await remote.discoverServices(timeout: 12);
+          final picked = _pickProvisionGatt(services, paired);
+          if (picked == null) {
+            await remote.disconnect();
+            continue;
+          }
+          await _sendMqttConfigJson(picked.write, selfHostedMqtt);
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await remote.disconnect();
+          return const BlufiProvisionResult(
+            ok: true,
+            confirmed: true,
+            message: 'Server configuration sent to frame.',
+          );
+        } catch (e) {
+          lastFailure = e;
+          try {
+            await remote.disconnect();
+          } catch (_) {}
+        }
+      }
+      return BlufiProvisionResult(
+        ok: false,
+        message: lastFailure?.toString() ?? 'Could not reconfigure the frame server.',
+      );
+    } catch (e) {
+      return BlufiProvisionResult(ok: false, message: e.toString());
+    }
+  }
+
   Future<void> _connectWithRetry(BluetoothDevice remote) async {
     Object? lastError;
     for (var attempt = 1; attempt <= 3; attempt++) {
@@ -343,6 +402,7 @@ class BlufiProvisioningService {
       'action': 'mqtt_config',
       'data': {
         'host': cfg.host.trim(),
+        'broker': cfg.host.trim(),
         'port': cfg.port,
         'usr': cfg.user,
         'pwd': cfg.password,

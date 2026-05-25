@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'dart:io' show Platform;
 
@@ -851,8 +852,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: cs.primary.withValues(alpha: 0.08),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.outlineVariant),
       ),
       child: Row(
         children: [
@@ -962,20 +964,13 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                 onTap: _busy ? null : _googleSignInFlow,
                 color: Colors.white,
                 borderColor: cs.outline.withValues(alpha: 0.35),
-                child: Text(
-                  'G',
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: cs.primary),
-                ),
+                child: const _GoogleLogoMark(size: 26),
               ),
             _socialCircle(
               tooltip: s.continueWeChat,
               onTap: _busy ? null : () => unawaited(_weChatTap()),
               color: _weChatGreen,
-              child: const Icon(Icons.chat_bubble_rounded,
-                  color: Colors.white, size: 22),
+              child: const _WeChatLogoMark(size: 26),
             ),
           ],
         ),
@@ -1205,4 +1200,113 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       children: children,
     );
   }
+}
+
+class _GoogleLogoMark extends StatelessWidget {
+  const _GoogleLogoMark({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _GoogleLogoPainter(),
+      ),
+    );
+  }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = size.width * 0.18;
+    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
+    final style = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+
+    style.color = const Color(0xFF4285F4);
+    canvas.drawArc(rect, -0.20 * math.pi, 0.70 * math.pi, false, style);
+
+    style.color = const Color(0xFFEA4335);
+    canvas.drawArc(rect, 0.52 * math.pi, 0.52 * math.pi, false, style);
+
+    style.color = const Color(0xFFFBBC05);
+    canvas.drawArc(rect, 1.04 * math.pi, 0.42 * math.pi, false, style);
+
+    style.color = const Color(0xFF34A853);
+    canvas.drawArc(rect, 1.46 * math.pi, 0.56 * math.pi, false, style);
+
+    final bar = Paint()
+      ..color = const Color(0xFF4285F4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    final y = size.height * 0.50;
+    canvas.drawLine(Offset(size.width * 0.55, y), Offset(size.width * 0.92, y), bar);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _WeChatLogoMark extends StatelessWidget {
+  const _WeChatLogoMark({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _WeChatLogoPainter(),
+      ),
+    );
+  }
+}
+
+class _WeChatLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final white = Paint()..color = Colors.white;
+    final bubble1 = RRect.fromRectAndRadius(
+      Rect.fromLTWH(size.width * 0.10, size.height * 0.12, size.width * 0.52, size.height * 0.42),
+      Radius.circular(size.width * 0.18),
+    );
+    final bubble2 = RRect.fromRectAndRadius(
+      Rect.fromLTWH(size.width * 0.36, size.height * 0.34, size.width * 0.46, size.height * 0.36),
+      Radius.circular(size.width * 0.16),
+    );
+    canvas.drawRRect(bubble1, white);
+    canvas.drawRRect(bubble2, white);
+
+    final tail1 = Path()
+      ..moveTo(size.width * 0.24, size.height * 0.54)
+      ..lineTo(size.width * 0.18, size.height * 0.73)
+      ..lineTo(size.width * 0.34, size.height * 0.58)
+      ..close();
+    final tail2 = Path()
+      ..moveTo(size.width * 0.56, size.height * 0.69)
+      ..lineTo(size.width * 0.64, size.height * 0.86)
+      ..lineTo(size.width * 0.70, size.height * 0.66)
+      ..close();
+    canvas.drawPath(tail1, white);
+    canvas.drawPath(tail2, white);
+
+    final eye = Paint()..color = const Color(0xFF07C160);
+    void dot(double x, double y) => canvas.drawCircle(Offset(x, y), size.width * 0.04, eye);
+    dot(size.width * 0.26, size.height * 0.30);
+    dot(size.width * 0.42, size.height * 0.30);
+    dot(size.width * 0.50, size.height * 0.48);
+    dot(size.width * 0.64, size.height * 0.48);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

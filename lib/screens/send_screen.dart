@@ -22,6 +22,7 @@ import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
 import '../services/share_incoming_service.dart';
 import '../widgets/send_album_settings_sheet.dart';
+import '../widgets/shell_navigation.dart';
 import 'device_discovery_screen.dart';
 
 enum _SendSource { gallery, camera, sharelink, ai }
@@ -181,15 +182,18 @@ class _SendScreenState extends State<SendScreen> {
     final Uint8List imageBytes = bytes;
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
 
-    await Navigator.push<void>(
+    final sent = await Navigator.push<bool>(
       context,
-      MaterialPageRoute<void>(
+      MaterialPageRoute<bool>(
         builder: (_) => ImageEditorScreen(
           imageBytes: imageBytes,
           slideshow: slideshow,
         ),
       ),
     );
+    if (sent == true) {
+      ShellNavigation.goToTab(0);
+    }
   }
 
   /// Photo library: [pickMultiImage] with single-image fallback, then the editor for each selection in order.
@@ -259,9 +263,9 @@ class _SendScreenState extends State<SendScreen> {
       if (!context.mounted) return;
       final bytes = await files[i].readAsBytes();
       if (!context.mounted) return;
-      await Navigator.push<void>(
+      final sent = await Navigator.push<bool>(
         context,
-        MaterialPageRoute<void>(
+        MaterialPageRoute<bool>(
           builder: (_) => ImageEditorScreen(
             imageBytes: bytes,
             slideshow: slideshow,
@@ -270,6 +274,10 @@ class _SendScreenState extends State<SendScreen> {
           ),
         ),
       );
+      if (sent == true) {
+        ShellNavigation.goToTab(0);
+        return;
+      }
     }
   }
 
@@ -321,9 +329,9 @@ class _SendScreenState extends State<SendScreen> {
       if (!context.mounted) return;
       final bytes = await files[i].readAsBytes();
       if (!context.mounted) return;
-      await Navigator.push<void>(
+      final sent = await Navigator.push<bool>(
         context,
-        MaterialPageRoute<void>(
+        MaterialPageRoute<bool>(
           builder: (_) => ImageEditorScreen(
             imageBytes: bytes,
             slideshow: slideshow,
@@ -332,6 +340,10 @@ class _SendScreenState extends State<SendScreen> {
           ),
         ),
       );
+      if (sent == true) {
+        ShellNavigation.goToTab(0);
+        return;
+      }
     }
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/frame_recovery_service.dart';
 import '../services/device_store.dart';
 import '../settings/app_settings.dart';
 import 'settings_account_screen.dart';
@@ -29,6 +30,9 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   PairedFrame? _paired;
+  bool _reconfiguring = false;
+  bool _sendingAck = false;
+  String? _frameRecoveryStatus;
 
   @override
   void initState() {
@@ -69,6 +73,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (go != true || !context.mounted) return;
     await AppSettingsScope.of(context).setSignedIn(value: false);
+  }
+
+  Future<void> _reconfigureFrame() async {
+    final paired = _paired;
+    if (paired == null) return;
+    setState(() {
+      _reconfiguring = true;
+      _frameRecoveryStatus = null;
+    });
+    try {
+      final msg = await FrameRecoveryService.instance.reconfigureServer(paired);
+      if (!mounted) return;
+      setState(() => _frameRecoveryStatus = msg);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _frameRecoveryStatus = e.toString());
+    } finally {
+      if (mounted) setState(() => _reconfiguring = false);
+    }
+  }
+
+  Future<void> _sendLoginAck() async {
+    final paired = _paired;
+    if (paired == null) return;
+    setState(() {
+      _sendingAck = true;
+      _frameRecoveryStatus = null;
+    });
+    try {
+      final msg = await FrameRecoveryService.instance.sendLoginAck(paired);
+      if (!mounted) return;
+      setState(() => _frameRecoveryStatus = msg);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _frameRecoveryStatus = e.toString());
+    } finally {
+      if (mounted) setState(() => _sendingAck = false);
+    }
   }
 
   @override
@@ -117,6 +159,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     : '${_paired!.listDisplayTitle(s)}\n${_paired!.deviceId}${_paired!.apiUrl != null ? '\n${_paired!.apiUrl}' : ''}',
               ),
               trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Frame recovery',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Re-send MQTT server settings or a manual login_ack if the frame keeps restarting.',
+                    style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _paired == null || _reconfiguring || _sendingAck ? null : _reconfigureFrame,
+                    icon: _reconfiguring
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('🔧'),
+                    label: const Text('Reconfigure Server'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _paired == null || _reconfiguring || _sendingAck ? null : _sendLoginAck,
+                    icon: _sendingAck
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('📡'),
+                    label: const Text('Send login_ack'),
+                  ),
+                  if (_frameRecoveryStatus != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _frameRecoveryStatus!,
+                      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 10),
