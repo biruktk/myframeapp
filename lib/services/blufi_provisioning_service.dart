@@ -131,6 +131,9 @@ class BlufiProvisioningService {
             await Future<void>.delayed(const Duration(milliseconds: 200));
           }
           await Future<void>.delayed(const Duration(milliseconds: 120));
+          if (ack) {
+            await _rememberBleIdentity(paired: paired, remote: remote);
+          }
           await remote.disconnect();
           _d('disconnected after candidate[${ci + 1}] ack=$ack');
           if (ack) {
@@ -218,6 +221,7 @@ class BlufiProvisioningService {
           }
           await _sendMqttConfigJson(picked.write, selfHostedMqtt);
           await Future<void>.delayed(const Duration(milliseconds: 200));
+          await _rememberBleIdentity(paired: paired, remote: remote);
           await remote.disconnect();
           return const BlufiProvisionResult(
             ok: true,
@@ -238,6 +242,25 @@ class BlufiProvisioningService {
     } catch (e) {
       return BlufiProvisionResult(ok: false, message: e.toString());
     }
+  }
+
+  Future<void> _rememberBleIdentity({
+    required PairedFrame paired,
+    required BluetoothDevice remote,
+  }) async {
+    final remoteId = remote.remoteId.str.trim();
+    if (remoteId.isEmpty) return;
+    final displayName = remote.advName.trim().isNotEmpty
+        ? remote.advName.trim()
+        : (remote.platformName.trim().isNotEmpty
+              ? remote.platformName.trim()
+              : (paired.bleNamePrefix?.trim() ?? ''));
+    await DeviceStore.instance.saveManualPairing(
+      deviceId: paired.deviceId,
+      bleRemoteId: remoteId,
+      bleNamePrefix: displayName.isEmpty ? null : displayName,
+    );
+    _d('remembered BLE identity deviceId=${paired.deviceId} bleRemoteId=$remoteId name="$displayName"');
   }
 
   Future<void> _connectWithRetry(BluetoothDevice remote) async {
