@@ -271,9 +271,15 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
       final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
       final httpName = 'photo_$ts.jpg';
-      final deviceId = _paired?.resolvedFrameTargetId ?? widget.deviceId;
+      final targetIds = _paired != null
+          ? _paired!.resolvedFrameTargetCandidates
+          : <String>[widget.deviceId];
 
-      Future<void> applyHttpOk(PhotoUploadResponse res) async {
+      Future<bool> applyHttpOk(
+        PhotoUploadResponse res, {
+        required String targetId,
+        required bool hasFallback,
+      }) async {
         final hash = res.checksumSha256 != null && res.checksumSha256!.length >= 8
             ? res.checksumSha256!.substring(0, 8)
             : '…';
@@ -306,7 +312,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           await _finishSuccessfulSend(
             '${s.uploadSuccessLine(res.receivedBytes ?? 0, hash)}${statusExtras(res)}',
           );
-          return;
+          return true;
         }
         setState(
           () => _status =
@@ -314,44 +320,67 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         );
         final checksum = res.checksumSha256;
         if (checksum == null || checksum.isEmpty) {
+          if (hasFallback) {
+            setState(() {
+              _status =
+                  'Uploaded to server, but frame confirmation is missing for $targetId. Retrying alternate frame MAC…${statusExtras(res)}';
+            });
+            return false;
+          }
           setState(() {
             _status =
                 'Uploaded to server only. Frame display not confirmed yet. Make sure frame is online and linked.${statusExtras(res)}';
           });
-          return;
+          return true;
         }
         final started = DateTime.now();
         while (DateTime.now().difference(started) < const Duration(seconds: 25)) {
           await Future<void>.delayed(const Duration(seconds: 2));
           final delivery = await _api.getDeliveryStatus(
             checksumSha256: checksum,
-            deviceId: deviceId,
+            deviceId: targetId,
             baseUrlOverride: paired.resolvedApiBaseUrl,
             pairingToken: paired.resolvedPairingToken,
           );
           if (delivery.deliveredToFrame) {
-            if (!mounted) return;
+            if (!mounted) return true;
             await _finishSuccessfulSend(
               '${s.uploadSuccessLine(res.receivedBytes ?? 0, hash)}${statusExtras(res)}',
             );
-            return;
+            return true;
           }
           if (delivery.deliveryMode == 'frame_push_failed' ||
               delivery.deliveryMode == 'mqtt_publish_failed' ||
               delivery.deliveryMode == 'mqtt_disconnected') {
-            if (!mounted) return;
+            if (hasFallback) {
+              if (!mounted) return false;
+              setState(() {
+                _status =
+                    'Uploaded, but MQTT did not reach the frame on $targetId. Retrying alternate MAC…${statusExtras(res)}';
+              });
+              return false;
+            }
+            if (!mounted) return true;
             setState(() {
               _status =
                   'Uploaded, but MQTT did not reach the frame. Check broker, API MQTT_URL, and device_id/MAC.${statusExtras(res)}';
             });
-            return;
+            return true;
           }
         }
-        if (!mounted) return;
+        if (!mounted) return true;
+        if (hasFallback) {
+          setState(() {
+            _status =
+                'Frame confirmation timed out on $targetId. Retrying alternate frame MAC…${statusExtras(res)}';
+          });
+          return false;
+        }
         setState(() {
           _status =
               'Uploaded to server only. Frame confirmation timed out.${statusExtras(res)}';
         });
+        return true;
       }
 
       final onLink = await hasNetworkInterface();
@@ -368,35 +397,51 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       }
       await BleFrameDeviceTransport.instance.releaseSession();
 
-      if (mounted) {
-        setState(() => _status = 'Uploading to server…');
-      }
-      try {
-        final res = await _api.uploadPhoto(
-          fileBytes: uploadJpeg,
-          filename: httpName,
-          deviceId: deviceId,
-          baseUrlOverride: paired.resolvedApiBaseUrl!,
-          slideshowStyle: _slideshow.apiValue,
-          transport: TransportKind.wifi.apiValue,
-          pairingToken: paired.resolvedPairingToken,
-        );
-        if (!mounted) return;
-        await applyHttpOk(res);
-      } on SocketException catch (e) {
-        if (!mounted) return;
-        final msgLower = e.message.toLowerCase();
-        if (msgLower.contains('failed host lookup') || msgLower.contains('no address associated with hostname')) {
-          final hostHint = paired.apiUrl != null ? Uri.tryParse(paired.apiUrl!)?.host ?? '' : '';
+      for (var i = 0; i < targetIds.length; i++) {
+        final targetId = targetIds[i];
+        final hasFallback = i < targetIds.length - 1;
+        if (mounted) {
           setState(() {
-            _status =
-                hostHint.isNotEmpty ? 'Cannot resolve $hostHint — check DNS and that the phone has internet.'
-                    : '${s.sendOfflineNoNetworkForWifi} ($e)';
+            _status = i == 0
+                ? 'Uploading to server…'
+                : 'Retrying frame with alternate MAC…';
           });
+        }
+        try {
+          final res = await _api.uploadPhoto(
+            fileBytes: uploadJpeg,
+            filename: httpName,
+            deviceId: targetId,
+            baseUrlOverride: paired.resolvedApiBaseUrl!,
+            slideshowStyle: _slideshow.apiValue,
+            transport: TransportKind.wifi.apiValue,
+            pairingToken: paired.resolvedPairingToken,
+          );
+          if (!mounted) return;
+          final done = await applyHttpOk(
+            res,
+            targetId: targetId,
+            hasFallback: hasFallback,
+          );
+          if (done) {
+            return;
+          }
+        } on SocketException catch (e) {
+          if (!mounted) return;
+          final msgLower = e.message.toLowerCase();
+          if (msgLower.contains('failed host lookup') ||
+              msgLower.contains('no address associated with hostname')) {
+            final hostHint = paired.apiUrl != null ? Uri.tryParse(paired.apiUrl!)?.host ?? '' : '';
+            setState(() {
+              _status = hostHint.isNotEmpty
+                  ? 'Cannot resolve $hostHint — check DNS and that the phone has internet.'
+                  : '${s.sendOfflineNoNetworkForWifi} ($e)';
+            });
+            return;
+          }
+          setState(() => _status = '${s.sendOfflineNoNetworkForWifi} ($e)');
           return;
         }
-        setState(() => _status = '${s.sendOfflineNoNetworkForWifi} ($e)');
-        return;
       }
     } on FrameApiException catch (e) {
       if (!mounted) return;

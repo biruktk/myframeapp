@@ -43,6 +43,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/branding/google_logo.png
     - assets/branding/myframe_logo.png
     - assets/branding/myframe_splash_logo.png
 

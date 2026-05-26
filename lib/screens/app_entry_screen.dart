@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'dart:io' show Platform;
 
@@ -1212,46 +1211,14 @@ class _GoogleLogoMark extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: _GoogleLogoPainter(),
+      child: Image.asset(
+        'assets/branding/google_logo.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
       ),
     );
   }
-}
-
-class _GoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = size.width * 0.18;
-    final rect = Rect.fromLTWH(stroke / 2, stroke / 2, size.width - stroke, size.height - stroke);
-    final style = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round;
-
-    style.color = const Color(0xFF4285F4);
-    canvas.drawArc(rect, -0.20 * math.pi, 0.70 * math.pi, false, style);
-
-    style.color = const Color(0xFFEA4335);
-    canvas.drawArc(rect, 0.52 * math.pi, 0.52 * math.pi, false, style);
-
-    style.color = const Color(0xFFFBBC05);
-    canvas.drawArc(rect, 1.04 * math.pi, 0.42 * math.pi, false, style);
-
-    style.color = const Color(0xFF34A853);
-    canvas.drawArc(rect, 1.46 * math.pi, 0.56 * math.pi, false, style);
-
-    final bar = Paint()
-      ..color = const Color(0xFF4285F4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round;
-    final y = size.height * 0.50;
-    canvas.drawLine(Offset(size.width * 0.55, y), Offset(size.width * 0.92, y), bar);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _WeChatLogoMark extends StatelessWidget {

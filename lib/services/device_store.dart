@@ -512,21 +512,58 @@ class PairedFrame {
   final String? mqttBrokerUser;
   final String? mqttBrokerPassword;
 
-  /// For backend frame commands, target the Wi-Fi/MQTT MAC rather than the BLE MAC.
-  String get resolvedFrameTargetId {
+  /// Candidate backend targets in priority order.
+  ///
+  /// ESP32-class devices often expose BLE as station-MAC + 2. Android pairing
+  /// usually captures both identifiers, but QR-led flows can leave only one MAC
+  /// persisted. Keep a safe fallback so uploads can retry the alternate target.
+  List<String> get resolvedFrameTargetCandidates {
     final id = deviceId.trim();
     final ble = bleRemoteId?.trim() ?? '';
     final idMac = _normalizedHexMac(id);
     final bleMac = _normalizedHexMac(ble);
+    final out = <String>[];
+
+    void add(String? value) {
+      if (value == null) return;
+      final v = value.trim();
+      if (v.isEmpty || out.contains(v)) return;
+      out.add(v);
+    }
 
     // ESP32-class devices commonly expose BLE as base+2 relative to the Wi-Fi
     // station MAC used for MQTT topics. Example: BLE `...161E`, MQTT `...161C`.
     if (idMac != null && bleMac != null) {
-      if (idMac != bleMac) return idMac;
-      return _esp32WifiMacFromBleMac(bleMac) ?? idMac;
+      if (idMac != bleMac) {
+        add(idMac);
+        add(_esp32WifiMacFromBleMac(bleMac));
+        add(bleMac);
+        return out;
+      }
+      add(_esp32WifiMacFromBleMac(bleMac));
+      add(idMac);
+      return out;
     }
-    if (idMac != null) return idMac;
-    if (bleMac != null) return _esp32WifiMacFromBleMac(bleMac) ?? bleMac;
+    if (idMac != null) {
+      add(idMac);
+      add(_esp32WifiMacFromBleMac(idMac));
+      return out;
+    }
+    if (bleMac != null) {
+      add(_esp32WifiMacFromBleMac(bleMac));
+      add(bleMac);
+      return out;
+    }
+    add(id.isNotEmpty ? id : ble);
+    return out;
+  }
+
+  /// For backend frame commands, target the Wi-Fi/MQTT MAC rather than the BLE MAC.
+  String get resolvedFrameTargetId {
+    final ids = resolvedFrameTargetCandidates;
+    if (ids.isNotEmpty) return ids.first;
+    final id = deviceId.trim();
+    final ble = bleRemoteId?.trim() ?? '';
     return id.isNotEmpty ? id : ble;
   }
 
