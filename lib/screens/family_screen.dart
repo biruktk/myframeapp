@@ -9,9 +9,11 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
+import '../services/device_store.dart';
 import '../services/family_group_store.dart';
 import '../services/family_invite_deep_link.dart';
 import '../settings/app_settings.dart';
+import '../widgets/text_input_bottom_sheet.dart';
 
 class FamilyScreen extends StatefulWidget {
   const FamilyScreen({super.key});
@@ -95,138 +97,24 @@ class _FamilyScreenState extends State<FamilyScreen> {
 
   Future<void> _showJoinSheet(BuildContext context, AppStrings s,
       {String? prefill}) async {
-    final ctrl = TextEditingController(text: prefill ?? '');
     final appTok = AppSettingsScope.of(context).authToken.trim();
-    DateTime? birthdayPick;
-    String isoBirthday(DateTime d) =>
-        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModal) {
-            return SingleChildScrollView(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 8,
-                bottom: MediaQuery.viewInsetsOf(ctx).bottom + 24,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(s.joinFamilyTitle,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 8),
-                  Text(s.joinFamilyBody,
-                      style: TextStyle(
-                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                          height: 1.4)),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: ctrl,
-                    textCapitalization: TextCapitalization.characters,
-                    decoration: InputDecoration(
-                      labelText: s.joinFamilyHint,
-                      border: const OutlineInputBorder(),
-                    ),
-                    autocorrect: false,
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(s.joinFamilyBirthdayLabel),
-                    subtitle: Text(
-                      birthdayPick == null ? '—' : isoBirthday(birthdayPick!),
-                    ),
-                    trailing: const Icon(Icons.cake_outlined),
-                    onTap: () async {
-                      final d = await showDatePicker(
-                        context: ctx,
-                        initialDate: birthdayPick ?? DateTime(1990, 6, 15),
-                        firstDate: DateTime(1900),
-                        lastDate: DateTime.now(),
-                      );
-                      if (d != null) setModal(() => birthdayPick = d);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    onPressed: _busy
-                        ? null
-                        : () async {
-                            final raw = ctrl.text.trim();
-                            if (raw.isEmpty) return;
-                            if (birthdayPick == null) {
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                SnackBar(
-                                    content:
-                                        Text(s.joinFamilyBirthdayRequired)),
-                              );
-                              return;
-                            }
-                            setState(() => _busy = true);
-                            try {
-                              final norm = FamilyGroupStore.normalizeCode(raw);
-                              final bIso = isoBirthday(birthdayPick!);
-                              final r =
-                                  await FamilyGroupStore.instance.joinWithCode(
-                                raw,
-                                labelIfNew: s.joinFamilyDefaultLabel(norm),
-                                bearerToken: appTok.isNotEmpty ? appTok : null,
-                                apiOrigin: appTok.isNotEmpty
-                                    ? ApiConfig.baseUrl
-                                    : null,
-                                birthdayIso: bIso,
-                              );
-                              if (!ctx.mounted) return;
-                              switch (r) {
-                                case JoinFamilyResult.ok:
-                                  final scope = AppSettingsScope.of(context);
-                                  await scope.setAccountProfile(
-                                    name: scope.profileName,
-                                    email: scope.accountEmail,
-                                    birthdayValue: bIso,
-                                  );
-                                  Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                          content: Text(s.joinFamilySuccess)));
-                                  setState(() {});
-                                case JoinFamilyResult.codeTooShort:
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                      SnackBar(
-                                          content:
-                                              Text(s.joinFamilyCodeTooShort)));
-                                case JoinFamilyResult.ownInviteCode:
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                      SnackBar(
-                                          content:
-                                              Text(s.joinFamilyOwnCodeHint)));
-                                case JoinFamilyResult.networkError:
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                      SnackBar(
-                                          content:
-                                              Text(s.joinFamilyNetworkError)));
-                              }
-                            } finally {
-                              if (mounted) setState(() => _busy = false);
-                            }
-                          },
-                    child: Text(s.joinFamilyConfirm),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      builder: (ctx) => _JoinFamilySheet(
+        strings: s,
+        prefill: prefill,
+        authToken: appTok,
+        onJoined: () {
+          if (mounted) setState(() {});
+        },
+        onBusyChanged: (busy) {
+          if (mounted) setState(() => _busy = busy);
+        },
+        isBusy: _busy,
+      ),
     );
-    ctrl.dispose();
   }
 
   Future<void> _openInviteUrlInBrowser(
@@ -258,37 +146,68 @@ class _FamilyScreenState extends State<FamilyScreen> {
     );
   }
 
-  Future<void> _addMemberDialog(BuildContext context, AppStrings s) async {
-    final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(s.familyAddMemberTitle),
-        content: SingleChildScrollView(
-          child: TextField(
-            controller: ctrl,
-            decoration: InputDecoration(
-              labelText: s.familyAddMemberHint,
-              border: const OutlineInputBorder(),
-            ),
-            autofocus: true,
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: Text(s.familyAddMemberSave),
-          ),
-        ],
-      ),
+  Future<void> _showAddMemberSheet(BuildContext context, AppStrings s) async {
+    final name = await TextInputBottomSheet.show(
+      context,
+      title: s.familyAddMemberTitle,
+      label: s.familyAddMemberHint,
+      confirmLabel: s.familyAddMemberSave,
     );
-    if (ok == true && ctrl.text.trim().isNotEmpty) {
-      await FamilyGroupStore.instance.addMemberByName(ctrl.text.trim());
-      setState(() {});
-    }
-    ctrl.dispose();
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    await FamilyGroupStore.instance.addMemberByName(name.trim());
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _showSharedFramesSheet(BuildContext context, AppStrings s) async {
+    await DeviceStore.instance.load();
+    final paired = DeviceStore.instance.cached;
+    final g = FamilyGroupStore.instance;
+    if (!context.mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(s.sharedFrames,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text(s.sharedFramesBody, style: TextStyle(color: cs.onSurfaceVariant, height: 1.4)),
+              const SizedBox(height: 16),
+              if (paired != null)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.photo_outlined, color: cs.primary),
+                  title: Text(paired.listDisplayTitle(s)),
+                  subtitle: Text(paired.deviceId),
+                )
+              else
+                Text(s.notPaired, style: TextStyle(color: cs.onSurfaceVariant)),
+              if (g.cloudSynced && g.members.length > 1) ...[
+                const SizedBox(height: 8),
+                Text(s.familyMembersTitle,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                ...g.members.map(
+                  (m) => Text('• ${m.displayName}', style: TextStyle(color: cs.onSurfaceVariant)),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -629,27 +548,14 @@ class _FamilyScreenState extends State<FamilyScreen> {
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
-                onPressed: () => _addMemberDialog(context, s),
+                onPressed: () => _showAddMemberSheet(context, s),
                 icon: const Icon(Icons.person_add_alt_1, size: 20),
                 label: Text(s.familyAddMemberTitle),
               ),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: () {
-                showDialog<void>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: Text(s.sharedFrames),
-                    content: Text(s.sharedFramesBody),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          child: Text(s.cancel)),
-                    ],
-                  ),
-                );
-              },
+              onPressed: () => _showSharedFramesSheet(context, s),
               icon: const Icon(Icons.devices),
               label: Text(s.sharedFrames),
               style: OutlinedButton.styleFrom(
@@ -657,6 +563,160 @@ class _FamilyScreenState extends State<FamilyScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _JoinFamilySheet extends StatefulWidget {
+  const _JoinFamilySheet({
+    required this.strings,
+    required this.prefill,
+    required this.authToken,
+    required this.onJoined,
+    required this.onBusyChanged,
+    required this.isBusy,
+  });
+
+  final AppStrings strings;
+  final String? prefill;
+  final String authToken;
+  final VoidCallback onJoined;
+  final void Function(bool busy) onBusyChanged;
+  final bool isBusy;
+
+  @override
+  State<_JoinFamilySheet> createState() => _JoinFamilySheetState();
+}
+
+class _JoinFamilySheetState extends State<_JoinFamilySheet> {
+  late final TextEditingController _ctrl;
+  DateTime? _birthdayPick;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.prefill ?? '');
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  String _isoBirthday(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  Future<void> _confirm() async {
+    final s = widget.strings;
+    final raw = _ctrl.text.trim();
+    if (raw.isEmpty) return;
+    if (_birthdayPick == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.joinFamilyBirthdayRequired)),
+      );
+      return;
+    }
+    widget.onBusyChanged(true);
+    try {
+      final norm = FamilyGroupStore.normalizeCode(raw);
+      final bIso = _isoBirthday(_birthdayPick!);
+      final r = await FamilyGroupStore.instance.joinWithCode(
+        raw,
+        labelIfNew: s.joinFamilyDefaultLabel(norm),
+        bearerToken: widget.authToken.isNotEmpty ? widget.authToken : null,
+        apiOrigin: widget.authToken.isNotEmpty ? ApiConfig.baseUrl : null,
+        birthdayIso: bIso,
+      );
+      if (!mounted) return;
+      switch (r) {
+        case JoinFamilyResult.ok:
+          final scope = AppSettingsScope.of(context);
+          await scope.setAccountProfile(
+            name: scope.profileName,
+            email: scope.accountEmail,
+            birthdayValue: bIso,
+          );
+          if (!mounted) return;
+          Navigator.pop(context);
+          widget.onJoined();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(s.joinFamilySuccess)),
+          );
+        case JoinFamilyResult.codeTooShort:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(s.joinFamilyCodeTooShort)),
+          );
+        case JoinFamilyResult.ownInviteCode:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(s.joinFamilyOwnCodeHint)),
+          );
+        case JoinFamilyResult.networkError:
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(s.joinFamilyNetworkError)),
+          );
+      }
+    } finally {
+      widget.onBusyChanged(false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.strings;
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 8,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(s.joinFamilyTitle,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
+          Text(s.joinFamilyBody,
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.4)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ctrl,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: s.joinFamilyHint,
+              border: const OutlineInputBorder(),
+            ),
+            autocorrect: false,
+          ),
+          const SizedBox(height: 12),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(s.joinFamilyBirthdayLabel),
+            subtitle: Text(
+              _birthdayPick == null ? '—' : _isoBirthday(_birthdayPick!),
+            ),
+            trailing: const Icon(Icons.cake_outlined),
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: _birthdayPick ?? DateTime(1990, 6, 15),
+                firstDate: DateTime(1900),
+                lastDate: DateTime.now(),
+              );
+              if (d != null && mounted) setState(() => _birthdayPick = d);
+            },
+          ),
+          const SizedBox(height: 10),
+          FilledButton(
+            onPressed: widget.isBusy ? null : _confirm,
+            child: Text(s.joinFamilyConfirm),
+          ),
+        ],
       ),
     );
   }

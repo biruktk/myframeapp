@@ -47,11 +47,27 @@ class BleFrameScanFilter {
     if (lower.startsWith('ij_')) return true;
     if (lower.startsWith('my_')) return true;
     if (lower.startsWith('mf_')) return true;
+    if (lower.startsWith('yx_')) return true;
+    if (lower.startsWith('yf_')) return true;
+    if (lower.startsWith('ep_')) return true;
+    if (lower.startsWith('eink_')) return true;
+    if (lower.startsWith('frame_')) return true;
     if (lower.startsWith('inkjoy')) return true;
     if (lower.contains('myframe')) return true;
     if (lower.startsWith('3837')) return true;
+    if (lower.startsWith('blufi')) return true;
+    if (lower.startsWith('esp32')) return true;
+    if (lower.startsWith('esp_')) return true;
     if (lower.contains('ink_joy')) return true;
-    if (lower.contains('ink') && lower.contains('joy') && lower.contains('frame')) return true;
+    if (lower.contains('ink') &&
+        lower.contains('joy') &&
+        lower.contains('frame')) {
+      return true;
+    }
+    if (lower.contains('eink') || lower.contains('e-ink')) return true;
+    if (lower.contains('epaper') || lower.contains('e-paper')) return true;
+    if (lower.contains('photo') && lower.contains('frame')) return true;
+    if (lower.contains('digital') && lower.contains('frame')) return true;
     return false;
   }
 

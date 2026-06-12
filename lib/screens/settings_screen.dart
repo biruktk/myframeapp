@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../services/frame_recovery_service.dart';
+import '../navigation/app_routes.dart';
 import '../services/device_store.dart';
+import '../services/frame_forget_service.dart';
+import '../services/frame_mac_util.dart';
 import '../settings/app_settings.dart';
 import 'settings_account_screen.dart';
 import 'settings_notifications_screen.dart';
@@ -10,9 +12,7 @@ import 'settings_language_screen.dart';
 import 'settings_appearance_screen.dart';
 import 'settings_integrations_screen.dart';
 import 'settings_ai_generate_screen.dart';
-import 'settings_ai_silent_mode_screen.dart';
 import 'settings_app_preferences_screen.dart';
-import 'settings_pro_screen.dart';
 import 'settings_help_screen.dart';
 import 'settings_log_screen.dart';
 import 'settings_debug_screen.dart';
@@ -30,9 +30,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   PairedFrame? _paired;
-  bool _reconfiguring = false;
-  bool _sendingAck = false;
-  String? _frameRecoveryStatus;
 
   @override
   void initState() {
@@ -75,42 +72,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await AppSettingsScope.of(context).setSignedIn(value: false);
   }
 
-  Future<void> _reconfigureFrame() async {
+  Future<void> _openFrameConfig() async {
     final paired = _paired;
     if (paired == null) return;
-    setState(() {
-      _reconfiguring = true;
-      _frameRecoveryStatus = null;
-    });
-    try {
-      final msg = await FrameRecoveryService.instance.reconfigureServer(paired);
-      if (!mounted) return;
-      setState(() => _frameRecoveryStatus = msg);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _frameRecoveryStatus = e.toString());
-    } finally {
-      if (mounted) setState(() => _reconfiguring = false);
-    }
+    final mac = DeviceStore.instance.pairedFrameMac ??
+        FrameMacUtil.macFromBleName(paired.bleNamePrefix ?? '') ??
+        FrameMacUtil.normalizeSlug(paired.deviceId);
+    await AppRoutes.openFrameConfig(
+      context,
+      deviceName: paired.bleNamePrefix,
+      mac: mac,
+      bleRemoteId: paired.bleRemoteId,
+    );
+    await _load();
   }
 
-  Future<void> _sendLoginAck() async {
+  Future<void> _forgetFrame() async {
     final paired = _paired;
     if (paired == null) return;
-    setState(() {
-      _sendingAck = true;
-      _frameRecoveryStatus = null;
-    });
-    try {
-      final msg = await FrameRecoveryService.instance.sendLoginAck(paired);
-      if (!mounted) return;
-      setState(() => _frameRecoveryStatus = msg);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _frameRecoveryStatus = e.toString());
-    } finally {
-      if (mounted) setState(() => _sendingAck = false);
-    }
+    final s = AppStrings.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(s.removePairingTitle),
+        content: Text(s.removePairingBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.remove)),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await FrameForgetService.instance.forgetFrame(paired.deviceId);
+    await _load();
   }
 
   @override
@@ -140,89 +134,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
           _SectionLabel(text: s.settingsSectionApplication),
-          Material(
-            color: cs.surface,
-            borderRadius: BorderRadius.circular(16),
-            child: ListTile(
-              onTap: () async {
-                await Navigator.push<void>(
-                  context,
-                  MaterialPageRoute<void>(builder: (_) => const SettingsPairingScreen()),
-                );
-                await _load();
-              },
-              leading: Icon(Icons.bluetooth_connected, color: cs.primary),
-              title: Text(s.framePairing, style: const TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: Text(
-                _paired == null
-                    ? s.scanDeviceBody
-                    : '${_paired!.listDisplayTitle(s)}\n${_paired!.deviceId}${_paired!.apiUrl != null ? '\n${_paired!.apiUrl}' : ''}',
-              ),
-              trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Frame recovery',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Re-send MQTT server settings or a manual login_ack if the frame keeps restarting.',
-                    style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _paired == null || _reconfiguring || _sendingAck ? null : _reconfigureFrame,
-                    icon: _reconfiguring
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('🔧'),
-                    label: const Text('Reconfigure Server'),
-                  ),
-                  const SizedBox(height: 8),
-                  OutlinedButton.icon(
-                    onPressed: _paired == null || _reconfiguring || _sendingAck ? null : _sendLoginAck,
-                    icon: _sendingAck
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Text('📡'),
-                    label: const Text('Send login_ack'),
-                  ),
-                  if (_frameRecoveryStatus != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _frameRecoveryStatus!,
-                      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
           _SettingsRow(
-            icon: Icons.sd_card_outlined,
-            title: s.deviceInfo,
-            subtitle: s.deviceInfoSub,
-            onTap: () {
-              Navigator.push<void>(
+            icon: Icons.bluetooth_connected,
+            title: s.framePairing,
+            subtitle: _paired == null
+                ? s.scanDeviceBody
+                : '${_paired!.listDisplayTitle(s)}\n${_paired!.deviceId}${_paired!.apiUrl != null ? '\n${_paired!.apiUrl}' : ''}',
+            onTap: () async {
+              await Navigator.push<void>(
                 context,
-                MaterialPageRoute<void>(builder: (_) => const DeviceManagementScreen()),
+                MaterialPageRoute<void>(builder: (_) => const SettingsPairingScreen()),
               );
+              await _load();
             },
           ),
           _SettingsRow(
@@ -283,7 +206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsRow(
             icon: Icons.display_settings_outlined,
             title: s.displaySettingsScreenTitle,
-            subtitle: s.displaySettingsIntro,
+            subtitle: s.displaySettingsSub,
             onTap: () {
               Navigator.push<void>(
                 context,
@@ -313,6 +236,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
+          const SizedBox(height: 10),
+          _SectionLabel(text: s.settingsSectionFrame),
+          Material(
+            color: cs.surface,
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Icon(Icons.settings_input_component_outlined, color: cs.primary),
+                  title: Text(s.settingsReconfigureFrameTitle),
+                  subtitle: Text(s.settingsReconfigureFrameSub),
+                  trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
+                  onTap: _paired == null ? null : _openFrameConfig,
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: Icon(Icons.delete_outline, color: cs.error),
+                  title: Text(s.settingsForgetFrameTitle),
+                  subtitle: Text(s.settingsForgetFrameSub),
+                  onTap: _paired == null ? null : _forgetFrame,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _SettingsRow(
+            icon: Icons.sd_card_outlined,
+            title: s.deviceInfo,
+            subtitle: s.deviceInfoSub,
+            onTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(builder: (_) => const DeviceManagementScreen()),
+              );
+            },
+          ),
           _SectionLabel(text: s.settingsSectionAi),
           _SettingsRow(
             icon: Icons.auto_awesome,
@@ -328,11 +287,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsRow(
             icon: Icons.notifications_paused_outlined,
             title: s.aiSilentModeTitle,
-            subtitle: s.aiSilentIntro,
+            subtitle: s.comingSoonLabel,
             onTap: () {
-              Navigator.push<void>(
-                context,
-                MaterialPageRoute<void>(builder: (_) => const SettingsAiSilentModeScreen()),
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(s.aiSilentModeComingSoon)),
               );
             },
           ),
@@ -348,29 +306,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
-          _SettingsRow(
-            icon: Icons.workspace_premium,
-            title: s.plansAndStorageTitle,
-            subtitle: s.plansAndStorageSub,
-            onTap: () {
-              Navigator.push<void>(
-                context,
-                MaterialPageRoute<void>(builder: (_) => const SettingsProScreen()),
-              );
-            },
-            trailing: const _PlansProBadge(),
-          ),
-          _SettingsRow(
-            icon: Icons.receipt_long_outlined,
-            title: s.operationLog,
-            subtitle: s.operationLogSub,
-            onTap: () {
-              Navigator.push<void>(
-                context,
-                MaterialPageRoute<void>(builder: (_) => const SettingsLogScreen()),
-              );
-            },
-          ),
+          if (app.debugModeEnabled)
+            _SettingsRow(
+              icon: Icons.receipt_long_outlined,
+              title: s.operationLog,
+              subtitle: s.operationLogSub,
+              onTap: () {
+                Navigator.push<void>(
+                  context,
+                  MaterialPageRoute<void>(builder: (_) => const SettingsLogScreen()),
+                );
+              },
+            ),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -465,30 +412,3 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-/// Same purple PRO pill as `badge-pro` in the HTML mock.
-class _PlansProBadge extends StatelessWidget {
-  const _PlansProBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        gradient: const LinearGradient(
-          colors: [Color(0xFFAF52DE), Color(0xFF6B4EE6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: const Text(
-        'PRO',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: Colors.white,
-        ),
-      ),
-    );
-  }
-}

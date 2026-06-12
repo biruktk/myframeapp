@@ -20,7 +20,7 @@ class GoogleAuthConfig {
     defaultValue: _defaultWebClientId,
   );
 
-  /// iOS OAuth client ID (type: iOS application).
+  /// iOS OAuth client ID (type: iOS application). Never pass this on Android.
   static const String iosClientId = String.fromEnvironment(
     'GOOGLE_IOS_CLIENT_ID',
     defaultValue: _defaultIosClientId,
@@ -28,4 +28,7 @@ class GoogleAuthConfig {
 
   static bool get hasServerClientId => serverClientId.trim().isNotEmpty;
   static bool get hasIosClientId => iosClientId.trim().isNotEmpty;
+
+  /// Android package registered in Google Cloud Console OAuth client.
+  static const String androidPackageName = 'com.myframe.minyuex';
 }

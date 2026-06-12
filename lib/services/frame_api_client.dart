@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../config/vps_defaults.dart';
 
 class FrameApiClient {
   FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 90)})
@@ -23,8 +24,10 @@ class FrameApiClient {
     required String deviceId,
     String? baseUrlOverride,
     String? slideshowStyle,
+    int? displaySeconds,
     String? transport,
     String? pairingToken,
+    String? userAuthToken,
     Duration? timeout,
   }) async {
     final checksum = sha256.convert(fileBytes).toString();
@@ -41,6 +44,8 @@ class FrameApiClient {
             ..fields['size'] = '${fileBytes.length}'
             ..fields.addAll({
               if (slideshowStyle != null && slideshowStyle.isNotEmpty) 'slideshow_style': slideshowStyle,
+              if (displaySeconds != null && displaySeconds > 0)
+                'display_seconds': '$displaySeconds',
               if (transport != null && transport.isNotEmpty) 'transport': transport,
             })
             ..files.add(
@@ -52,6 +57,10 @@ class FrameApiClient {
             );
           if (pairingToken != null && pairingToken.trim().isNotEmpty) {
             request.headers['x-pairing-token'] = pairingToken.trim();
+          }
+          final bearer = userAuthToken?.trim() ?? '';
+          if (bearer.isNotEmpty) {
+            request.headers['Authorization'] = 'Bearer $bearer';
           }
 
           final streamed = await _http.send(request).timeout(
@@ -118,6 +127,44 @@ class FrameApiClient {
     throw Exception('Status check failed after retries: $lastErr');
   }
 
+  /// GET `/api/frames/:mac/status` — MQTT/display confirmation (works when
+  /// `delivery-status` never flips `delivered_to_frame` on iOS uploads).
+  Future<FrameCastStatusResponse> getFrameCastStatus({
+    required String mac,
+    String? baseUrlOverride,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length < 12) {
+      throw ArgumentError('Frame MAC must be 12 hex digits');
+    }
+    final slug = cleanMac.substring(cleanMac.length - 12);
+    final t = timeout ?? const Duration(seconds: 8);
+    Object? lastErr;
+    for (final base in _frameStatusCandidateBases(baseUrlOverride)) {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          final uri = Uri.parse('$base/api/frames/$slug/status');
+          final res = await _http
+              .get(uri)
+              .timeout(t, onTimeout: () => throw TimeoutException('GET /api/frames/$slug/status', t));
+          if (res.statusCode != 200) {
+            throw FrameApiException(res.statusCode, res.body);
+          }
+          return FrameCastStatusResponse.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+        } catch (e) {
+          lastErr = e;
+          if (!_isTransient(e) || attempt == 1) break;
+          await Future<void>.delayed(Duration(milliseconds: 250 * (1 << attempt)));
+        }
+      }
+    }
+    if (lastErr is FrameApiException) throw lastErr;
+    if (lastErr is TimeoutException) throw lastErr;
+    if (lastErr is SocketException) throw lastErr;
+    throw Exception('Frame status failed after retries: $lastErr');
+  }
+
   Future<DeliveryStatusResponse> getDeliveryStatus({
     required String checksumSha256,
     required String deviceId,
@@ -169,6 +216,14 @@ class FrameApiClient {
 
   static List<String> _candidateBases(String? override) {
     return [_base(override)];
+  }
+
+  /// Status/upload paths on `https://myframe.ink` (nginx), then LAN/IP fallback.
+  static List<String> _frameStatusCandidateBases(String? override) {
+    final primary = _base(override);
+    // Flutter uploads use VPS IP :3001 — poll status on the same host first.
+    if (primary.contains(VpsDefaults.host)) return [primary];
+    return [primary, VpsDefaults.apiBase.replaceAll(RegExp(r'/+$'), '')];
   }
 
   static bool _isTransient(Object e) {
@@ -237,6 +292,102 @@ class FrameApiException implements Exception {
   String toString() => 'FrameApiException($statusCode): $body';
 }
 
+class FrameCastStatusResponse {
+  FrameCastStatusResponse({
+    required this.ok,
+    this.online,
+    this.mqttConnected,
+    this.frameMqttLive,
+    this.displayed,
+    this.lastAction,
+    this.lastSeenMs,
+    this.lastUploadMs,
+    this.result,
+    this.displayCode,
+  });
+
+  final bool ok;
+  final bool? online;
+  final bool? mqttConnected;
+  final bool? frameMqttLive;
+  final bool? displayed;
+  final String? lastAction;
+  final int? lastSeenMs;
+  final int? lastUploadMs;
+  final int? result;
+  final int? displayCode;
+
+  factory FrameCastStatusResponse.fromJson(Map<String, dynamic> json) {
+    int? asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse('$v');
+    }
+
+    return FrameCastStatusResponse(
+      ok: json['ok'] as bool? ?? false,
+      online: json['online'] as bool?,
+      mqttConnected: json['mqtt_connected'] as bool?,
+      frameMqttLive: json['frame_mqtt_live'] as bool?,
+      displayed: json['displayed'] as bool?,
+      lastAction: json['lastAction'] as String? ?? json['last_action'] as String?,
+      lastSeenMs: asInt(json['last_seen_ms']),
+      lastUploadMs: asInt(json['last_upload_ms']),
+      result: asInt(json['result'] ?? json['lastResult'] ?? json['displayCode']),
+      displayCode: asInt(json['displayCode']),
+    );
+  }
+
+  /// Frame recently reported on MQTT (login/heart/play), not only API broker flag.
+  bool isFrameMqttReady({int? provisionStartedMs}) {
+    if (!ok) return false;
+    if (mqttConnected == true || frameMqttLive == true) return true;
+    final seen = lastSeenMs;
+    if (seen == null) return false;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final fresh = provisionStartedMs != null
+        ? seen >= provisionStartedMs - 60000
+        : seen >= now - 120000;
+    if (!fresh || online != true) return false;
+    final action = (lastAction ?? '').toLowerCase();
+    if (action == 'login' ||
+        action == 'heart' ||
+        action == 'play_ack' ||
+        action == 'play') {
+      return true;
+    }
+    final code = result ?? displayCode;
+    return code == 113 || code == 184;
+  }
+
+  /// True only when this upload produced a **new** frame play_ack (not stale state).
+  ///
+  /// [baselineLastUploadMs] is `/api/frames/:mac/status` `last_upload_ms` captured
+  /// before POST /api/photo/upload — required so a previous `displayed: true` does
+  /// not close the editor early on iOS.
+  bool confirmsCastSince(
+    int uploadStartedMs, {
+    int? baselineLastUploadMs,
+  }) {
+    if (!ok) return false;
+    final ts = lastUploadMs;
+    if (ts == null) return false;
+    if (baselineLastUploadMs != null && ts <= baselineLastUploadMs) {
+      return false;
+    }
+    if (ts < uploadStartedMs - 3000) return false;
+
+    if (displayed == true) return true;
+
+    // play_ack or firmware result codes mean the panel actually refreshed.
+    final action = (lastAction ?? '').toLowerCase();
+    if (action == 'play_ack') return true;
+    final code = result ?? displayCode;
+    if (code == 113 || code == 184) return true;
+    return false;
+  }
+}
+
 class DeliveryStatusResponse {
   DeliveryStatusResponse({
     required this.ok,
@@ -257,5 +408,27 @@ class DeliveryStatusResponse {
       deliveredToFrame: json['delivered_to_frame'] as bool? ?? false,
       deliveryMode: json['delivery_mode'] as String?,
     );
+  }
+}
+
+extension PhotoUploadSlideshowId on PhotoUploadResponse {
+  /// Key for `POST /api/frames/:mac/slideshow` — prefer unique MYFM `.bin` basename
+  /// (checksum can collide when uploads share the same JPEG hash).
+  String? get vpsSlideshowImageId {
+    final basename = framePlayBasename?.trim();
+    if (basename != null && basename.isNotEmpty) return basename;
+    final stored = storedPath?.trim();
+    if (stored != null && stored.isNotEmpty) {
+      final segment = stored.split('/').last.trim();
+      if (segment.isNotEmpty) return segment;
+    }
+    final url = imageUrl?.trim();
+    if (url != null && url.isNotEmpty) {
+      final segment = url.split('/').last.trim();
+      if (segment.isNotEmpty) return Uri.decodeComponent(segment);
+    }
+    final checksum = checksumSha256?.trim();
+    if (checksum != null && checksum.isNotEmpty) return checksum;
+    return null;
   }
 }

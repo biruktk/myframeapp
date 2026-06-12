@@ -16,8 +16,6 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
   late ThemeMode _mode;
   late SlideshowStyle _slideshow;
   late bool _updates;
-  late bool _sms2fa;
-  final TextEditingController _keyCtrl = TextEditingController();
   var _loaded = false;
 
   @override
@@ -28,25 +26,12 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
     _mode = a.themeMode;
     _slideshow = a.defaultSlideshowStyle;
     _updates = a.automaticFrameFirmwareUpdates;
-    _sms2fa = a.sms2faEnabled;
-    _keyCtrl.text = a.aiApiKey;
     _loaded = true;
   }
 
-  @override
-  void dispose() {
-    _keyCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _persist() async {
+  Future<void> _persistThemeAndUpdates() async {
     final app = AppSettingsScope.of(context);
-    await app.setAppPreferences(
-      mode: _mode,
-      updates: _updates,
-      apiKey: _keyCtrl.text,
-      sms2fa: _sms2fa,
-    );
+    await app.setAppPreferences(mode: _mode, updates: _updates);
   }
 
   @override
@@ -79,7 +64,7 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
                     onChanged: (v) {
                       if (v == null) return;
                       setState(() => _mode = v);
-                      _persist();
+                      _persistThemeAndUpdates();
                     },
                   ),
                 ],
@@ -137,7 +122,7 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
                 value: _updates,
                 onChanged: (v) {
                   setState(() => _updates = v);
-                  _persist();
+                  _persistThemeAndUpdates();
                 },
               ),
             ),
@@ -165,56 +150,6 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
             },
             title: Text(s.comfortMode),
             subtitle: Text(s.comfortModeSubtitle),
-          ),
-          const SizedBox(height: 12),
-          Text(s.prefsSectionAiSecurity, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(s.prefsAiApiKeyLabel, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
-                  const SizedBox(height: 8),
-                  Text(s.prefsAiSupportedLlmsIntro, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, height: 1.4)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _keyCtrl,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  FilledButton.icon(
-                    onPressed: () async {
-                      await _persist();
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(s.saveLabel)),
-                      );
-                    },
-                    icon: const Icon(Icons.key),
-                    label: Text(s.prefsSaveApiKey),
-                  ),
-                  const SizedBox(height: 8),
-                  _PrefRow(
-                    icon: Icons.sms_outlined,
-                    title: s.prefsSms2faTitle,
-                    subtitle: s.prefsSms2faSub,
-                    trailing: Switch.adaptive(
-                      value: _sms2fa,
-                      onChanged: (v) {
-                        setState(() => _sms2fa = v);
-                        _persist();
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
         ],
       ),

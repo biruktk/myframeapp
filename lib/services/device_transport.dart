@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'app_diag_log.dart';
 import 'slideshow_style.dart';
 import 'transport_kind.dart';
 
@@ -64,12 +65,10 @@ class MockDeviceTransport implements DeviceTransport {
     );
     _controller.add(FrameConnectionState.connected);
     await Future<void>.delayed(const Duration(milliseconds: 250));
-    if (kDebugMode) {
-      debugPrint(
-        '[MyFrame] send ${bytes.length}B via ${transport.label} '
-        'slideshow=${slideshow.apiValue} file=$filename',
-      );
-    }
+    AppDiagLog.verbose(
+      '[MyFrame] send ${bytes.length}B via ${transport.label} '
+      'slideshow=${slideshow.apiValue} file=$filename',
+    );
     if (transport == TransportKind.bluetooth) {
       return SendResult(ok: true, message: 'BLE queued (${bytes.length} bytes)');
     }

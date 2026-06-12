@@ -4,7 +4,11 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../config/myframe_product_config.dart';
 import '../l10n/app_strings.dart';
 import '../models/pairing_payload.dart';
+import '../models/pairing_nav_result.dart';
+import '../services/app_release_guard.dart';
 import '../services/device_store.dart';
+import '../services/pairing_mqtt_presetup.dart';
+import '../navigation/pairing_flow_nav.dart';
 import 'wifi_provision_screen.dart';
 
 /// Scan the QR shown on the frame display to capture [deviceId] + optional LAN [apiUrl].
@@ -50,12 +54,36 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
       _error = null;
     });
 
+    try {
+      await _pairFromPayload(payload);
+    } catch (e, st) {
+      AppReleaseGuard.onUncaughtError(e, st);
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = 'Pairing failed. Try again.';
+      });
+    }
+  }
+
+  Future<void> _pairFromPayload(PairingPayload payload) async {
     await _store.saveFromPayload(payload);
-    final wifiOk = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const WifiProvisionScreen()),
+    final serverConfigSent = await PairingMqttPresetup.sendDefaultBrokerBeforeWifi();
+    if (!mounted) return;
+    final wifiResult = await SafeNav.push<PairingNavResult>(
+      context,
+      MaterialPageRoute<PairingNavResult>(
+        builder: (_) => WifiProvisionScreen(
+          firstTimeSetup: true,
+          serverConfigAlreadySent: serverConfigSent,
+        ),
+      ),
     );
     if (!mounted) return;
-    Navigator.of(context).pop(wifiOk ?? true);
+    final result = wifiResult ?? const PairingNavResult(success: false);
+    await SafeNav.popPairingResult(context, result: result);
+    PairingFlowNav.onComplete(result);
+    if (mounted) setState(() => _busy = false);
   }
 
   @override

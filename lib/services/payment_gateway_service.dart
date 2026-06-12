@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'app_diag_log.dart';
 
 /// Payment gateway scaffold — **not live**. Wire StoreKit / Play Billing / Stripe here.
 class PaymentGatewayService {
@@ -20,9 +21,9 @@ class PaymentGatewayService {
 
   Future<void> initialize() async {
     if (_initialized) return;
-    if (kDebugMode) {
-      debugPrint('[PaymentGateway] scaffold only — PAYMENTS_ENABLED=$paymentsEnabled');
-    }
+    
+      AppDiagLog.verbose('[PaymentGateway] scaffold only — PAYMENTS_ENABLED=$paymentsEnabled');
+    
     _initialized = true;
   }
 

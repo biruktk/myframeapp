@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/pairing_nav_result.dart';
+import '../navigation/pairing_flow_nav.dart';
 import '../screens/device_discovery_screen.dart';
 import '../services/device_store.dart';
 import 'shell_navigation.dart';
@@ -45,10 +47,14 @@ void showWifiConnectionInfo(BuildContext context) {
             OutlinedButton(
               onPressed: () {
                 Navigator.pop(ctx);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (context.mounted) {
-                    Navigator.push<void>(context, MaterialPageRoute<void>(builder: (_) => const DeviceDiscoveryScreen()));
-                  }
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  if (!context.mounted) return;
+                  final result = await Navigator.of(context).push<PairingNavResult>(
+                    MaterialPageRoute<PairingNavResult>(
+                      builder: (_) => const DeviceDiscoveryScreen(),
+                    ),
+                  );
+                  PairingFlowNav.onComplete(result);
                 });
               },
               child: Text(s.scanDeviceTitle),

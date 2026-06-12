@@ -2,76 +2,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/faq_item.dart';
 import '../services/faq_service.dart';
 
-class SettingsHelpScreen extends StatefulWidget {
+class SettingsHelpScreen extends StatelessWidget {
   const SettingsHelpScreen({super.key});
 
-  @override
-  State<SettingsHelpScreen> createState() => _SettingsHelpScreenState();
-}
-
-class _SettingsHelpScreenState extends State<SettingsHelpScreen> {
-  final _faq = FaqService();
+  static final _faq = FaqService();
 
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
+    final items = _faq.localizedFaqs(s);
     return Scaffold(
       appBar: AppBar(title: Text(s.helpSupportTitle)),
-      body: FutureBuilder<List<FaqItem>>(
-        future: _faq.fetchFaqs(),
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return Center(child: Text(s.loadingEllipsis));
-          }
-          if (snap.hasError) {
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Text(
-                  s.faqUnavailableTitle,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-                ),
-                const SizedBox(height: 8),
-                Text(s.faqUnavailableBody),
-                const SizedBox(height: 20),
-                _ContactCard(s: s, cs: cs),
-              ],
-            );
-          }
-          final items = snap.data ?? const <FaqItem>[];
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                s.faqSectionTitle,
-                style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 15),
-              ),
-              const SizedBox(height: 6),
-              if (items.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(s.noFaqEntries),
-                )
-              else
-                ...items.map(
-                  (e) => _FaqItem(
-                    q: e.question,
-                    a: e.answer,
-                  ),
-                ),
-              const SizedBox(height: 20),
-              Text(
-                s.helpContactUs,
-                style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 15),
-              ),
-              const SizedBox(height: 6),
-              _ContactCard(s: s, cs: cs),
-            ],
-          );
-        },
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            s.faqSectionTitle,
+            style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 15),
+          ),
+          const SizedBox(height: 6),
+          ...items.map(
+            (e) => _FaqItem(
+              q: e.question,
+              a: e.answer,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            s.helpContactUs,
+            style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 15),
+          ),
+          const SizedBox(height: 6),
+          _ContactCard(s: s, cs: cs),
+        ],
       ),
     );
   }

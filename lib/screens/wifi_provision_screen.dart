@@ -1,21 +1,42 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
+import '../models/pairing_nav_result.dart';
 import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
+import '../services/frame_cloud_cast_service.dart';
 import '../services/frame_recovery_service.dart';
 import '../services/wifi_credential_cache.dart';
 import 'frame_profile_setup_screen.dart';
+import '../services/permission_gate.dart';
+import '../navigation/pairing_flow_nav.dart';
+import '../services/app_diag_log.dart';
+import '../services/app_release_guard.dart';
+import '../settings/app_settings.dart';
+import '../widgets/debug_slog_overlay.dart';
 
 class WifiProvisionScreen extends StatefulWidget {
-  const WifiProvisionScreen({super.key});
+  const WifiProvisionScreen({
+    super.key,
+    this.firstTimeSetup = false,
+    this.serverConfigAlreadySent = false,
+    this.openSendAfterSetup = true,
+  });
+
+  /// First-time pairing: profile setup + open Send gallery after success.
+  final bool firstTimeSetup;
+
+  /// When mqtt_config was already sent in an earlier BLE session (EspBlufi order).
+  final bool serverConfigAlreadySent;
+
+  /// When false, caller handles navigation (e.g. image editor upload).
+  final bool openSendAfterSetup;
 
   @override
   State<WifiProvisionScreen> createState() => _WifiProvisionScreenState();
@@ -136,7 +157,11 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       _status = null;
     });
     try {
-      await Permission.locationWhenInUse.request();
+      await PermissionGate.locationWhenInUse();
+      final loc = await Permission.locationWhenInUse.status;
+      if (!loc.isGranted && !loc.isLimited) {
+        await PermissionGate.enqueueLocationCoarse();
+      }
       final info = await _nativeBleMethod.invokeMethod<Map<dynamic, dynamic>>('getWifiInfo');
       final wifiEnabled = info?['enabled'] == true;
       final currentSsid = normalizeWifiSsid(info?['ssid']?.toString() ?? '');
@@ -149,7 +174,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         });
         return;
       }
-      if (kDebugMode) debugPrint('[WiFi] scan start');
+      AppDiagLog.verbose('[WiFi] scan start');
       final raw = await _nativeBleMethod.invokeMethod<List<dynamic>>('scanWifiNetworks') ?? <dynamic>[];
       final parsed = <({String ssid, int rssi, bool secure})>[];
       for (final item in raw) {
@@ -188,7 +213,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           _showManualEntry = true;
         }
       });
-      if (kDebugMode) debugPrint('[WiFi] scan done count=${parsed.length}');
+      AppDiagLog.verbose('[WiFi] scan done count=${parsed.length}');
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -251,6 +276,22 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   }
 
   Future<void> _connect() async {
+    try {
+      await _connectInner();
+    } catch (e, st) {
+      AppDiagLog.verbose('[WiFi] connect failed: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _status = AppDiagLog.userFacingStatus(
+          e.toString(),
+          fallback: 'Wi‑Fi setup failed. Please try again.',
+        );
+      });
+    }
+  }
+
+  Future<void> _connectInner() async {
     final paired = DeviceStore.instance.cached;
     final currentSsid = normalizeWifiSsid(_ssidCtrl.text);
     final knownSsid = paired?.wifiSsid;
@@ -276,19 +317,17 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       _status = null;
     });
     if (paired == null) {
-      if (kDebugMode) debugPrint('[WiFi] connect aborted: no paired frame in DeviceStore');
+      AppDiagLog.verbose('[WiFi] connect aborted: no paired frame in DeviceStore');
       setState(() {
         _busy = false;
         _status = 'No paired frame selected';
       });
       return;
     }
-    if (kDebugMode) {
-      debugPrint(
-        '[WiFi] connect start ssid="${_ssidCtrl.text.trim()}" pwdLen=${effectivePassword.length} '
-        'paired deviceId=${paired.deviceId} bleRemoteId=${paired.bleRemoteId} bleNamePrefix=${paired.bleNamePrefix}',
-      );
-    }
+    AppDiagLog.verbose(
+      '[WiFi] connect start ssid="${_ssidCtrl.text.trim()}" pwdLen=${effectivePassword.length} '
+      'paired deviceId=${paired.deviceId} bleRemoteId=${paired.bleRemoteId} bleNamePrefix=${paired.bleNamePrefix}',
+    );
     final mqHost = _mqttHostCtrl.text.trim();
     final mqPort = int.tryParse(_mqttPortCtrl.text.trim()) ?? 1883;
     await DeviceStore.instance.saveSelfHostedMqtt(
@@ -310,25 +349,51 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       ssid: _ssidCtrl.text.trim(),
       password: effectivePassword,
       selfHostedMqtt: selfHostedMqtt,
+      serverConfigAlreadySent: widget.serverConfigAlreadySent,
     );
-    if (kDebugMode) {
-      debugPrint(
-        '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}"',
-      );
-    }
+    AppDiagLog.verbose(
+      '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}"',
+    );
     if (!mounted) return;
     if (!provision.ok || !provision.confirmed) {
       setState(() {
         _busy = false;
-        _status = provision.message;
+        _status = AppDiagLog.userFacingStatus(
+          provision.message,
+          fallback: 'Could not connect the frame to Wi‑Fi. Try again.',
+        );
       });
       return;
     }
-    if (kDebugMode) debugPrint('[WiFi] frame confirmed Wi‑Fi — saving SSID, opening profile setup…');
+    AppDiagLog.verbose('[WiFi] frame confirmed Wi‑Fi — saving SSID, opening profile setup…');
     await DeviceStore.instance.saveWifiProvision(
       ssid: _ssidCtrl.text,
       password: effectivePassword,
     );
+    final updatedPairing = await DeviceStore.instance.load();
+    if (widget.firstTimeSetup && updatedPairing != null) {
+      setState(() => _status = 'Connecting frame to server…');
+      await FrameCloudCastService.instance.waitUntilFrameReady(
+        paired: updatedPairing,
+        timeout: const Duration(seconds: 45),
+        onStatus: (line) {
+          if (mounted) {
+            setState(() => _status = AppDiagLog.userFacingStatus(
+                  line,
+                  fallback: 'Connecting frame to server…',
+                ));
+          }
+        },
+      );
+      for (var i = 0; i < 2; i++) {
+        try {
+          await FrameRecoveryService.instance.sendLoginAck(updatedPairing);
+        } catch (e) {
+          AppDiagLog.verbose('[WiFi] post-provision login_ack failed: $e');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+      }
+    }
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -336,12 +401,29 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     });
     await Future<void>.delayed(const Duration(milliseconds: 450));
     if (!mounted) return;
-    final nav = Navigator.of(context);
-    final profileOk = await nav.push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const FrameProfileSetupScreen()),
+
+    final profileOk = await SafeNav.push<bool>(
+      context,
+      MaterialPageRoute<bool>(
+        builder: (_) => FrameProfileSetupScreen(
+          requiredSetup: widget.firstTimeSetup,
+        ),
+      ),
     );
     if (!mounted) return;
-    nav.pop(profileOk == true);
+    if (widget.firstTimeSetup) {
+      final openSend = profileOk == true && widget.openSendAfterSetup;
+      final result = PairingNavResult(
+        success: profileOk == true,
+        openSendGallery: openSend,
+      );
+      await SafeNav.popAfterFrame<PairingNavResult>(context, result: result);
+      if (openSend) {
+        PairingFlowNav.onComplete(result);
+      }
+      return;
+    }
+    await SafeNav.popAfterFrame<bool>(context, result: profileOk == true);
   }
 
   Future<void> _reconfigureServer({required bool resetLabel}) async {
@@ -357,10 +439,13 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     try {
       final msg = await FrameRecoveryService.instance.reconfigureServer(paired);
       if (!mounted) return;
-      setState(() => _status = msg);
+      setState(() => _status = AppDiagLog.userFacingStatus(msg));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _status = e.toString());
+      setState(() => _status = AppDiagLog.userFacingStatus(
+            e.toString(),
+            fallback: 'Could not reach the frame. Stay nearby and try again.',
+          ));
     } finally {
       if (mounted) setState(() => _recoveryBusy = false);
     }
@@ -379,10 +464,13 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     try {
       final msg = await FrameRecoveryService.instance.sendLoginAck(paired);
       if (!mounted) return;
-      setState(() => _status = msg);
+      setState(() => _status = AppDiagLog.userFacingStatus(msg));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _status = e.toString());
+      setState(() => _status = AppDiagLog.userFacingStatus(
+            e.toString(),
+            fallback: 'Could not reach the frame. Stay nearby and try again.',
+          ));
     } finally {
       if (mounted) setState(() => _recoveryBusy = false);
     }
@@ -412,9 +500,11 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
+    final debugOn = AppSettingsScope.of(context).debugModeEnabled;
     final showFormFields = _showManualEntry || Platform.isIOS || _wifiNetworks.isEmpty;
 
-    return Scaffold(
+    return DebugSlogOverlay(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(s.wifiSetupTitle),
         actions: [
@@ -626,33 +716,47 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                         label: Text(_busy ? s.connectingWifi : s.connectWifiButton),
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _busy || _recoveryBusy ? null : () => _reconfigureServer(resetLabel: true),
-                        icon: _recoveryBusy
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Text('🔧'),
-                        label: const Text('Reset & Reconfigure'),
+                    if (debugOn) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _busy || _recoveryBusy
+                              ? null
+                              : () => _reconfigureServer(resetLabel: true),
+                          icon: _recoveryBusy
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('🔧'),
+                          label: const Text('Reset & Reconfigure'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _busy || _recoveryBusy ? null : _sendLoginAck,
-                        icon: const Text('📡'),
-                        label: const Text('Send login_ack'),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _busy || _recoveryBusy ? null : _sendLoginAck,
+                          icon: const Text('📡'),
+                          label: const Text('Send login_ack'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                      const SizedBox(height: 8),
+                    ],
                     TextButton(
-                      onPressed: _busy || _recoveryBusy ? null : () => Navigator.of(context).pop(false),
+                      onPressed: _busy || _recoveryBusy
+                          ? null
+                          : () {
+                              if (widget.firstTimeSetup) {
+                                Navigator.of(context).pop(
+                                  const PairingNavResult(success: false),
+                                );
+                              } else {
+                                Navigator.of(context).pop(false);
+                              }
+                            },
                       child: Text(s.skipForNow),
                     ),
                   ],
@@ -662,6 +766,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 }

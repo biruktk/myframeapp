@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'wifi_credential_cache.dart';
@@ -8,12 +9,18 @@ import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
 import '../models/pairing_payload.dart';
+import 'frame_mac_util.dart';
 
 /// Persisted pairing(s): multiple frames in JSON + legacy keys mirroring the **active** frame.
 class DeviceStore {
   DeviceStore._();
 
   static final DeviceStore instance = DeviceStore._();
+
+  /// Bumped when paired frames are added, removed, or cleared — Home listens to refresh.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  void _bumpRevision() => revision.value++;
 
   static const _kFramesJson = 'paired_frames_json_v1';
   static const _kActiveDeviceId = 'paired_active_device_id_v1';
@@ -37,7 +44,11 @@ class DeviceStore {
   static const _kMqttUser = 'paired_mqtt_user';
   static const _kMqttPass = 'paired_mqtt_pass';
 
+  /// Same key as WeChat mini program (`wx.setStorageSync('pairedFrameMac', mac)`).
+  static const kPairedFrameMac = 'pairedFrameMac';
+
   List<PairedFrame> _frames = [];
+  String? _pairedFrameMac;
   String? _activeDeviceId;
 
   int _indexOf(String deviceId) {
@@ -47,6 +58,11 @@ class DeviceStore {
 
   /// Frames shown on **My Frames** (order preserved).
   List<PairedFrame> get pairedFrames => List.unmodifiable(_frames);
+
+  /// 12-hex MAC from BLE name (`IJ_…`) for `/api/frames/:mac/*` — never hardcode.
+  String? get pairedFrameMac => _pairedFrameMac?.trim().isNotEmpty == true
+      ? _pairedFrameMac!.trim().toUpperCase()
+      : null;
 
   /// Active frame used by Send, editor, Wi‑Fi setup, etc.
   PairedFrame? get cached {
@@ -62,16 +78,33 @@ class DeviceStore {
 
   Future<PairedFrame?> load() async {
     final p = await SharedPreferences.getInstance();
+    final rawMac = p.getString(kPairedFrameMac)?.trim();
+    if (rawMac != null && rawMac.isNotEmpty) {
+      final bare = rawMac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+      if (bare.length >= 12) {
+        final twelve = bare.length == 12 ? bare : bare.substring(bare.length - 12);
+        final fixed = PairedFrame.preferEsp32WifiStationMac(twelve) ?? twelve;
+        _pairedFrameMac = fixed;
+        if (fixed != twelve) {
+          await p.setString(kPairedFrameMac, fixed);
+        }
+      }
+    }
     final bundle = p.getString(_kFramesJson);
     if (bundle != null && bundle.isNotEmpty) {
       try {
         final decoded = jsonDecode(bundle);
         if (decoded is List && decoded.isNotEmpty) {
           _frames = decoded
-              .map((e) => PairedFrame.fromJson(Map<String, dynamic>.from(e as Map)))
+              .map(
+                (e) =>
+                    PairedFrame.fromJson(Map<String, dynamic>.from(e as Map)),
+              )
               .toList();
           _activeDeviceId = p.getString(_kActiveDeviceId)?.trim();
-          if (_activeDeviceId == null || _activeDeviceId!.isEmpty || _indexOf(_activeDeviceId!) < 0) {
+          if (_activeDeviceId == null ||
+              _activeDeviceId!.isEmpty ||
+              _indexOf(_activeDeviceId!) < 0) {
             _activeDeviceId = _frames.first.deviceId;
           }
           final a = cached;
@@ -93,7 +126,10 @@ class DeviceStore {
     final f = _readLegacyAsFrame(p, id);
     _frames = [f];
     _activeDeviceId = id;
-    await p.setString(_kFramesJson, jsonEncode(_frames.map((e) => e.toJson()).toList()));
+    await p.setString(
+      _kFramesJson,
+      jsonEncode(_frames.map((e) => e.toJson()).toList()),
+    );
     await p.setString(_kActiveDeviceId, id);
     return cached;
   }
@@ -133,25 +169,77 @@ class DeviceStore {
     if (a != null) await _writeLegacyFromFrame(p, a);
   }
 
-  Future<void> removePairedFrame(String deviceId) async {
+  /// Removes one frame and all persisted data tied to it (slideshow, MAC, legacy keys).
+  Future<void> forgetPairedFrame(String deviceId) async {
     await load();
     final id = deviceId.trim();
     if (id.isEmpty) return;
+
+    PairedFrame? removed;
+    for (final f in _frames) {
+      if (f.deviceId.trim() == id) {
+        removed = f;
+        break;
+      }
+    }
+    if (removed == null) return;
+
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_slideshowPrefsKey(_macSlugForFrame(removed)));
+
     _frames.removeWhere((e) => e.deviceId.trim() == id);
+
     if (_frames.isEmpty) {
       await clear();
       return;
     }
-    if (_activeDeviceId == null || _activeDeviceId!.trim() == id || _indexOf(_activeDeviceId!) < 0) {
+
+    if (_activeDeviceId == null ||
+        _activeDeviceId!.trim() == id ||
+        _indexOf(_activeDeviceId!) < 0) {
       _activeDeviceId = _frames.first.deviceId;
     }
+
+    final active = cached;
+    if (active != null) {
+      final mac = FrameMacUtil.macFromBleIdentity(
+        bleName: active.bleNamePrefix,
+        fallbackText: active.deviceId,
+      );
+      if (mac != null) {
+        await savePairedFrameMac(mac);
+      } else {
+        _pairedFrameMac = null;
+        await p.remove(kPairedFrameMac);
+      }
+    } else {
+      _pairedFrameMac = null;
+      await p.remove(kPairedFrameMac);
+    }
+
     await _persistAll();
+    _bumpRevision();
+  }
+
+  Future<void> removePairedFrame(String deviceId) =>
+      forgetPairedFrame(deviceId);
+
+  static String _slideshowPrefsKey(String macSlug) =>
+      'slideshow_playlist_$macSlug';
+
+  String _macSlugForFrame(PairedFrame f) {
+    if (_pairedFrameMac != null && _pairedFrameMac!.length == 12) {
+      return _pairedFrameMac!;
+    }
+    return FrameMacUtil.normalizeSlug(f.resolvedFrameTargetId) ??
+        f.deviceId.replaceAll(RegExp(r'[^\w\-]'), 'FRAME');
   }
 
   Future<void> saveFromPayload(PairingPayload payload) async {
     await load();
-    final id = payload.deviceId.trim();
-    if (id.isEmpty) return;
+    final rawId = payload.deviceId.trim();
+    if (rawId.isEmpty) return;
+    final id = PairedFrame.preferEsp32WifiStationMac(rawId) ?? rawId;
     final idx = _indexOf(id);
     final old = idx >= 0 ? _frames[idx] : null;
     final merged = PairedFrame(
@@ -180,7 +268,23 @@ class DeviceStore {
       _frames.add(merged);
     }
     _activeDeviceId = id;
+    final mac = FrameMacUtil.macFromBleIdentity(
+      bleName: merged.bleNamePrefix,
+      fallbackText: id,
+    );
+    if (mac != null) await savePairedFrameMac(mac);
     await _persistAll();
+  }
+
+  Future<void> savePairedFrameMac(String mac) async {
+    final slug = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (slug.length < 12) return;
+    final bare = slug.length == 12 ? slug : slug.substring(slug.length - 12);
+    // MQTT/API use Wi‑Fi station MAC; BLE names often carry BLE MAC (+2).
+    final clean = PairedFrame.preferEsp32WifiStationMac(bare) ?? bare;
+    _pairedFrameMac = clean;
+    final p = await SharedPreferences.getInstance();
+    await p.setString(kPairedFrameMac, clean);
   }
 
   Future<void> saveManualPairing({
@@ -199,8 +303,12 @@ class DeviceStore {
       apiUrl: old?.apiUrl,
       bleServiceUuid: old?.bleServiceUuid,
       bleDataCharUuid: old?.bleDataCharUuid,
-      bleNamePrefix: bleNamePrefix?.trim().isNotEmpty == true ? bleNamePrefix!.trim() : old?.bleNamePrefix,
-      bleRemoteId: bleRemoteId?.trim().isNotEmpty == true ? bleRemoteId!.trim() : old?.bleRemoteId,
+      bleNamePrefix: bleNamePrefix?.trim().isNotEmpty == true
+          ? bleNamePrefix!.trim()
+          : old?.bleNamePrefix,
+      bleRemoteId: bleRemoteId?.trim().isNotEmpty == true
+          ? bleRemoteId!.trim()
+          : old?.bleRemoteId,
       product: old?.product,
       wifiSsid: old?.wifiSsid,
       wifiUsername: old?.wifiUsername,
@@ -219,6 +327,11 @@ class DeviceStore {
       _frames.add(merged);
     }
     _activeDeviceId = cleanId;
+    final mac = FrameMacUtil.macFromBleIdentity(
+      bleName: bleNamePrefix,
+      fallbackText: cleanId,
+    );
+    if (mac != null) await savePairedFrameMac(mac);
     await _persistAll();
   }
 
@@ -248,8 +361,12 @@ class DeviceStore {
       frameOrientation: c.frameOrientation,
       mqttBrokerHost: cleanHost.isEmpty ? null : cleanHost,
       mqttBrokerPort: cleanHost.isEmpty ? null : port,
-      mqttBrokerUser: cleanHost.isEmpty ? null : (user.trim().isEmpty ? null : user.trim()),
-      mqttBrokerPassword: cleanHost.isEmpty ? null : (password.isEmpty ? null : password),
+      mqttBrokerUser: cleanHost.isEmpty
+          ? null
+          : (user.trim().isEmpty ? null : user.trim()),
+      mqttBrokerPassword: cleanHost.isEmpty
+          ? null
+          : (password.isEmpty ? null : password),
     );
     _replaceFrame(updated);
     await _persistAll();
@@ -300,7 +417,9 @@ class DeviceStore {
   }) async {
     final cleanName = frameName.trim();
     final cleanOrientation = orientation.trim().toLowerCase();
-    if (cleanOrientation != 'portrait' && cleanOrientation != 'landscape') return;
+    if (cleanOrientation != 'portrait' && cleanOrientation != 'landscape') {
+      return;
+    }
     final c = cached;
     if (c == null) return;
     final storedName = cleanName.isEmpty ? null : cleanName;
@@ -337,9 +456,12 @@ class DeviceStore {
     final p = await SharedPreferences.getInstance();
     _frames = [];
     _activeDeviceId = null;
+    _pairedFrameMac = null;
     await p.remove(_kFramesJson);
     await p.remove(_kActiveDeviceId);
+    await p.remove(kPairedFrameMac);
     await _removeAllLegacy(p);
+    _bumpRevision();
   }
 
   Future<void> _persistAll() async {
@@ -351,7 +473,10 @@ class DeviceStore {
       await _removeAllLegacy(p);
       return;
     }
-    await p.setString(_kFramesJson, jsonEncode(_frames.map((e) => e.toJson()).toList()));
+    await p.setString(
+      _kFramesJson,
+      jsonEncode(_frames.map((e) => e.toJson()).toList()),
+    );
     final a = cached;
     _activeDeviceId = a?.deviceId;
     if (_activeDeviceId != null && _activeDeviceId!.isNotEmpty) {
@@ -512,59 +637,90 @@ class PairedFrame {
   final String? mqttBrokerUser;
   final String? mqttBrokerPassword;
 
-  /// Candidate backend targets in priority order.
+  /// Candidate backend targets in priority order (Wi‑Fi / MQTT MAC first).
   ///
-  /// ESP32-class devices often expose BLE as station-MAC + 2. Android pairing
-  /// usually captures both identifiers, but QR-led flows can leave only one MAC
-  /// persisted. Keep a safe fallback so uploads can retry the alternate target.
+  /// ESP32-class frames use BLE MAC = station MAC + 2 (e.g. BLE `…161E`, MQTT
+  /// `…161C`). iOS often stores the QR/BLE id plus a CoreBluetooth UUID in
+  /// [bleRemoteId]; uploads must target the station MAC, then retry the BLE id.
   List<String> get resolvedFrameTargetCandidates {
     final id = deviceId.trim();
     final ble = bleRemoteId?.trim() ?? '';
+    final nameMac = _macFromText(bleNamePrefix ?? '');
     final idMac = _normalizedHexMac(id);
     final bleMac = _normalizedHexMac(ble);
     final out = <String>[];
 
     void add(String? value) {
       if (value == null) return;
-      final v = value.trim();
-      if (v.isEmpty || out.contains(v)) return;
+      final v = value.trim().toUpperCase();
+      if (v.length != 12 || out.contains(v)) return;
       out.add(v);
     }
 
-    // ESP32-class devices commonly expose BLE as base+2 relative to the Wi-Fi
-    // station MAC used for MQTT topics. Example: BLE `...161E`, MQTT `...161C`.
-    if (idMac != null && bleMac != null) {
-      if (idMac != bleMac) {
-        add(idMac);
-        add(_esp32WifiMacFromBleMac(bleMac));
-        add(bleMac);
-        return out;
+    void addEsp32MacFamily(String mac) {
+      final bleFromWifi = _esp32BleMacFromWifiMac(mac);
+      if (bleFromWifi != null && bleFromWifi != mac) {
+        add(mac);
+        add(bleFromWifi);
+        return;
       }
-      add(_esp32WifiMacFromBleMac(bleMac));
-      add(idMac);
-      return out;
+      final wifiFromBle = _esp32WifiMacFromBleMac(mac);
+      if (wifiFromBle != null && wifiFromBle != mac) {
+        add(wifiFromBle);
+        add(mac);
+        return;
+      }
+      add(mac);
     }
-    if (idMac != null) {
-      add(idMac);
-      add(_esp32WifiMacFromBleMac(idMac));
-      return out;
+
+    final seenMacs = <String>{};
+    for (final mac in [nameMac, idMac, bleMac]) {
+      if (mac == null || !seenMacs.add(mac)) continue;
+      addEsp32MacFamily(mac);
     }
-    if (bleMac != null) {
-      add(_esp32WifiMacFromBleMac(bleMac));
-      add(bleMac);
-      return out;
+
+    if (out.isEmpty &&
+        id.isNotEmpty &&
+        !_looksLikeIosPeripheralUuid(id) &&
+        !_looksLikeIosPeripheralUuid(ble)) {
+      add(id.toUpperCase());
     }
-    add(id.isNotEmpty ? id : ble);
     return out;
+  }
+
+  /// Upload targets: station (Wi‑Fi/MQTT) MAC only when it is already known.
+  ///
+  /// Retrying the BLE (+2) MAC after a timeout publishes to `/inkjoyap/…161E`
+  /// where no subscriber exists — Android avoids that; iOS must match.
+  List<String> get resolvedFrameUploadTargets {
+    final station = resolvedFrameTargetId;
+    final all = resolvedFrameTargetCandidates;
+    if (all.isEmpty) return const [];
+    if (all.length == 1) return all;
+    if (all.first == station) return [station];
+    return all;
   }
 
   /// For backend frame commands, target the Wi-Fi/MQTT MAC rather than the BLE MAC.
   String get resolvedFrameTargetId {
+    final stored = DeviceStore.instance.pairedFrameMac;
+    if (stored != null && stored.isNotEmpty) {
+      return preferEsp32WifiStationMac(stored) ?? stored;
+    }
     final ids = resolvedFrameTargetCandidates;
     if (ids.isNotEmpty) return ids.first;
     final id = deviceId.trim();
     final ble = bleRemoteId?.trim() ?? '';
     return id.isNotEmpty ? id : ble;
+  }
+
+  /// Best-effort Wi‑Fi station MAC for uploads/MQTT from a 12‑hex id (BLE or STA).
+  static String? preferEsp32WifiStationMac(String raw) {
+    final n = _normalizedHexMac(raw);
+    if (n == null) return null;
+    final bleFromWifi = _esp32BleMacFromWifiMac(n);
+    if (bleFromWifi != null && bleFromWifi != n) return n;
+    return _esp32WifiMacFromBleMac(n) ?? n;
   }
 
   static String? _normalizedHexMac(String raw) {
@@ -579,26 +735,54 @@ class PairedFrame {
     return (value - 2).toRadixString(16).toUpperCase().padLeft(12, '0');
   }
 
+  static String? _esp32BleMacFromWifiMac(String wifiMac) {
+    final value = int.tryParse(wifiMac, radix: 16);
+    if (value == null) return null;
+    final max = (1 << 48) - 1;
+    if (value > max - 2) return null;
+    return (value + 2).toRadixString(16).toUpperCase().padLeft(12, '0');
+  }
+
+  static String? _macFromText(String raw) {
+    final upper = raw.toUpperCase();
+    if (_looksLikeIosPeripheralUuid(upper)) return null;
+    final separated = RegExp(
+      r'(?<![0-9A-F])([0-9A-F]{2}[:-]){5}[0-9A-F]{2}(?![0-9A-F])',
+    ).firstMatch(upper)?.group(0);
+    if (separated != null) {
+      return separated.replaceAll(RegExp(r'[^0-9A-F]'), '');
+    }
+    return RegExp(
+      r'(?<![0-9A-F])[0-9A-F]{12}(?![0-9A-F])',
+    ).firstMatch(upper)?.group(0);
+  }
+
+  static bool _looksLikeIosPeripheralUuid(String raw) {
+    return RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(raw.trim());
+  }
+
   Map<String, dynamic> toJson() => {
-        'deviceId': deviceId,
-        'pairingToken': pairingToken,
-        'apiUrl': apiUrl,
-        'bleServiceUuid': bleServiceUuid,
-        'bleDataCharUuid': bleDataCharUuid,
-        'bleNamePrefix': bleNamePrefix,
-        'bleRemoteId': bleRemoteId,
-        'product': product,
-        'wifiSsid': wifiSsid,
-        'wifiUsername': wifiUsername,
-        'wifiPassword': wifiPassword,
-        'wifiProvisionedAtMs': wifiProvisionedAtMs,
-        'frameName': frameName,
-        'frameOrientation': frameOrientation,
-        'mqttBrokerHost': mqttBrokerHost,
-        'mqttBrokerPort': mqttBrokerPort,
-        'mqttBrokerUser': mqttBrokerUser,
-        'mqttBrokerPassword': mqttBrokerPassword,
-      };
+    'deviceId': deviceId,
+    'pairingToken': pairingToken,
+    'apiUrl': apiUrl,
+    'bleServiceUuid': bleServiceUuid,
+    'bleDataCharUuid': bleDataCharUuid,
+    'bleNamePrefix': bleNamePrefix,
+    'bleRemoteId': bleRemoteId,
+    'product': product,
+    'wifiSsid': wifiSsid,
+    'wifiUsername': wifiUsername,
+    'wifiPassword': wifiPassword,
+    'wifiProvisionedAtMs': wifiProvisionedAtMs,
+    'frameName': frameName,
+    'frameOrientation': frameOrientation,
+    'mqttBrokerHost': mqttBrokerHost,
+    'mqttBrokerPort': mqttBrokerPort,
+    'mqttBrokerUser': mqttBrokerUser,
+    'mqttBrokerPassword': mqttBrokerPassword,
+  };
 
   factory PairedFrame.fromJson(Map<String, dynamic> m) {
     final port = m['mqttBrokerPort'];
@@ -625,7 +809,9 @@ class PairedFrame {
   }
 
   bool get hasApiUrl =>
-      apiUrl != null && apiUrl!.trim().isNotEmpty && !ApiConfig.isLoopbackApiBase(apiUrl!);
+      apiUrl != null &&
+      apiUrl!.trim().isNotEmpty &&
+      !ApiConfig.isLoopbackApiBase(apiUrl!);
 
   String? get resolvedApiBaseUrl {
     final id = deviceId.trim();
@@ -647,7 +833,8 @@ class PairedFrame {
     return VpsDefaults.apiBase;
   }
 
-  bool get canUploadToServer => resolvedApiBaseUrl != null && deviceId.trim().isNotEmpty;
+  bool get canUploadToServer =>
+      resolvedApiBaseUrl != null && resolvedFrameTargetCandidates.isNotEmpty;
 
   String? get resolvedPairingToken {
     final t = pairingToken?.trim();

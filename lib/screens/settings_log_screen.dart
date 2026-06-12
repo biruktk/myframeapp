@@ -118,13 +118,6 @@ class _SettingsLogScreenState extends State<SettingsLogScreen> {
                 ),
               ),
             ],
-            if (m != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                s.operationLogSub,
-                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-              ),
-            ],
           ],
         ),
       ),

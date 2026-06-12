@@ -21,8 +21,11 @@ class ImageProcessorService {
   static const int _xtBinTotalBytes = 4 + _packedHalfLen * 2;
 
   /// Fixed XT pre‑quantize steps (spec), applied after resize to frame size.
-  static const double _xtContrastFactor = 1.3;
-  static const double _xtSharpnessFactor = 1.5;
+  static const double _xtContrastFactor = 1.28;
+  static const double _xtSharpnessFactor = 1.45;
+  /// E6 color panel needs boosted saturation before server MYFM / Floyd–Steinberg.
+  static const double _xtSaturationFactor = 1.58;
+  static const double _xtBrightnessFactor = 1.04;
 
   static const List<int> _xtSearchOrder = [0, 1, 2, 3, 5, 6];
 
@@ -50,7 +53,21 @@ class ImageProcessorService {
     }
   }
 
-  img.Image? decode(Uint8List bytes) => img.decodeImage(bytes);
+  img.Image? decode(Uint8List bytes) {
+    final im = img.decodeImage(bytes);
+    if (im == null) return null;
+    return _flattenAlpha(im);
+  }
+
+  /// PNG / HEIC picks often carry alpha; transparent pixels decode as black and
+  /// dither to an all-black MYFM frame without this flatten step.
+  img.Image _flattenAlpha(img.Image src) {
+    if (!src.hasAlpha) return src;
+    final flat = img.Image(width: src.width, height: src.height);
+    img.fill(flat, color: img.ColorRgb8(255, 255, 255));
+    img.compositeImage(flat, src);
+    return flat;
+  }
 
   Uint8List encodeJpg(img.Image image, {int quality = 95}) =>
       Uint8List.fromList(img.encodeJpg(image, quality: quality));
@@ -82,8 +99,8 @@ class ImageProcessorService {
     return work;
   }
 
-  /// Full pipeline for frame + binary XT `.bin` payload (no encryption).
-  ProcessedFrameResult? processForFrame({
+  /// Rotate, crop, resize to frame size, grade, filter — before overlay / XT encode.
+  img.Image? buildFrameWorkImage({
     required img.Image source,
     int quarterTurns = 0,
     double brightness = 1.0,
@@ -100,17 +117,80 @@ class ImageProcessorService {
         height: frameHeight,
         interpolation: img.Interpolation.cubic,
       );
+      work = _liftVeryDark(work);
       work = _applyColorGrade(work, brightness: brightness, contrast: contrast, saturation: saturation);
-      work = _applyNamedFilter(work, filter);
+      return _applyNamedFilter(work, filter);
+    } catch (_) {
+      return null;
+    }
+  }
 
-      // XT preprocessing (before Floyd–Steinberg).
+  /// Full pipeline for frame + binary XT `.bin` payload (no encryption).
+  ProcessedFrameResult? processForFrame({
+    required img.Image source,
+    int quarterTurns = 0,
+    double brightness = 1.0,
+    double contrast = 1.0,
+    double saturation = 1.0,
+    FrameImageFilter filter = FrameImageFilter.none,
+  }) {
+    final work = buildFrameWorkImage(
+      source: source,
+      quarterTurns: quarterTurns,
+      brightness: brightness,
+      contrast: contrast,
+      saturation: saturation,
+      filter: filter,
+    );
+    if (work == null) return null;
+    return processWorkImageForFrame(work);
+  }
+
+  /// Screenshots, logos, and UI captures — preserve flat colors (no heavy grade).
+  static bool looksLikeFlatGraphic(img.Image work) {
+    var sumL = 0.0;
+    var sumC = 0.0;
+    var samples = 0;
+    final frame = work.frames.first;
+    const step = 10;
+    for (var y = 0; y < work.height; y += step) {
+      for (var x = 0; x < work.width; x += step) {
+        final p = frame.getPixel(x, y);
+        final r = p.r.toDouble();
+        final g = p.g.toDouble();
+        final b = p.b.toDouble();
+        sumL += 0.299 * r + 0.587 * g + 0.114 * b;
+        final maxC = math.max(r, math.max(g, b));
+        final minC = math.min(r, math.min(g, b));
+        sumC += maxC - minC;
+        samples++;
+      }
+    }
+    if (samples == 0) return false;
+    final avgL = sumL / samples;
+    final avgC = sumC / samples;
+    return avgL > 128 && avgC < 62;
+  }
+
+  /// XT preprocess → Floyd–Steinberg → `.bin` from an already-sized work image.
+  ProcessedFrameResult? processWorkImageForFrame(img.Image work) {
+    try {
+      if (work.width != frameWidth || work.height != frameHeight) {
+        throw StateError('work image must be ${frameWidth}x$frameHeight');
+      }
+
+      final graphic = looksLikeFlatGraphic(work);
+
+      // Photos: boost saturation/contrast for E6. Graphics: minimal touch.
       final xtPrep = img.adjustColor(
         work,
-        brightness: 1,
-        saturation: 1,
-        contrast: _xtContrastFactor,
+        brightness: graphic ? 1.0 : _xtBrightnessFactor,
+        saturation: graphic ? 1.0 : _xtSaturationFactor,
+        contrast: graphic ? 1.02 : _xtContrastFactor,
       );
-      final xtSharp = _unsharpSharpen(xtPrep, _xtSharpnessFactor);
+      final xtSharp = graphic
+          ? xtPrep
+          : _unsharpSharpen(xtPrep, _xtSharpnessFactor);
 
       final eink = _floydSteinbergToIndexed(xtSharp);
       final bin = _buildXt13e6Bin(eink);
@@ -127,6 +207,26 @@ class ImageProcessorService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Lift crushed shadows so dark PNG / night photos do not dither to solid black.
+  img.Image _liftVeryDark(img.Image image) {
+    var sum = 0.0;
+    var samples = 0;
+    final frame = image.frames.first;
+    const step = 12;
+    for (var y = 0; y < image.height; y += step) {
+      for (var x = 0; x < image.width; x += step) {
+        final p = frame.getPixel(x, y);
+        sum += 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+        samples++;
+      }
+    }
+    if (samples == 0) return image;
+    final avg = sum / samples;
+    if (avg >= 42) return image;
+    final lift = (1.0 + (42 - avg) / 70).clamp(1.0, 1.55);
+    return img.adjustColor(image, brightness: lift);
   }
 
   /// Unsharp mask: `factor` > 1 adds high‑frequency emphasis (approx. “sharpness × factor”).
@@ -210,11 +310,37 @@ class ImageProcessorService {
     }
   }
 
-  /// Nearest XT palette entry by squared Euclidean distance in RGB space.
+  /// Nearest XT palette entry — hue‑aware so muted reds/blues survive dithering.
   static int nearestXtPaletteIndexRgb(double r, double g, double b) {
+    final lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    final maxC = math.max(r, math.max(g, b));
+    final minC = math.min(r, math.min(g, b));
+    final chroma = maxC - minC;
+
+    // Logo / screenshot primaries (e.g. MyFrame red, UI blues).
+    if (r > 175 && g < 110 && b < 110 && r > g + 40 && r > b + 40) return 3;
+    if (b > 175 && r < 110 && g < 140 && b > r + 40) return 5;
+    if (g > 175 && r < 130 && b < 130 && g > r + 30) return 6;
+    if (r > 200 && g > 200 && b < 140) return 2;
+
+    final Iterable<int> search;
+    if (chroma < 18) {
+      search = lum < 132 ? const [0, 1] : const [1, 0];
+    } else if (r >= g && r >= b && r - math.min(g, b) > 16) {
+      search = const [3, 2, 0, 1, 5, 6];
+    } else if (g >= r && g >= b && g - math.min(r, b) > 16) {
+      search = const [6, 2, 0, 1, 3, 5];
+    } else if (b >= r && b >= g && b - math.min(r, g) > 16) {
+      search = const [5, 0, 1, 3, 6, 2];
+    } else if (r > 150 && g > 150 && b < 130) {
+      search = const [2, 1, 3, 0];
+    } else {
+      search = _xtSearchOrder;
+    }
+
     var bestIdx = 0;
     var bestD = double.infinity;
-    for (final idx in _xtSearchOrder) {
+    for (final idx in search) {
       final c = _xtPaletteColor(idx);
       final dr = r - c.r;
       final dg = g - c.g;

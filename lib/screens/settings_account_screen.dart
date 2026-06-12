@@ -127,10 +127,6 @@ class _SettingsAccountScreenState extends State<SettingsAccountScreen> {
                       color: cs.onSurfaceVariant,
                     ),
                   ),
-                  if (app.isProMember) ...[
-                    const SizedBox(height: 12),
-                    const _ProMemberBadgePill(),
-                  ],
                 ],
               ),
             ),
@@ -244,48 +240,6 @@ class _ProfileAvatar extends StatelessWidget {
         Icons.person,
         size: 36,
         color: Colors.white,
-      ),
-    );
-  }
-}
-
-class _ProMemberBadgePill extends StatelessWidget {
-  const _ProMemberBadgePill();
-
-  @override
-  Widget build(BuildContext context) {
-    final t = AppStrings.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFAF52DE),
-            Color(0xFF6B4EE6),
-          ],
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.workspace_premium,
-            size: 15,
-            color: Colors.white,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            t.proMemberFullBanner,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }

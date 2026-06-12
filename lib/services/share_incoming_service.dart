@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import 'app_diag_log.dart';
 
 /// Queues images shared into MyFrame from the system gallery / photos app.
 class ShareIncomingService {
@@ -24,12 +25,12 @@ class ShareIncomingService {
       final initial = await ReceiveSharingIntent.instance.getInitialMedia();
       _enqueue(initial);
     } catch (e) {
-      debugPrint('ShareIncomingService initial: $e');
+      AppDiagLog.verbose('ShareIncomingService initial: $e');
     }
 
     ReceiveSharingIntent.instance.getMediaStream().listen(
       _enqueue,
-      onError: (Object e) => debugPrint('ShareIncomingService stream: $e'),
+      onError: (Object e) => AppDiagLog.verbose('ShareIncomingService stream: $e'),
     );
   }
 

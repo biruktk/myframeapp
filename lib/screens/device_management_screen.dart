@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/pairing_nav_result.dart';
+import '../navigation/pairing_flow_nav.dart';
+import '../services/app_release_guard.dart';
+import '../services/app_release_guard.dart';
 import '../services/device_store.dart';
 import '../services/usage_metrics_store.dart';
 import '../settings/app_settings.dart';
@@ -90,11 +94,14 @@ class _DeviceManagementScreenState extends State<DeviceManagementScreen> {
           const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: () async {
-              final ok = await Navigator.push<bool>(
+              final result = await SafeNav.push<PairingNavResult>(
                 context,
-                MaterialPageRoute<bool>(builder: (_) => const DeviceDiscoveryScreen()),
+                MaterialPageRoute<PairingNavResult>(
+                  builder: (_) => const DeviceDiscoveryScreen(),
+                ),
               );
-              if (ok == true && mounted) await _load();
+              if (result?.success == true && mounted) await _load();
+              PairingFlowNav.onComplete(result);
             },
             icon: const Icon(Icons.bluetooth_searching),
             label: Text(s.repairPairing),

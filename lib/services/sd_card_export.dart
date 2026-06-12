@@ -31,12 +31,13 @@ Future<SdBinExportDisposition> shareBinForPhysicalSd({
   String? saveDialogTitle,
 }) async {
   final safeName = filename.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
-  final shareText = message ??
+  final shareText =
+      message ??
       'Save to SD card (recommended folder: DCIM/MyFrame/), then insert the card into the frame.';
 
   if (Platform.isAndroid || Platform.isIOS) {
     try {
-      final savedPath = await FilePicker.platform.saveFile(
+      final savedPath = await FilePicker.saveFile(
         dialogTitle: saveDialogTitle,
         fileName: safeName,
         type: FileType.custom,
@@ -54,16 +55,9 @@ Future<SdBinExportDisposition> shareBinForPhysicalSd({
   final dir = await getTemporaryDirectory();
   final file = File('${dir.path}/$safeName');
   await file.writeAsBytes(binBytes);
-  final shareResult = await Share.shareXFiles(
-    [
-      XFile(
-        file.path,
-        mimeType: 'application/octet-stream',
-        name: safeName,
-      ),
-    ],
-    text: shareText,
-  );
+  final shareResult = await Share.shareXFiles([
+    XFile(file.path, mimeType: 'application/octet-stream', name: safeName),
+  ], text: shareText);
   if (shareResult.status == ShareResultStatus.dismissed) {
     return SdBinExportDisposition.cancelled;
   }

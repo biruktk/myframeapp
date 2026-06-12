@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'gallery_image_cache.dart';
+
 /// Named albums used from the Send flow (paths on device).
 class SendAlbumEntry {
   SendAlbumEntry({required this.id, required this.name, required this.paths});
@@ -38,29 +40,44 @@ class SendAlbumsStore {
     try {
       final list = jsonDecode(raw) as List<dynamic>;
       _albums = list.map((e) => SendAlbumEntry.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+      await _pruneMissingPaths();
     } catch (_) {
       _albums = [];
     }
   }
 
+  Future<void> _pruneMissingPaths() async {
+    var changed = false;
+    final next = <SendAlbumEntry>[];
+    for (final a in _albums) {
+      final kept = await GalleryImageCache.filterExisting(a.paths);
+      if (kept.length != a.paths.length) changed = true;
+      next.add(SendAlbumEntry(id: a.id, name: a.name, paths: kept));
+    }
+    if (changed) {
+      _albums = next;
+      await _persist();
+    }
+  }
+
   Future<void> createAlbum(String name, List<String> initialPaths) async {
     await load();
+    final stored = await GalleryImageCache.persistPaths(initialPaths);
     final id = '${DateTime.now().millisecondsSinceEpoch}';
     _albums.insert(
       0,
-      SendAlbumEntry(id: id, name: name.trim().isEmpty ? 'Album' : name.trim(), paths: List.of(initialPaths)),
+      SendAlbumEntry(id: id, name: name.trim().isEmpty ? 'Album' : name.trim(), paths: stored),
     );
     await _persist();
   }
 
   Future<void> addPathsToAlbum(String albumId, List<String> more) async {
     await load();
+    final stored = await GalleryImageCache.persistPaths(more);
     final i = _albums.indexWhere((a) => a.id == albumId);
     if (i < 0) return;
     final cur = List<String>.from(_albums[i].paths);
-    for (final p in more) {
-      final t = p.trim();
-      if (t.isEmpty) continue;
+    for (final t in stored) {
       if (!cur.contains(t)) cur.add(t);
     }
     _albums[i] = SendAlbumEntry(id: _albums[i].id, name: _albums[i].name, paths: cur);

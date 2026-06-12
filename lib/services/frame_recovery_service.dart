@@ -14,11 +14,13 @@ class FrameRecoveryService {
   static final FrameRecoveryService instance = FrameRecoveryService._();
 
   String? pairedFrameMac(PairedFrame paired) {
-    final raw = paired.resolvedFrameTargetId
+    final stored = DeviceStore.instance.pairedFrameMac;
+    if (stored != null && stored.length == 12) return stored;
+    final raw = paired.deviceId
         .replaceAll(RegExp(r'[^0-9a-fA-F]'), '')
         .toUpperCase();
-    if (raw.length < 12) return null;
-    return raw.substring(raw.length - 12);
+    if (raw.length >= 12) return raw.substring(raw.length - 12);
+    return null;
   }
 
   Future<String> reconfigureServer(PairedFrame paired) async {
@@ -40,6 +42,54 @@ class FrameRecoveryService {
     );
     if (!result.ok) throw StateError(result.message);
     return result.message;
+  }
+
+  /// Wake MQTT session before cloud upload (retained mqtt_config + login_ack, like WeChat).
+  Future<void> prepareForCloudUpload(PairedFrame paired) async {
+    await BleFrameDeviceTransport.instance.releaseSession();
+    Object? lastErr;
+    for (var i = 0; i < 2; i++) {
+      try {
+        await wakeFrameMqtt(paired);
+        await Future<void>.delayed(const Duration(milliseconds: 1200));
+        return;
+      } catch (e) {
+        lastErr = e;
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      }
+    }
+    if (lastErr != null) throw lastErr;
+  }
+
+  Future<void> wakeFrameMqtt(PairedFrame paired) async {
+    await sendMqttBrokerConfig(paired);
+    await sendLoginAck(paired);
+  }
+
+  Future<void> sendMqttBrokerConfig(PairedFrame paired) async {
+    final mac = pairedFrameMac(paired);
+    if (mac == null) {
+      throw StateError('Paired frame MAC is unavailable. Re-scan the frame first.');
+    }
+    final base = paired.resolvedApiBaseUrl ?? VpsDefaults.apiBase;
+    final token = paired.resolvedPairingToken;
+    final uri = Uri.parse('$base/api/frames/$mac/mqtt-config');
+    final res = await http
+        .post(
+          uri,
+          headers: {
+            'content-type': 'application/json',
+            'accept': 'application/json',
+            if ((token ?? '').isNotEmpty) 'x-pairing-token': token!,
+          },
+          body: jsonEncode({'msgid': DateTime.now().millisecondsSinceEpoch.toString()}),
+        )
+        .timeout(const Duration(seconds: 12));
+    final data = (res.body.isEmpty ? const <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>);
+    final success = res.statusCode >= 200 && res.statusCode < 300 && data['ok'] == true;
+    if (!success) {
+      throw StateError((data['error'] ?? data['message'] ?? 'mqtt_config failed').toString());
+    }
   }
 
   Future<String> sendLoginAck(PairedFrame paired) async {

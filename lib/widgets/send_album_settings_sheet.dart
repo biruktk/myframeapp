@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../models/send_overlay_options.dart';
 import '../services/send_albums_store.dart';
+import 'text_input_bottom_sheet.dart';
 
 /// Result of the Send flow bottom sheet (album + display options).
 class SendAlbumSheetResult {
@@ -47,6 +48,7 @@ class _SendAlbumSheetBodyState extends State<_SendAlbumSheetBody> {
   bool _customOn = false;
   bool _cityWeatherOn = false;
   bool _holidayOn = false;
+  bool _showDateOn = false;
   final _customCtrl = TextEditingController();
   String? _addToAlbumId;
   String? _addToAlbumName;
@@ -90,52 +92,24 @@ class _SendAlbumSheetBodyState extends State<_SendAlbumSheetBody> {
   }
 
   Future<void> _createAlbumDialog(AppStrings s) async {
-    final nameCtrl = TextEditingController();
-    try {
-      final name = await showDialog<String>(
-        context: context,
-        builder: (c) => StatefulBuilder(
-          builder: (c, setD) {
-            return AlertDialog(
-              title: Text(s.createNewAlbum),
-              content: TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                textInputAction: TextInputAction.done,
-                decoration: InputDecoration(labelText: s.newAlbumNameHint),
-                onChanged: (_) => setD(() {}),
-                onSubmitted: (v) {
-                  final t = v.trim();
-                  if (t.isNotEmpty) Navigator.pop(c, t);
-                },
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(c), child: Text(s.cancel)),
-                FilledButton(
-                  onPressed: nameCtrl.text.trim().isEmpty ? null : () => Navigator.pop(c, nameCtrl.text.trim()),
-                  child: Text(s.nextLabel),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-      if (name != null && name.isNotEmpty) {
-        setState(() {
-          _newAlbumName = name;
-          _addToAlbumId = null;
-          _addToAlbumName = null;
-        });
-      }
-    } finally {
-      nameCtrl.dispose();
-    }
+    final name = await TextInputBottomSheet.show(
+      context,
+      title: s.createNewAlbum,
+      label: s.newAlbumNameHint,
+      confirmLabel: s.nextLabel,
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+    setState(() {
+      _newAlbumName = name;
+      _addToAlbumId = null;
+      _addToAlbumName = null;
+    });
   }
 
   void _submit(AppStrings s) {
     final cityLine = _cityWeatherOn ? s.showCityWeatherDemo : null;
     final overlay = SendOverlayOptions(
-      showDate: false,
+      showDate: _showDateOn,
       showLocation: _cityWeatherOn,
       showGreeting: _holidayOn,
       customText: _customOn ? _customCtrl.text : '',
@@ -234,6 +208,11 @@ class _SendAlbumSheetBodyState extends State<_SendAlbumSheetBody> {
                 value: _holidayOn,
                 onChanged: (v) => setState(() => _holidayOn = v),
                 title: Text(s.holidayReminderLabel),
+              ),
+              SwitchListTile.adaptive(
+                value: _showDateOn,
+                onChanged: (v) => setState(() => _showDateOn = v),
+                title: Text(s.overlayDateLabel),
               ),
               const SizedBox(height: 12),
               Text(s.photosSecureFootnote, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),

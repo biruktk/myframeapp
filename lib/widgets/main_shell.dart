@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
@@ -7,6 +9,8 @@ import '../screens/home_screen.dart';
 import '../screens/send_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/share_incoming_service.dart';
+import '../services/user_gallery_cloud_service.dart';
+import '../settings/app_settings.dart';
 import 'shell_navigation.dart';
 
 class MainShell extends StatefulWidget {
@@ -24,9 +28,22 @@ class MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
-    ShellNavigation.registerHost(_setIndex);
+    ShellNavigation.registerHost(
+      _setIndex,
+      openSendGalleryPick: openSendGalleryPicker,
+    );
     ShareIncomingService.instance.revision.addListener(_onShareIncomingRevision);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _consumeSharedPaths());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _consumeSharedPaths();
+      _syncCloudGalleryIfSignedIn();
+    });
+  }
+
+  void _syncCloudGalleryIfSignedIn() {
+    if (!mounted) return;
+    final app = AppSettingsScope.of(context);
+    if (!app.hasAuthenticatedSession) return;
+    unawaited(UserGalleryCloudService.instance.syncFromServer(app.authToken));
   }
 
   @override
@@ -81,23 +98,23 @@ class MainShellState extends State<MainShell> {
     final cs = Theme.of(context).colorScheme;
     final primary = cs.primary;
 
-    final body = switch (_index) {
-      0 => const HomeScreen(),
-      1 => const GalleryScreen(),
-      2 => SendScreen(
-          galleryPickNonce: sendGalleryPickNonce,
-          sharedPathsNonce: sendSharedPathsNonce,
-        ),
-      3 => const FamilyScreen(),
-      4 => const SettingsScreen(),
-      _ => const HomeScreen(),
-    };
-
     return Scaffold(
       extendBody: true,
       body: Padding(
         padding: EdgeInsets.only(bottom: ShellNavigation.contentBottomOverlap(context)),
-        child: body,
+        child: IndexedStack(
+          index: _index,
+          children: [
+            const HomeScreen(),
+            const GalleryScreen(),
+            SendScreen(
+              galleryPickNonce: sendGalleryPickNonce,
+              sharedPathsNonce: sendSharedPathsNonce,
+            ),
+            const FamilyScreen(),
+            const SettingsScreen(),
+          ],
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: Tooltip(
@@ -106,12 +123,8 @@ class MainShellState extends State<MainShell> {
           width: 68,
           height: 68,
           child: Material(
-            shape: CircleBorder(
-              side: _index == 2
-                  ? BorderSide(color: cs.onPrimary.withValues(alpha: 0.9), width: 3)
-                  : BorderSide.none,
-            ),
-            elevation: _index == 2 ? 8 : 6,
+            shape: const CircleBorder(),
+            elevation: 6,
             shadowColor: primary.withValues(alpha: 0.45),
             color: primary,
             child: InkWell(

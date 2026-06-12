@@ -9,14 +9,27 @@ import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../l10n/app_strings.dart';
+import '../models/pairing_nav_result.dart';
 import '../services/ble_display_name.dart';
 import '../services/ble_frame_scan_filter.dart';
 import '../services/ble_permissions_util.dart';
+import '../config/vps_defaults.dart';
 import '../services/device_store.dart';
+import '../services/pairing_mqtt_presetup.dart';
 import 'wifi_provision_screen.dart';
+import '../navigation/pairing_flow_nav.dart';
+import '../services/app_diag_log.dart';
+import '../services/app_release_guard.dart';
+import '../widgets/debug_slog_overlay.dart';
 
 class DeviceDiscoveryScreen extends StatefulWidget {
-  const DeviceDiscoveryScreen({super.key});
+  const DeviceDiscoveryScreen({
+    super.key,
+    this.openSendAfterSetup = true,
+  });
+
+  /// When false (e.g. editor mid-upload), stay on current screen after pairing.
+  final bool openSendAfterSetup;
 
   @override
   State<DeviceDiscoveryScreen> createState() => _DeviceDiscoveryScreenState();
@@ -132,7 +145,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         _adapterState = state;
       });
       if (state == BluetoothAdapterState.on && !_scanSuspended) {
-        if (kDebugMode) debugPrint('[BLE] adapter on, starting scan');
+        AppDiagLog.verbose('[BLE] adapter on, starting scan');
         unawaited(_startUserBleScan());
       } else {
         unawaited(_stopUserScan());
@@ -144,7 +157,12 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         }
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _scanSuspended) return;
+      if (Platform.isAndroid) {
+        final pre = await requestBleScanPermissions();
+        if (mounted) setState(() => _permOutcome = pre);
+      }
       if (!mounted || _scanSuspended) return;
       unawaited(_startUserBleScan());
     });
@@ -325,12 +343,11 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         androidScanMode: AndroidScanMode.lowLatency,
         androidCheckLocationServices: true,
       );
-      if (kDebugMode)
-        debugPrint(
+      AppDiagLog.verbose(
             '[BLE] scan active (${_scanSessionDuration.inSeconds}s low-latency)');
     } catch (e) {
       final raw = e.toString();
-      if (kDebugMode) debugPrint('[BLE] scan error $raw');
+      AppDiagLog.verbose('[BLE] scan error $raw');
       final tooFrequent =
           raw.toLowerCase().contains('scanning too frequently') ||
               raw.contains('status=6');
@@ -344,7 +361,10 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
               ? 'Scanner busy. Retrying automatically…'
               : (iosPermissionish
                   ? 'Bluetooth access is blocked for MyFrame on this iPhone. Open iPhone Settings, allow Bluetooth, then restart the scan.'
-                  : raw);
+                  : AppDiagLog.userFacingStatus(
+                      raw,
+                      fallback: 'Bluetooth scan failed. Try again.',
+                    ));
           _scanning = false;
         });
       }
@@ -379,96 +399,118 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
   Future<void> _selectRow(_BleTileRow row) async {
     if (_connectingDeviceId != null) return;
     final s = AppStrings.of(context);
-    final adv = row.effectiveName.trim();
-    final dn = row.device.advName.trim();
-    final pn = row.device.platformName.trim();
-    if (kDebugMode) {
-      debugPrint(
+    try {
+      final adv = row.effectiveName.trim();
+      final dn = row.device.advName.trim();
+      final pn = row.device.platformName.trim();
+      AppDiagLog.verbose(
         '[BLE] connect tap remoteId=${row.id} rssi=${row.rssi} '
         'effectiveName="$adv" deviceAdvName="$dn" platformName="$pn"',
       );
-    }
-    setState(() {
-      _connectingDeviceId = row.id;
-      _connectFailedRow = null;
-      _connectFailureMessage = null;
-    });
-    final ok = await _connectForRealtimeData(row.device);
-    if (!ok) {
+      setState(() {
+        _connectingDeviceId = row.id;
+        _connectFailedRow = null;
+        _connectFailureMessage = null;
+      });
+      final ok = await _connectForRealtimeData(row.device);
+      if (!ok) {
+        if (!mounted) return;
+        setState(() {
+          _connectingDeviceId = null;
+          _connectFailedRow = row;
+          _connectFailureMessage = s.bleConnectTimeoutMessage;
+        });
+        return;
+      }
+      if (_connectedDevice?.remoteId.str != row.id) {
+        if (!mounted) return;
+        setState(() => _connectingDeviceId = null);
+        return;
+      }
+      if (!mounted) return;
+      final remoteMac = row.id;
+      final advPrefer = adv.isNotEmpty ? adv : (pn.isNotEmpty ? pn : dn);
+      final displayPrefix = advPrefer.isNotEmpty
+          ? advPrefer
+          : BleDisplayName.fallbackTitle(remoteMac);
+      AppDiagLog.verbose(
+        '[BLE] saveManualPairing deviceId=$remoteMac bleRemoteId=$remoteMac bleNamePrefix=$displayPrefix',
+      );
+      await DeviceStore.instance.saveManualPairing(
+        deviceId: remoteMac,
+        bleNamePrefix: displayPrefix,
+        bleRemoteId: remoteMac,
+      );
+      if (!mounted) return;
+      _scanSuspended = true;
+      try {
+        await _stopUserScan();
+      } catch (_) {}
+      await _disconnectTelemetry();
+      AppDiagLog.verbose('[BLE] sending mqtt_config before Wi‑Fi (EspBlufi order)…');
+      final serverConfigSent = await PairingMqttPresetup.sendDefaultBrokerBeforeWifi();
+      AppDiagLog.verbose(
+        '[BLE] mqtt_config pre-Wi‑Fi ok=$serverConfigSent broker=${VpsDefaults.host}:${VpsDefaults.mqttPort}',
+      );
+      if (!mounted) return;
+      AppDiagLog.verbose('[BLE] opening WifiProvisionScreen…');
+      final wifiResult = await SafeNav.push<PairingNavResult>(
+        context,
+        MaterialPageRoute<PairingNavResult>(
+          builder: (_) => WifiProvisionScreen(
+            firstTimeSetup: true,
+            serverConfigAlreadySent: serverConfigSent,
+            openSendAfterSetup: widget.openSendAfterSetup,
+          ),
+        ),
+      );
+      AppDiagLog.verbose(
+        '[BLE] WifiProvisionScreen closed success=${wifiResult?.success}',
+      );
+      _scanSuspended = false;
+      unawaited(_startUserBleScan());
+      if (!mounted) return;
+      if (wifiResult?.success == true) {
+        await _disconnectTelemetry();
+      }
+      if (mounted) setState(() => _connectingDeviceId = null);
+      if (widget.openSendAfterSetup) {
+        PairingFlowNav.onComplete(wifiResult);
+      }
+      await SafeNav.popPairingResult(
+        context,
+        result: wifiResult ?? const PairingNavResult(success: false),
+      );
+    } catch (e, st) {
+      AppDiagLog.verbose('[BLE] _selectRow failed: $e\n$st');
+      _scanSuspended = false;
       if (!mounted) return;
       setState(() {
         _connectingDeviceId = null;
         _connectFailedRow = row;
         _connectFailureMessage = s.bleConnectTimeoutMessage;
       });
-      return;
     }
-    if (_connectedDevice?.remoteId.str != row.id) {
-      if (!mounted) return;
-      setState(() => _connectingDeviceId = null);
-      return;
-    }
-    if (!mounted) return;
-    final remoteMac = row.id;
-    final advPrefer = adv.isNotEmpty ? adv : (pn.isNotEmpty ? pn : dn);
-    final displayPrefix = advPrefer.isNotEmpty
-        ? advPrefer
-        : BleDisplayName.fallbackTitle(remoteMac);
-    if (kDebugMode) {
-      debugPrint(
-        '[BLE] saveManualPairing deviceId=$remoteMac bleRemoteId=$remoteMac bleNamePrefix=$displayPrefix',
-      );
-    }
-    await DeviceStore.instance.saveManualPairing(
-      deviceId: remoteMac,
-      bleNamePrefix: displayPrefix,
-      bleRemoteId: remoteMac,
-    );
-    if (!mounted) return;
-    final nav = Navigator.of(context);
-    _scanSuspended = true;
-    try {
-      await _stopUserScan();
-    } catch (_) {}
-    await _disconnectTelemetry();
-    if (kDebugMode) debugPrint('[BLE] opening WifiProvisionScreen…');
-    final wifiOk = await nav.push<bool>(
-      MaterialPageRoute<bool>(builder: (_) => const WifiProvisionScreen()),
-    );
-    if (kDebugMode) debugPrint('[BLE] WifiProvisionScreen closed ok=$wifiOk');
-    _scanSuspended = false;
-    unawaited(_startUserBleScan());
-    if (!mounted) return;
-    if (wifiOk == true) {
-      await _disconnectTelemetry();
-    }
-    if (mounted) setState(() => _connectingDeviceId = null);
-    nav.pop(wifiOk == true);
   }
 
   Future<bool> _connectForRealtimeData(BluetoothDevice device) async {
-    if (kDebugMode) {
-      debugPrint(
+          AppDiagLog.verbose(
         '[BLE] _connectForRealtimeData start remoteId=${device.remoteId.str} '
         'advName="${device.advName}" platformName="${device.platformName}"',
       );
-    }
     await _disconnectTelemetry();
     try {
       setState(() {
         _connectedDevice = device;
         _connectedDeviceId = device.remoteId.str;
       });
-      if (kDebugMode) debugPrint('[BLE] GATT connect (15s timeout)…');
+      AppDiagLog.verbose('[BLE] GATT connect (15s timeout)…');
       await device.connect(timeout: const Duration(seconds: 15));
-      if (kDebugMode) {
-        debugPrint(
+              AppDiagLog.verbose(
             '[BLE] connected remoteId=${device.remoteId.str} isConnected=${device.isConnected} mtu=${device.mtuNow}');
-      }
       _connSub = device.connectionState.listen((state) {
         if (!mounted) return;
-        if (kDebugMode)
-          debugPrint(
+        AppDiagLog.verbose(
               '[BLE] connectionState → ${state.name} (${device.remoteId.str})');
         if (state == BluetoothConnectionState.disconnected) {
           setState(() {
@@ -483,12 +525,10 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         }
       });
 
-      if (kDebugMode) debugPrint('[BLE] discoverServices (15s)…');
+      AppDiagLog.verbose('[BLE] discoverServices (15s)…');
       final services = await device.discoverServices(timeout: 15);
-      if (kDebugMode) {
-        debugPrint(
+              AppDiagLog.verbose(
             '[BLE] services count=${services.length}: ${services.map((s) => s.uuid.str).join(", ")}');
-      }
       BluetoothCharacteristic? notifyChar;
       for (final s in services) {
         for (final c in s.characteristics) {
@@ -500,35 +540,30 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         if (notifyChar != null) break;
       }
       if (notifyChar != null) {
-        if (kDebugMode)
-          debugPrint('[BLE] setNotifyValue on ${notifyChar.uuid.str}');
+        AppDiagLog.verbose('[BLE] setNotifyValue on ${notifyChar.uuid.str}');
         try {
           await notifyChar.setNotifyValue(true);
           _notifySub = notifyChar.lastValueStream.listen((data) {
             if (!mounted) return;
             if (data.isEmpty) return;
-            if (kDebugMode) debugPrint('[BLE] notify rx ${data.length} bytes');
+            AppDiagLog.verbose('[BLE] notify rx ${data.length} bytes');
             setState(() {
               _lastRxAt = DateTime.now();
               _receivedBytes += data.length;
             });
           });
         } catch (e) {
-          if (kDebugMode)
-            debugPrint(
+          AppDiagLog.verbose(
                 '[BLE] setNotifyValue failed (continuing as connected): $e');
         }
       }
-      if (kDebugMode)
-        debugPrint(
+      AppDiagLog.verbose(
             '[BLE] _connectForRealtimeData success for ${device.remoteId.str}');
       return true;
     } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint(
+              AppDiagLog.verbose(
             '[BLE] _connectForRealtimeData FAILED remoteId=${device.remoteId.str}: $e');
-        debugPrint('[BLE] stack: $st');
-      }
+        AppDiagLog.verbose('[BLE] stack: $st');
       if (!mounted) return false;
       setState(() {
         _connectedDevice = null;
@@ -596,7 +631,8 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     final bluetoothSettingsLabel =
         Platform.isIOS ? 'Open iPhone Settings' : s.openBluetoothSystemSettings;
 
-    return Scaffold(
+    return DebugSlogOverlay(
+      child: Scaffold(
       appBar: AppBar(
         title: Text(s.scanDeviceTitle),
         actions: [
@@ -764,14 +800,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                       _chip(context, icon: Icons.sync, text: 'Receiving'),
                   ],
                 ),
-                if (kDebugMode && perm != null) ...[
+                if (AppDiagLog.isDebugEnabled && perm != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Adapter: ${_adapterState.name} · Perms granted: ${perm.allGranted}',
                     style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
                   ),
                 ],
-                if (_connectedDeviceId != null) ...[
+                if (AppDiagLog.isDebugEnabled && _connectedDeviceId != null) ...[
                   const SizedBox(height: 8),
                   Text(
                     'Device: $_connectedDeviceId · Rx $_receivedBytes B',
@@ -873,7 +909,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                                     color: cs.onSurfaceVariant,
                                     fontWeight: FontWeight.w600),
                               ),
-                              if (kDebugMode) ...[
+                              if (AppDiagLog.isDebugEnabled) ...[
                                 const SizedBox(height: 4),
                                 Text(
                                   s.bleDebugAdvertLine(
@@ -915,6 +951,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
             ),
         ],
       ),
+    ),
     );
   }
 

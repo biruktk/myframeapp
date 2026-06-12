@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/app_diag_log.dart';
 import '../services/slideshow_style.dart';
 import '../theme/app_theme.dart';
 
@@ -43,9 +44,18 @@ class AppSettings extends ChangeNotifier {
   bool iCloudConnected = false;
   bool homeAssistantConnected = false;
   bool googlePhotosAutoSync = true;
+  /// Where processed send photos are stored: `vps`, `google_drive`, or `dropbox`.
+  String photoStorageBackend = 'vps';
   bool autoInstallUpdates = true;
   String aiApiKey = '';
+  /// `openai` or `gemini` — used for Send → AI Generate.
+  String aiImageProvider = 'openai';
+  String aiOpenAiApiKey = '';
+  String aiGeminiApiKey = '';
   bool sms2faEnabled = false;
+
+  String get activeAiImageApiKey =>
+      aiImageProvider == 'gemini' ? aiGeminiApiKey.trim() : aiOpenAiApiKey.trim();
   /// Shown in Account / Pro; replace with entitlements from your backend.
   bool isProMember = false;
   /// Developer diagnostics; persisted for convenience.
@@ -90,8 +100,12 @@ class AppSettings extends ChangeNotifier {
   static const _kICloudConnected = 'settings_icloud_connected';
   static const _kHomeAssistantConnected = 'settings_home_assistant_connected';
   static const _kGooglePhotosAutoSync = 'settings_google_photos_auto_sync';
+  static const _kPhotoStorageBackend = 'settings_photo_storage_backend';
   static const _kAutoInstallUpdates = 'settings_auto_install_updates';
   static const _kAiApiKey = 'settings_ai_api_key';
+  static const _kAiImageProvider = 'settings_ai_image_provider';
+  static const _kAiOpenAiApiKey = 'settings_ai_openai_api_key';
+  static const _kAiGeminiApiKey = 'settings_ai_gemini_api_key';
   static const _kSms2faEnabled = 'settings_sms_2fa_enabled';
   static const _kProMember = 'settings_pro_member';
   static const _kDebugModeEnabled = 'settings_debug_mode_enabled';
@@ -139,11 +153,19 @@ class AppSettings extends ChangeNotifier {
     iCloudConnected = p.getBool(_kICloudConnected) ?? false;
     homeAssistantConnected = p.getBool(_kHomeAssistantConnected) ?? false;
     googlePhotosAutoSync = p.getBool(_kGooglePhotosAutoSync) ?? true;
+    photoStorageBackend = p.getString(_kPhotoStorageBackend) ?? 'vps';
     autoInstallUpdates = p.getBool(_kAutoInstallUpdates) ?? true;
     aiApiKey = p.getString(_kAiApiKey) ?? '';
+    aiImageProvider = p.getString(_kAiImageProvider) ?? 'openai';
+    aiOpenAiApiKey = p.getString(_kAiOpenAiApiKey) ?? '';
+    aiGeminiApiKey = p.getString(_kAiGeminiApiKey) ?? '';
+    if (aiOpenAiApiKey.isEmpty && aiApiKey.isNotEmpty) {
+      aiOpenAiApiKey = aiApiKey;
+    }
     sms2faEnabled = p.getBool(_kSms2faEnabled) ?? false;
     isProMember = p.getBool(_kProMember) ?? false;
     debugModeEnabled = p.getBool(_kDebugModeEnabled) ?? false;
+    AppDiagLog.setDebugEnabled(debugModeEnabled);
     stopFrameFirmwareOta = p.getBool(_kStopFrameFirmwareOta) ?? false;
 
     final sl = p.getString(_kDefaultSlideshow);
@@ -262,37 +284,74 @@ class AppSettings extends ChangeNotifier {
     required bool iCloud,
     required bool homeAssistant,
     required bool googleAutoSync,
+    String? photoStorageBackend,
   }) async {
     googlePhotosConnected = googleConnected;
     iCloudConnected = iCloud;
     homeAssistantConnected = homeAssistant;
     googlePhotosAutoSync = googleAutoSync;
+    if (photoStorageBackend != null) {
+      this.photoStorageBackend = photoStorageBackend;
+    }
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setBool(_kGooglePhotosConnected, googleConnected);
     await p.setBool(_kICloudConnected, iCloud);
     await p.setBool(_kHomeAssistantConnected, homeAssistant);
     await p.setBool(_kGooglePhotosAutoSync, googleAutoSync);
+    if (photoStorageBackend != null) {
+      await p.setString(_kPhotoStorageBackend, photoStorageBackend);
+    }
+  }
+
+  Future<void> setPhotoStorageBackend(String backend) async {
+    photoStorageBackend = backend;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kPhotoStorageBackend, backend);
   }
 
   Future<void> setAppPreferences({
     required ThemeMode mode,
     required bool updates,
-    required String apiKey,
-    required bool sms2fa,
+    String? apiKey,
+    bool? sms2fa,
   }) async {
     themeMode = mode;
     autoInstallUpdates = updates;
     stopFrameFirmwareOta = !updates;
-    aiApiKey = apiKey.trim();
-    sms2faEnabled = sms2fa;
+    if (apiKey != null) {
+      aiApiKey = apiKey.trim();
+      aiOpenAiApiKey = apiKey.trim();
+    }
+    if (sms2fa != null) sms2faEnabled = sms2fa;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setString(_kThemeMode, mode.name);
     await p.setBool(_kAutoInstallUpdates, updates);
     await p.setBool(_kStopFrameFirmwareOta, !updates);
-    await p.setString(_kAiApiKey, aiApiKey);
-    await p.setBool(_kSms2faEnabled, sms2fa);
+    if (apiKey != null) {
+      await p.setString(_kAiApiKey, aiApiKey);
+      await p.setString(_kAiOpenAiApiKey, aiOpenAiApiKey);
+    }
+    if (sms2fa != null) await p.setBool(_kSms2faEnabled, sms2fa);
+  }
+
+  Future<void> setAiImageSettings({
+    required String provider,
+    required String openAiKey,
+    required String geminiKey,
+  }) async {
+    aiImageProvider = provider == 'gemini' ? 'gemini' : 'openai';
+    aiOpenAiApiKey = openAiKey.trim();
+    aiGeminiApiKey = geminiKey.trim();
+    aiApiKey = aiOpenAiApiKey;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kAiImageProvider, aiImageProvider);
+    await p.setString(_kAiOpenAiApiKey, aiOpenAiApiKey);
+    await p.setString(_kAiGeminiApiKey, aiGeminiApiKey);
+    await p.setString(_kAiApiKey, aiOpenAiApiKey);
   }
 
   Future<void> setOnboardingDone(bool value) async {
@@ -398,6 +457,7 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> setDebugModeEnabled(bool value) async {
     debugModeEnabled = value;
+    AppDiagLog.setDebugEnabled(value);
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setBool(_kDebugModeEnabled, value);

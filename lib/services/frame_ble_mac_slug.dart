@@ -1,10 +1,12 @@
 import 'device_store.dart';
+import 'frame_mac_util.dart';
 
-/// Stable key for slideshow APIs — prefers stripped BLE peripheral id hex, else sanitized [PairedFrame.deviceId].
+/// Stable key for slideshow APIs — stored `pairedFrameMac` when set.
 String frameBleMacSlug(PairedFrame? p) {
-  final raw = p?.bleRemoteId?.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
-  if (raw != null && raw.length >= 8) {
-    return raw;
-  }
-  return p?.deviceId.replaceAll(RegExp(r'[^\w\-]'), '') ?? 'FRAME';
+  if (p == null) return 'FRAME';
+  final stored = DeviceStore.instance.pairedFrameMac;
+  if (stored != null && stored.length == 12) return stored;
+  final slug = FrameMacUtil.normalizeSlug(p.resolvedFrameTargetId);
+  if (slug != null) return slug;
+  return p.deviceId.replaceAll(RegExp(r'[^\w\-]'), '');
 }

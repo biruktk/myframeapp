@@ -2,22 +2,23 @@ import 'dart:async';
 
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
-import '../config/google_auth_config.dart';
 import '../l10n/app_strings.dart';
 import '../services/auth_api_service.dart';
 import '../utils/validators.dart';
+import '../services/google_sign_in_factory.dart';
 import '../services/google_sign_in_errors.dart';
 import '../services/google_sign_in_bridge.dart';
 import '../services/mobile_auth_deep_link.dart';
 import '../services/wechat_sign_in_service.dart';
 import '../settings/app_settings.dart';
-import '../widgets/app_logo.dart';
+import '../services/user_gallery_cloud_service.dart';
 import '../widgets/main_shell.dart';
+import '../widgets/myframe_branding_lockup.dart';
+import '../widgets/splash_branding_icon.dart';
 
 class AppEntryScreen extends StatefulWidget {
   const AppEntryScreen({super.key});
@@ -63,9 +64,7 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
           return Localizations.override(
             context: context,
             locale: const Locale('en'),
-            child: _AuthScreen(
-              onAuthenticated: () {},
-            ),
+            child: _AuthScreen(onAuthenticated: () {}),
           );
         }
         return const MainShell();
@@ -77,6 +76,8 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
 
+  static const _iconSize = 156.0;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -84,18 +85,13 @@ class _SplashScreen extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: Transform.translate(
-            offset: Offset(0, -18),
+            offset: const Offset(0, -18),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Image(
-                  image: AssetImage('assets/branding/myframe_splash_logo.png'),
-                  width: 124,
-                  height: 124,
-                  fit: BoxFit.contain,
-                ),
-                SizedBox(height: 22),
-                _MyFrameWordmark(fontSize: 32),
+                const SplashBrandingIcon(size: _iconSize),
+                const SizedBox(height: 22),
+                const _MyFrameWordmark(fontSize: 34),
               ],
             ),
           ),
@@ -119,10 +115,17 @@ class _MyFrameWordmark extends StatelessWidget {
           fontSize: fontSize,
           fontWeight: FontWeight.w900,
           height: 1,
+          fontFamily: 'Roboto',
         ),
         children: const [
-          TextSpan(text: 'My', style: TextStyle(color: Color(0xFFD91E1E))),
-          TextSpan(text: 'Frame', style: TextStyle(color: Colors.black)),
+          TextSpan(
+            text: 'My',
+            style: TextStyle(color: Color(0xFFD91E1E)),
+          ),
+          TextSpan(
+            text: 'Frame',
+            style: TextStyle(color: Colors.black),
+          ),
         ],
       ),
     );
@@ -146,31 +149,36 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
   }
 
   static const _cardRadius = 24.0;
-  static const _bgGrey = Color(0xFFF5F5F7);
 
   /// Light pink icon wells (matches product welcome mockup).
   static const _wellPink = Color(0xFFFFE4E8);
 
-  Widget _heroIllustration(ColorScheme cs) {
+  Widget _heroIllustration(ColorScheme cs, {required double scale}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 26),
+      padding: EdgeInsets.symmetric(horizontal: 12 * scale, vertical: 14 * scale),
       decoration: BoxDecoration(
         color: _wellPink,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.person_outline_rounded, size: 40, color: cs.primary),
-          const SizedBox(width: 10),
-          Icon(Icons.wifi_rounded, size: 32, color: cs.primary),
-          const SizedBox(width: 8),
-          Icon(Icons.arrow_forward_rounded,
-              size: 22, color: cs.primary.withValues(alpha: 0.65)),
-          const SizedBox(width: 8),
-          Icon(Icons.photo_size_select_actual_rounded,
-              size: 36, color: cs.primary),
+          Icon(Icons.person_outline_rounded, size: 28 * scale, color: cs.primary),
+          SizedBox(width: 8 * scale),
+          Icon(Icons.wifi_rounded, size: 24 * scale, color: cs.primary),
+          SizedBox(width: 6 * scale),
+          Icon(
+            Icons.arrow_forward_rounded,
+            size: 18 * scale,
+            color: cs.primary.withValues(alpha: 0.65),
+          ),
+          SizedBox(width: 6 * scale),
+          Icon(
+            Icons.photo_size_select_actual_rounded,
+            size: 26 * scale,
+            color: cs.primary,
+          ),
         ],
       ),
     );
@@ -201,48 +209,57 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
     required String title,
     required String subtitle,
     required bool showDivider,
+    required double scale,
   }) {
     final cs = Theme.of(context).colorScheme;
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+          padding: EdgeInsets.fromLTRB(14 * scale, 10 * scale, 14 * scale, 10 * scale),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 36 * scale,
+                height: 36 * scale,
                 decoration: BoxDecoration(
                   color: _wellPink,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: cs.primary, size: 22),
+                child: Icon(icon, color: cs.primary, size: 18 * scale),
               ),
-              const SizedBox(width: 14),
+              SizedBox(width: 10 * scale),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                            height: 1.2)),
-                    const SizedBox(height: 4),
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14 * scale,
+                        height: 1.15,
+                      ),
+                    ),
+                    SizedBox(height: 2 * scale),
                     Text(
                       subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 13,
-                          color: cs.onSurfaceVariant,
-                          height: 1.35),
+                        fontSize: 12 * scale,
+                        color: cs.onSurfaceVariant,
+                        height: 1.2,
+                      ),
                     ),
                   ],
                 ),
               ),
               Container(
-                width: 28,
-                height: 28,
+                width: 24 * scale,
+                height: 24 * scale,
                 alignment: Alignment.center,
                 decoration: const BoxDecoration(
                   color: _wellPink,
@@ -251,9 +268,10 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                 child: Text(
                   '$n',
                   style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: cs.primary),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11 * scale,
+                    color: cs.primary,
+                  ),
                 ),
               ),
             ],
@@ -261,9 +279,10 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
         ),
         if (showDivider)
           Divider(
-              height: 1,
-              thickness: 1,
-              color: cs.outlineVariant.withValues(alpha: 0.5)),
+            height: 1,
+            thickness: 1,
+            color: cs.outlineVariant.withValues(alpha: 0.5),
+          ),
       ],
     );
   }
@@ -274,160 +293,169 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
     final s = AppStrings.of(context);
     final app = AppSettingsScope.of(context);
     return Scaffold(
-      backgroundColor: _bgGrey,
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: PopupMenuButton<String?>(
-                  tooltip: s.onboardingLanguageHint,
-                  icon:
-                      Icon(Icons.language_rounded, color: cs.onSurfaceVariant),
-                  onSelected: (code) async {
-                    await app.setLanguageCode(code);
-                    if (!context.mounted) return;
-                    setState(() {});
-                  },
-                  itemBuilder: (c) => [
-                    PopupMenuItem(value: null, child: Text(s.languageSystem)),
-                    PopupMenuItem(value: 'en', child: Text(s.languageEnglish)),
-                    PopupMenuItem(value: 'zh', child: Text(s.languageChinese)),
-                    PopupMenuItem(value: 'ja', child: Text(s.languageJapanese)),
-                    PopupMenuItem(value: 'es', child: Text(s.languageSpanish)),
-                    PopupMenuItem(value: 'fr', child: Text(s.languageFrench)),
-                    PopupMenuItem(value: 'de', child: Text(s.languageGerman)),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                child: Column(
-                  children: [
-                    Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final scale = (constraints.maxHeight / 740).clamp(0.82, 1.0);
+            final hPad = 20.0 * scale;
+            final btnH = 48.0 * scale;
+            return Padding(
+              padding: EdgeInsets.symmetric(horizontal: hPad),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: PopupMenuButton<String?>(
+                      tooltip: s.onboardingLanguageHint,
+                      icon: Icon(
+                        Icons.language_rounded,
+                        color: cs.onSurfaceVariant,
+                        size: 22 * scale,
+                      ),
+                      onSelected: (code) async {
+                        await app.setLanguageCode(code);
+                        if (!context.mounted) return;
+                        setState(() {});
+                      },
+                      itemBuilder: (c) => [
+                        PopupMenuItem(value: null, child: Text(s.languageSystem)),
+                        PopupMenuItem(value: 'en', child: Text(s.languageEnglish)),
+                        PopupMenuItem(value: 'zh', child: Text(s.languageChinese)),
+                        PopupMenuItem(value: 'ja', child: Text(s.languageJapanese)),
+                        PopupMenuItem(value: 'es', child: Text(s.languageSpanish)),
+                        PopupMenuItem(value: 'fr', child: Text(s.languageFrench)),
+                        PopupMenuItem(value: 'de', child: Text(s.languageGerman)),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const AppLogo(size: 36, fit: BoxFit.contain),
-                        const SizedBox(width: 10),
-                        Text(
-                          s.appName,
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: cs.onSurface,
-                            letterSpacing: -0.5,
+                        Center(child: MyFrameBrandingLockup(width: 200 * scale)),
+                        SizedBox(height: 12 * scale),
+                        _shadowCard(
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              16 * scale,
+                              14 * scale,
+                              16 * scale,
+                              14 * scale,
+                            ),
+                            child: Column(
+                              children: [
+                                _heroIllustration(cs, scale: scale),
+                                SizedBox(height: 12 * scale),
+                                Text(
+                                  s.welcomeInkTitle,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 18 * scale,
+                                    fontWeight: FontWeight.w800,
+                                    color: cs.onSurface,
+                                    height: 1.2,
+                                  ),
+                                ),
+                                SizedBox(height: 6 * scale),
+                                Text(
+                                  s.welcomeInkSubtitle,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13 * scale,
+                                    color: cs.onSurfaceVariant,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 10 * scale),
+                        _shadowCard(
+                          child: Column(
+                            children: [
+                              _stepRow(
+                                context,
+                                n: 1,
+                                icon: Icons.power_settings_new_rounded,
+                                title: s.onboardStepPowerTitle,
+                                subtitle: s.onboardStepPowerBody,
+                                showDivider: true,
+                                scale: scale,
+                              ),
+                              _stepRow(
+                                context,
+                                n: 2,
+                                icon: Icons.add_rounded,
+                                title: s.onboardStepPairTitle,
+                                subtitle: s.onboardStepPairBody,
+                                showDivider: true,
+                                scale: scale,
+                              ),
+                              _stepRow(
+                                context,
+                                n: 3,
+                                icon: Icons.send_rounded,
+                                title: s.onboardStepSendTitle,
+                                subtitle: s.onboardStepSendBody,
+                                showDivider: false,
+                                scale: scale,
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 28),
-                    _shadowCard(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                        child: Column(
-                          children: [
-                            _heroIllustration(cs),
-                            const SizedBox(height: 22),
-                            Text(
-                              s.welcomeInkTitle,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                                color: cs.onSurface,
-                                height: 1.25,
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              s.welcomeInkSubtitle,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: cs.onSurfaceVariant,
-                                height: 1.45,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _shadowCard(
-                      child: Column(
-                        children: [
-                          _stepRow(
-                            context,
-                            n: 1,
-                            icon: Icons.power_settings_new_rounded,
-                            title: s.onboardStepPowerTitle,
-                            subtitle: s.onboardStepPowerBody,
-                            showDivider: true,
-                          ),
-                          _stepRow(
-                            context,
-                            n: 2,
-                            icon: Icons.add_rounded,
-                            title: s.onboardStepPairTitle,
-                            subtitle: s.onboardStepPairBody,
-                            showDivider: true,
-                          ),
-                          _stepRow(
-                            context,
-                            n: 3,
-                            icon: Icons.send_rounded,
-                            title: s.onboardStepSendTitle,
-                            subtitle: s.onboardStepSendBody,
-                            showDivider: false,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+                  ),
                   FilledButton(
                     onPressed: _finish,
                     style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
+                      minimumSize: Size.fromHeight(btnH),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
-                    child: Text(s.onboardingConnectNow,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 16)),
+                    child: Text(
+                      s.onboardingConnectNow,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15 * scale,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 8 * scale),
                   OutlinedButton(
                     onPressed: _finish,
                     style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(52),
+                      minimumSize: Size.fromHeight(btnH),
                       backgroundColor: Colors.white,
                       foregroundColor: cs.onSurfaceVariant,
-                      side:
-                          BorderSide(color: cs.outline.withValues(alpha: 0.35)),
+                      side: BorderSide(
+                        color: cs.outline.withValues(alpha: 0.35),
+                      ),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                     ),
-                    child: Text(s.onboardingLater,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 16)),
+                    child: Text(
+                      s.onboardingLater,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15 * scale,
+                      ),
+                    ),
                   ),
+                  SizedBox(height: 12 * scale),
                 ],
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );
@@ -451,18 +479,12 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
   final _regPassword = TextEditingController();
   final _regName = TextEditingController();
   final _auth = AuthApiService();
-  late final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: const <String>['email', 'profile'],
-    clientId:
-        GoogleAuthConfig.hasIosClientId ? GoogleAuthConfig.iosClientId : null,
-    serverClientId: GoogleAuthConfig.serverClientId,
-  );
+  late final GoogleSignIn _googleSignIn = createGoogleSignIn();
   var _busy = false;
   var _waitingForGoogleBrowser = false;
 
   /// Modern Chinese–inspired auth shell: warm paper tones + vermillion accents.
-  static const _creamBg = Color(0xFFF7F2ED);
-  static const _paperWhite = Color(0xFFFFFBF8);
+  static const _paperWhite = Colors.white;
   static const _weChatGreen = Color(0xFF07C160);
 
   @override
@@ -495,8 +517,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  Future<void> _finishAuthSession(AuthApiSuccess data,
-      {String provider = 'email'}) async {
+  Future<void> _finishAuthSession(
+    AuthApiSuccess data, {
+    String provider = 'email',
+  }) async {
     final app = AppSettingsScope.of(context);
     await app.setAccountProfile(name: data.user.name, email: data.user.email);
     await app.completeAuthenticatedSession(
@@ -504,6 +528,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       userId: data.user.id,
       provider: provider,
     );
+    unawaited(UserGalleryCloudService.instance.syncFromServer(data.token));
     if (!mounted) return;
     widget.onAuthenticated();
   }
@@ -513,15 +538,22 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  String _failureMessage(AuthApiFailure f, AppStrings s) {
+  String _failureMessage(
+    AuthApiFailure f,
+    AppStrings s, {
+    String? socialProvider,
+  }) {
     if (f.errorKey == 'network_error') {
       return s.authErrorNetwork;
     }
     if (f.fieldErrors.isNotEmpty) {
       return f.fieldErrors.join('\n');
     }
+    if (socialProvider != null) {
+      return _socialFailureMessage(f, s, socialProvider);
+    }
     final sc = f.statusCode;
-    if (sc == 401 || f.errorKey == 'invalid_credentials') {
+    if (sc == 401 && f.errorKey == 'invalid_credentials') {
       return s.authErrorInvalidCredentials;
     }
     if (sc == 409 || f.errorKey == 'email_taken') {
@@ -534,7 +566,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       return s.authGoogleNotConfigured;
     }
     if (f.errorKey == 'unauthorized_admin_token') {
-      return 'Apple sign-in reached the server, but the API rejected it with unauthorized_admin_token. The backend Apple auth route is protected by the wrong admin-token check or missing social-auth configuration.';
+      return s.authErrorMobileAdminToken;
     }
     if (sc == 422 || f.errorKey == 'validation_error') {
       final m = f.message;
@@ -581,6 +613,34 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       return f.message!.trim();
     }
     return '${s.authErrorBadResponse} (${f.statusCode})';
+  }
+
+  String _socialFailureMessage(AuthApiFailure f, AppStrings s, String provider) {
+    switch (f.errorKey) {
+      case 'unauthorized_admin_token':
+        return s.authErrorMobileAdminToken;
+      case 'route_not_found':
+        return provider == 'wechat'
+            ? s.authErrorWeChatServerRoute
+            : s.authErrorAppleServerRoute;
+      case 'invalid_token':
+        return provider == 'apple'
+            ? s.authErrorAppleTokenRejected
+            : s.authErrorWeChatFailed;
+      case 'invalid_credentials':
+        return provider == 'apple'
+            ? s.authErrorAppleTokenRejected
+            : s.authErrorWeChatFailed;
+      default:
+        break;
+    }
+    if (f.statusCode >= 500 || f.errorKey == 'server_error') {
+      return s.authErrorServer;
+    }
+    if (f.message != null && f.message!.trim().isNotEmpty) {
+      return f.message!.trim();
+    }
+    return provider == 'apple' ? s.authErrorAppleFailed : s.authErrorWeChatFailed;
   }
 
   Future<void> _submitLogin() async {
@@ -683,9 +743,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
         return;
       }
       if (r is AuthApiFailure) {
-        _showAuthMessage(_failureMessage(r, s));
+        _showAuthMessage(_failureMessage(r, s, socialProvider: 'apple'));
       }
     } on SignInWithAppleAuthorizationException catch (e) {
+      if (e.code == AuthorizationErrorCode.canceled) return;
       final m = e.message;
       if (m.isNotEmpty) _showAuthMessage(m);
     } catch (e) {
@@ -728,8 +789,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       } on TimeoutException {
         account = null;
       }
-      account ??=
-          await _googleSignIn.signIn().timeout(const Duration(seconds: 30));
+      account ??= await _googleSignIn.signIn().timeout(
+        const Duration(seconds: 30),
+      );
       if (account == null) {
         _showAuthMessage(s.authGoogleCanceled);
         return false;
@@ -767,7 +829,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
         AuthApiSuccess(
           token: result.token,
           user: AuthUserPayload(
-              id: result.userId, email: result.email, name: result.name),
+            id: result.userId,
+            email: result.email,
+            name: result.name,
+          ),
         ),
         provider: 'google',
       );
@@ -781,10 +846,12 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       final msg = e.toString();
       if (msg.contains('google_server_secret_missing')) {
         _showAuthMessage(
-            'Google sign-in cannot finish yet: the API is missing GOOGLE_OAUTH_CLIENT_SECRET. Set it on the VPS backend, then restart the API.');
+          'Google sign-in cannot finish yet: the API is missing GOOGLE_OAUTH_CLIENT_SECRET. Set it on the VPS backend, then restart the API.',
+        );
       } else if (msg.contains('google_hosted_route_missing')) {
         _showAuthMessage(
-            'Google sign-in route is missing on myframe.ink. The app now uses the API host, but the public website still needs the mobile Google route or proxy.');
+          'Google sign-in route is missing on myframe.ink. The app now uses the API host, but the public website still needs the mobile Google route or proxy.',
+        );
       } else {
         _showAuthMessage(s.authGoogleCanceled);
       }
@@ -806,16 +873,20 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
         return;
       }
       if (r is AuthApiFailure) {
-        _showAuthMessage(_failureMessage(r, s));
+        _showAuthMessage(_failureMessage(r, s, socialProvider: 'wechat'));
       }
     } on TimeoutException {
       if (!mounted) return;
-      _showAuthMessage('WeChat sign-in timed out. Try again.');
+      _showAuthMessage(s.authErrorWeChatTimeout);
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString();
       if (msg.contains('wechat_not_installed')) {
-        _showAuthMessage('WeChat is not installed on this iPhone.');
+        _showAuthMessage(
+          Platform.isIOS
+              ? 'WeChat is not installed on this iPhone.'
+              : 'WeChat is not installed on this device.',
+        );
       } else if (msg.contains('wechat_register_failed')) {
         _showAuthMessage('WeChat could not be registered for this app.');
       } else if (msg.contains('wechat_launch_failed')) {
@@ -828,8 +899,11 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     }
   }
 
-  InputDecoration _underlineField(ColorScheme cs, String label,
-      {String? hint}) {
+  InputDecoration _underlineField(
+    ColorScheme cs,
+    String label, {
+    String? hint,
+  }) {
     final subtle = cs.onSurface.withValues(alpha: 0.28);
     return InputDecoration(
       labelText: label,
@@ -838,12 +912,15 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       isDense: true,
       contentPadding: const EdgeInsets.only(top: 12, bottom: 14),
       border: UnderlineInputBorder(borderSide: BorderSide(color: subtle)),
-      enabledBorder:
-          UnderlineInputBorder(borderSide: BorderSide(color: subtle)),
+      enabledBorder: UnderlineInputBorder(
+        borderSide: BorderSide(color: subtle),
+      ),
       focusedBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: cs.primary, width: 2)),
+        borderSide: BorderSide(color: cs.primary, width: 2),
+      ),
       disabledBorder: UnderlineInputBorder(
-          borderSide: BorderSide(color: subtle.withValues(alpha: 0.5))),
+        borderSide: BorderSide(color: subtle.withValues(alpha: 0.5)),
+      ),
     );
   }
 
@@ -904,9 +981,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
             boxShadow: selected
                 ? [
                     BoxShadow(
-                        color: cs.primary.withValues(alpha: 0.12),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2))
+                      color: cs.primary.withValues(alpha: 0.12),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
                   ]
                 : null,
           ),
@@ -938,10 +1016,11 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
               child: Text(
                 s.authSocialDividerLabel,
                 style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: cs.onSurfaceVariant,
-                    letterSpacing: 0.2),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurfaceVariant,
+                  letterSpacing: 0.2,
+                ),
               ),
             ),
             Expanded(child: Divider(color: cs.outline.withValues(alpha: 0.25))),
@@ -951,20 +1030,20 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _socialCircle(
-              tooltip: s.continueApple,
-              onTap: _busy ? null : _onAppleTap,
-              color: Colors.black,
-              child: const Icon(Icons.apple, color: Colors.white, size: 26),
-            ),
             if (Platform.isIOS)
               _socialCircle(
-                tooltip: s.continueGoogle,
-                onTap: _busy ? null : _googleSignInFlow,
-                color: Colors.white,
-                borderColor: cs.outline.withValues(alpha: 0.35),
-                child: const _GoogleLogoMark(size: 26),
+                tooltip: s.continueApple,
+                onTap: _busy ? null : _onAppleTap,
+                color: Colors.black,
+                child: const Icon(Icons.apple, color: Colors.white, size: 26),
               ),
+            _socialCircle(
+              tooltip: s.continueGoogle,
+              onTap: _busy ? null : _googleSignInFlow,
+              color: Colors.white,
+              borderColor: cs.outline.withValues(alpha: 0.35),
+              child: const _GoogleLogoMark(size: 26),
+            ),
             _socialCircle(
               tooltip: s.continueWeChat,
               onTap: _busy ? null : () => unawaited(_weChatTap()),
@@ -1001,7 +1080,8 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
             decoration: borderColor != null
                 ? BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: borderColor))
+                    border: Border.all(color: borderColor),
+                  )
                 : null,
             child: child,
           ),
@@ -1015,7 +1095,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: _creamBg,
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1024,15 +1104,16 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
               child: Column(
                 children: [
-                  const AppLogo(size: 48),
-                  const SizedBox(height: 10),
-                  const _MyFrameWordmark(fontSize: 26),
-                  const SizedBox(height: 6),
+                  const Center(child: MyFrameBrandingLockup(width: 260)),
+                  const SizedBox(height: 12),
                   Text(
                     s.authScreenTagline,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                        fontSize: 14, height: 1.35, color: cs.onSurfaceVariant),
+                      fontSize: 14,
+                      height: 1.35,
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
@@ -1042,8 +1123,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                 width: double.infinity,
                 decoration: BoxDecoration(
                   color: _paperWhite,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(28)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.06),
@@ -1053,8 +1135,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(28)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(28),
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -1083,8 +1166,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   obscureText: true,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submitLogin(),
-                                  decoration:
-                                      _underlineField(cs, s.passwordLabel),
+                                  decoration: _underlineField(
+                                    cs,
+                                    s.passwordLabel,
+                                  ),
                                   enabled: !_busy,
                                 ),
                                 const SizedBox(height: 28),
@@ -1094,13 +1179,45 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                     onPressed: _busy ? null : _submitLogin,
                                     style: FilledButton.styleFrom(
                                       shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(16)),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
                                     ),
-                                    child: Text(s.loginLabel,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 16)),
+                                    child: Text(
+                                      s.loginLabel,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  height: 48,
+                                  child: OutlinedButton.icon(
+                                    onPressed: _busy ? null : _quickTestEnter,
+                                    icon: _busy
+                                        ? SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              color: cs.primary,
+                                            ),
+                                          )
+                                        : Icon(
+                                            Icons.science_outlined,
+                                            size: 18,
+                                            color: cs.primary,
+                                          ),
+                                    label: Text(
+                                      _busy
+                                          ? s.authBusyLabel
+                                          : s.authQuickTestButton,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 28),
@@ -1115,8 +1232,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   controller: _regName,
                                   textInputAction: TextInputAction.next,
                                   textCapitalization: TextCapitalization.words,
-                                  decoration:
-                                      _underlineField(cs, s.authUsernameLabel),
+                                  decoration: _underlineField(
+                                    cs,
+                                    s.authUsernameLabel,
+                                  ),
                                   enabled: !_busy,
                                 ),
                                 const SizedBox(height: 20),
@@ -1133,8 +1252,10 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   obscureText: true,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submitRegister(),
-                                  decoration:
-                                      _underlineField(cs, s.passwordLabel),
+                                  decoration: _underlineField(
+                                    cs,
+                                    s.passwordLabel,
+                                  ),
                                   enabled: !_busy,
                                 ),
                                 const SizedBox(height: 28),
@@ -1144,13 +1265,16 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                     onPressed: _busy ? null : _submitRegister,
                                     style: FilledButton.styleFrom(
                                       shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(16)),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
                                     ),
-                                    child: Text(s.registerLabel,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 16)),
+                                    child: Text(
+                                      s.registerLabel,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 16,
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 28),
@@ -1160,26 +1284,6 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                           ],
                         ),
                       ),
-                      if (kDebugMode)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                          child: TextButton.icon(
-                            onPressed: _busy ? null : _quickTestEnter,
-                            icon: _busy
-                                ? SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: cs.primary))
-                                : Icon(Icons.science_outlined,
-                                    size: 18,
-                                    color: cs.primary.withValues(alpha: 0.8)),
-                            label: Text(
-                                _busy ? s.authBusyLabel : s.authQuickTestButton,
-                                style: TextStyle(
-                                    color: cs.onSurfaceVariant, fontSize: 13)),
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -1191,8 +1295,11 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _authScroll(AppStrings s, ColorScheme cs,
-      {required List<Widget> children}) {
+  Widget _authScroll(
+    AppStrings s,
+    ColorScheme cs, {
+    required List<Widget> children,
+  }) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -1231,9 +1338,7 @@ class _WeChatLogoMark extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size,
-      child: CustomPaint(
-        painter: _WeChatLogoPainter(),
-      ),
+      child: CustomPaint(painter: _WeChatLogoPainter()),
     );
   }
 }
@@ -1243,11 +1348,21 @@ class _WeChatLogoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final white = Paint()..color = Colors.white;
     final bubble1 = RRect.fromRectAndRadius(
-      Rect.fromLTWH(size.width * 0.10, size.height * 0.12, size.width * 0.52, size.height * 0.42),
+      Rect.fromLTWH(
+        size.width * 0.10,
+        size.height * 0.12,
+        size.width * 0.52,
+        size.height * 0.42,
+      ),
       Radius.circular(size.width * 0.18),
     );
     final bubble2 = RRect.fromRectAndRadius(
-      Rect.fromLTWH(size.width * 0.36, size.height * 0.34, size.width * 0.46, size.height * 0.36),
+      Rect.fromLTWH(
+        size.width * 0.36,
+        size.height * 0.34,
+        size.width * 0.46,
+        size.height * 0.36,
+      ),
       Radius.circular(size.width * 0.16),
     );
     canvas.drawRRect(bubble1, white);
@@ -1267,7 +1382,8 @@ class _WeChatLogoPainter extends CustomPainter {
     canvas.drawPath(tail2, white);
 
     final eye = Paint()..color = const Color(0xFF07C160);
-    void dot(double x, double y) => canvas.drawCircle(Offset(x, y), size.width * 0.04, eye);
+    void dot(double x, double y) =>
+        canvas.drawCircle(Offset(x, y), size.width * 0.04, eye);
     dot(size.width * 0.26, size.height * 0.30);
     dot(size.width * 0.42, size.height * 0.30);
     dot(size.width * 0.50, size.height * 0.48);

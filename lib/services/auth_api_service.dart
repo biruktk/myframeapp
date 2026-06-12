@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import 'app_diag_log.dart';
 
 class AuthUserPayload {
   const AuthUserPayload(
@@ -95,12 +95,10 @@ class AuthApiService {
             }),
           )
           .timeout(_requestTimeout);
-      if (kDebugMode) {
-        debugPrint('Login response: ${res.statusCode} ${res.body}');
-      }
+      AppDiagLog.verbose('Login response: ${res.statusCode} ${res.body}');
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
-      if (kDebugMode) debugPrint('register exception: $e\n$st');
+      AppDiagLog.verbose('register exception: $e\n$st');
       return _failureFromCatch(e, 'POST /api/auth/register', uri);
     }
   }
@@ -121,12 +119,10 @@ class AuthApiService {
             body: jsonEncode({'email': email.trim(), 'password': password}),
           )
           .timeout(_requestTimeout);
-      if (kDebugMode) {
-        debugPrint('Login response: ${res.statusCode} ${res.body}');
-      }
+      AppDiagLog.verbose('Login response: ${res.statusCode} ${res.body}');
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
-      if (kDebugMode) debugPrint('login exception: $e\n$st');
+      AppDiagLog.verbose('login exception: $e\n$st');
       return _failureFromCatch(e, 'POST /api/auth/login', uri);
     }
   }
@@ -159,12 +155,10 @@ class AuthApiService {
             body: jsonEncode(body),
           )
           .timeout(_requestTimeout);
-      if (kDebugMode) {
-        debugPrint('Apple auth response: ${res.statusCode} ${res.body}');
-      }
+      AppDiagLog.verbose('Apple auth response: ${res.statusCode} ${res.body}');
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
-      if (kDebugMode) debugPrint('apple auth exception: $e\n$st');
+      AppDiagLog.verbose('apple auth exception: $e\n$st');
       return _failureFromCatch(e, 'POST /api/auth/apple', uri);
     }
   }
@@ -182,12 +176,10 @@ class AuthApiService {
             body: jsonEncode({'idToken': idToken.trim()}),
           )
           .timeout(_requestTimeout);
-      if (kDebugMode) {
-        debugPrint('Google auth response: ${res.statusCode} ${res.body}');
-      }
+      AppDiagLog.verbose('Google auth response: ${res.statusCode} ${res.body}');
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
-      if (kDebugMode) debugPrint('google auth exception: $e\n$st');
+      AppDiagLog.verbose('google auth exception: $e\n$st');
       return _failureFromCatch(e, 'POST /api/auth/google', uri);
     }
   }
@@ -205,12 +197,10 @@ class AuthApiService {
             body: jsonEncode({'code': code.trim()}),
           )
           .timeout(_requestTimeout);
-      if (kDebugMode) {
-        debugPrint('WeChat auth response: ${res.statusCode} ${res.body}');
-      }
+      AppDiagLog.verbose('WeChat auth response: ${res.statusCode} ${res.body}');
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
-      if (kDebugMode) debugPrint('wechat auth exception: $e\n$st');
+      AppDiagLog.verbose('wechat auth exception: $e\n$st');
       return _failureFromCatch(e, 'POST /api/auth/wechat', uri);
     }
   }
@@ -228,12 +218,10 @@ class AuthApiService {
             body: '{}',
           )
           .timeout(_requestTimeout);
-      if (kDebugMode) {
-        debugPrint('Test login response: ${res.statusCode} ${res.body}');
-      }
+      AppDiagLog.verbose('Test login response: ${res.statusCode} ${res.body}');
       return _parseBody(res.statusCode, res.body);
     } catch (e, st) {
-      if (kDebugMode) debugPrint('test login exception: $e\n$st');
+      AppDiagLog.verbose('test login exception: $e\n$st');
       return _failureFromCatch(e, 'POST /api/auth/test-login', uri);
     }
   }

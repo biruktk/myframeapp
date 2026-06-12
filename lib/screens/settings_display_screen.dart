@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../settings/app_settings.dart';
 
-/// Display-oriented settings moved out of Device management (refresh interval + comfort duplicates App prefs comfort — single place here).
 class SettingsDisplayScreen extends StatefulWidget {
   const SettingsDisplayScreen({super.key});
 
@@ -13,11 +12,7 @@ class SettingsDisplayScreen extends StatefulWidget {
 
 class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
   int _refreshMinutes = 30;
-
-  Future<void> _saveComfort(AppSettings app) async {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppStrings.of(context).saveLabel)));
-  }
+  var _showDetails = false;
 
   @override
   Widget build(BuildContext context) {
@@ -30,15 +25,12 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(s.displaySettingsIntro, style: TextStyle(color: cs.onSurfaceVariant, height: 1.45)),
-          const SizedBox(height: 16),
           Card(
             child: SwitchListTile.adaptive(
               value: app.comfortMode,
               onChanged: (v) async {
                 await app.setComfortMode(v);
                 if (mounted) setState(() {});
-                await _saveComfort(app);
               },
               title: Text(s.comfortMode),
               subtitle: Text(s.comfortModeSubtitle),
@@ -64,11 +56,21 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            s.displayAutoRefreshFootnote,
-            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, height: 1.35),
+          TextButton(
+            onPressed: () => setState(() => _showDetails = !_showDetails),
+            child: Text(_showDetails ? s.showLessLabel : s.showAllLabel),
           ),
+          if (_showDetails) ...[
+            Text(
+              s.displaySettingsIntro,
+              style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, height: 1.4),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              s.displayAutoRefreshFootnote,
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, height: 1.35),
+            ),
+          ],
         ],
       ),
     );

@@ -8,7 +8,7 @@ void main() {
     final settings = AppSettings();
     await settings.load();
     await tester.pumpWidget(MyFrameApp(settings: settings));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 100));
     expect(find.byType(MainShell), findsOneWidget);
   });
 }

@@ -7,9 +7,16 @@ import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
 import '../services/ble_frame_device_transport.dart';
 import '../services/ble_display_name.dart';
+import '../models/pairing_nav_result.dart';
 import '../services/device_store.dart';
+import '../services/frame_forget_service.dart';
+import '../services/app_release_guard.dart';
+import '../navigation/pairing_flow_nav.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
+import '../navigation/app_routes.dart';
 import '../services/family_group_store.dart';
+import '../services/frame_manual_config_service.dart';
+import '../services/frame_mac_util.dart';
 import '../services/usage_metrics_store.dart';
 import '../settings/app_settings.dart';
 import 'device_discovery_screen.dart';
@@ -27,17 +34,26 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey _addKey = GlobalKey();
   UsageMetrics? _metrics;
   OverlayEntry? _coachEntry;
+  bool? _activeFrameServerOnline;
+  bool _checkingFrameStatus = false;
 
   @override
   void initState() {
     super.initState();
+    DeviceStore.instance.revision.addListener(_onDeviceStoreRevision);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
   @override
   void dispose() {
+    DeviceStore.instance.revision.removeListener(_onDeviceStoreRevision);
     _removeCoach();
     super.dispose();
+  }
+
+  void _onDeviceStoreRevision() {
+    if (!mounted) return;
+    unawaited(_load());
   }
 
   void _removeCoach() {
@@ -60,7 +76,31 @@ class _HomeScreenState extends State<HomeScreen> {
     final metrics = await UsageMetricsStore.instance.load();
     if (!mounted) return;
     setState(() => _metrics = metrics);
+    await _refreshActiveFrameStatus();
     _maybeShowCoachmark(app);
+  }
+
+  Future<void> _refreshActiveFrameStatus() async {
+    final active = DeviceStore.instance.cached;
+    final mac = DeviceStore.instance.pairedFrameMac ??
+        (active != null
+            ? FrameMacUtil.macFromBleName(active.bleNamePrefix ?? '') ??
+                FrameMacUtil.normalizeSlug(active.deviceId)
+            : null);
+    if (mac == null || mac.length != 12) {
+      if (mounted) setState(() => _activeFrameServerOnline = null);
+      return;
+    }
+    setState(() => _checkingFrameStatus = true);
+    try {
+      final online = await FrameManualConfigService.instance
+          .checkFrameOnServer(mac);
+      if (mounted) setState(() => _activeFrameServerOnline = online);
+    } catch (_) {
+      if (mounted) setState(() => _activeFrameServerOnline = false);
+    } finally {
+      if (mounted) setState(() => _checkingFrameStatus = false);
+    }
   }
 
   void _maybeShowCoachmark(AppSettings app) {
@@ -168,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (ok != true || !mounted) return;
-    await DeviceStore.instance.removePairedFrame(f.deviceId);
+    await FrameForgetService.instance.forgetFrame(f.deviceId);
     await _load();
   }
 
@@ -195,11 +235,14 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () async {
               await AppSettingsScope.of(context).clearHomeAddFrameCoachmark();
               _removeCoach();
-              await Navigator.push<bool>(
+              final result = await SafeNav.push<PairingNavResult>(
                 context,
-                MaterialPageRoute<bool>(builder: (_) => const DeviceDiscoveryScreen()),
+                MaterialPageRoute<PairingNavResult>(
+                  builder: (_) => const DeviceDiscoveryScreen(),
+                ),
               );
               await _load();
+              PairingFlowNav.onComplete(result);
             },
           ),
           const SizedBox(width: 4),
@@ -217,9 +260,61 @@ class _HomeScreenState extends State<HomeScreen> {
           final total = frames.length;
           final offlineC = total - onlineC;
 
+          final active = DeviceStore.instance.cached;
+          final showOfflineBanner = active != null &&
+              _activeFrameServerOnline == false &&
+              !_checkingFrameStatus;
+
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             children: [
+              if (showOfflineBanner) ...[
+                Card(
+                  color: Colors.orange.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Text(
+                              'Frame offline',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            FilledButton(
+                              onPressed: () {
+                                final mac = DeviceStore.instance.pairedFrameMac ??
+                                    FrameMacUtil.normalizeSlug(active.deviceId);
+                                AppRoutes.openFrameConfig(
+                                  context,
+                                  deviceName: active.bleNamePrefix,
+                                  mac: mac,
+                                  bleRemoteId: active.bleRemoteId,
+                                );
+                              },
+                              child: const Text('Reconfigure'),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              onPressed: _refreshActiveFrameStatus,
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(14),
@@ -243,11 +338,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 14),
                         FilledButton.icon(
                           onPressed: () async {
-                            await Navigator.push<bool>(
+                            final result = await SafeNav.push<PairingNavResult>(
                               context,
-                              MaterialPageRoute<bool>(builder: (_) => const DeviceDiscoveryScreen()),
+                              MaterialPageRoute<PairingNavResult>(
+                                builder: (_) => const DeviceDiscoveryScreen(),
+                              ),
                             );
                             await _load();
+                            PairingFlowNav.onComplete(result);
                           },
                           icon: const Icon(Icons.bluetooth_searching),
                           label: Text(s.pairBluetoothFrame),

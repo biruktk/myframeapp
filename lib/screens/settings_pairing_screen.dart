@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../services/ble_frame_device_transport.dart';
+import '../models/pairing_nav_result.dart';
+import '../navigation/pairing_flow_nav.dart';
 import '../services/device_store.dart';
+import '../services/frame_forget_service.dart';
+import '../services/app_release_guard.dart';
 import '../services/frame_recovery_service.dart';
 import 'device_discovery_screen.dart';
 
@@ -37,8 +40,7 @@ class _SettingsPairingScreenState extends State<SettingsPairingScreen> {
       setState(() => _confirmClear = true);
       return;
     }
-    await DeviceStore.instance.clear();
-    await BleFrameDeviceTransport.instance.releaseSession();
+    await FrameForgetService.instance.forgetAllFrames();
     if (!mounted) return;
     setState(() {
       _paired = null;
@@ -47,12 +49,15 @@ class _SettingsPairingScreenState extends State<SettingsPairingScreen> {
   }
 
   Future<void> _repair() async {
-    final ok = await Navigator.push<bool>(
+    final result = await SafeNav.push<PairingNavResult>(
       context,
-      MaterialPageRoute<bool>(builder: (_) => const DeviceDiscoveryScreen()),
+      MaterialPageRoute<PairingNavResult>(
+        builder: (_) => const DeviceDiscoveryScreen(),
+      ),
     );
-    if (ok == true) {
+    if (result?.success == true) {
       await _load();
+      PairingFlowNav.onComplete(result);
     }
   }
 

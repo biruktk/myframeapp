@@ -8,6 +8,9 @@ class VpsDefaults {
   /// Marketing hostname (same VPS when DNS works — often flaky on cellular).
   static const String hostnameInk = 'myframe.ink';
 
+  /// Public HTTPS API (nginx → Express :3001). Used for frame status polls after BLE setup.
+  static String get publicApiBase => 'https://$hostnameInk';
+
   /// Alternate base if DNS resolves (`http://myframe.ink:3001`).
   /// Prefer [apiBase] (raw IP) for reliability (see pairing coercion).
   static String get apiBaseHostname => 'http://$hostnameInk:$apiPort';

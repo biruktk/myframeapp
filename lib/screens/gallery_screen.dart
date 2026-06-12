@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,7 +6,10 @@ import 'package:image_picker/image_picker.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/personal_gallery_store.dart';
+import '../services/user_gallery_cloud_service.dart';
+import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
+import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
 
 /// Personal photo grid + named albums (no social).
@@ -16,20 +20,28 @@ class GalleryScreen extends StatefulWidget {
   State<GalleryScreen> createState() => _GalleryScreenState();
 }
 
-class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tc;
+class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveClientMixin {
+  int _tab = 0;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _tc = TabController(length: 2, vsync: this);
+    PersonalGalleryStore.instance.revision.addListener(_onPersonalGalleryChanged);
     _reload();
   }
 
   @override
   void dispose() {
-    _tc.dispose();
+    PersonalGalleryStore.instance.revision.removeListener(_onPersonalGalleryChanged);
     super.dispose();
+  }
+
+  void _onPersonalGalleryChanged() {
+    if (!mounted) return;
+    unawaited(_reload());
   }
 
   Future<void> _reload() async {
@@ -40,58 +52,43 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
 
   Future<void> _showCreateAlbumDialog() async {
     final s = AppStrings.of(context);
-    final ctrl = TextEditingController();
-    try {
-      final name = await showDialog<String>(
-        context: context,
-        builder: (c) => StatefulBuilder(
-          builder: (c, setD) {
-            return AlertDialog(
-              title: Text(s.createNewAlbum),
-              content: TextField(
-                controller: ctrl,
-                autofocus: true,
-                textInputAction: TextInputAction.done,
-                decoration: InputDecoration(labelText: s.newAlbumNameHint),
-                onChanged: (_) => setD(() {}),
-                onSubmitted: (v) {
-                  final t = v.trim();
-                  if (t.isNotEmpty) Navigator.pop(c, t);
-                },
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(c), child: Text(s.cancel)),
-                FilledButton(
-                  onPressed: ctrl.text.trim().isEmpty ? null : () => Navigator.pop(c, ctrl.text.trim()),
-                  child: Text(s.nextLabel),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-      if (name == null || name.trim().isEmpty) return;
-      await SendAlbumsStore.instance.createAlbum(name.trim(), const <String>[]);
-      await _reload();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(s.albumCreatedMessage(name.trim()))),
-        );
-      }
-    } finally {
-      ctrl.dispose();
-    }
+    final name = await TextInputBottomSheet.show(
+      context,
+      title: s.createNewAlbum,
+      label: s.newAlbumNameHint,
+      confirmLabel: s.nextLabel,
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    await SendAlbumsStore.instance.createAlbum(name.trim(), const <String>[]);
+    await _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(s.albumCreatedMessage(name.trim()))),
+    );
   }
 
   Future<void> _addFromPicker() async {
     final picker = ImagePicker();
     final list = await picker.pickMultiImage();
+    await PersonalGalleryStore.instance.load();
+    final before = Set<String>.from(PersonalGalleryStore.instance.paths);
     if (list.isEmpty) {
       final one = await picker.pickImage(source: ImageSource.gallery);
       if (one == null) return;
       await PersonalGalleryStore.instance.addPaths([one.path]);
     } else {
       await PersonalGalleryStore.instance.addPaths(list.map((e) => e.path).toList());
+    }
+    if (!mounted) return;
+    final tok = AppSettingsScope.of(context).authToken;
+    if (tok.trim().isNotEmpty) {
+      for (final path in PersonalGalleryStore.instance.paths) {
+        if (before.contains(path)) continue;
+        await UserGalleryCloudService.instance.uploadFile(
+          authToken: tok,
+          localPath: path,
+        );
+      }
     }
     await _reload();
   }
@@ -116,6 +113,7 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
     final paths = PersonalGalleryStore.instance.paths;
@@ -123,16 +121,29 @@ class _GalleryScreenState extends State<GalleryScreen> with SingleTickerProvider
     return Scaffold(
       appBar: AppBar(
         title: Text(s.navGallery),
-        bottom: TabBar(
-          controller: _tc,
-          tabs: [
-            Tab(text: '${s.galleryPersonalTab} · ${paths.length}'),
-            Tab(text: '${s.galleryAlbumsTab} · ${albums.length}'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: SegmentedButton<int>(
+              segments: [
+                ButtonSegment(
+                  value: 0,
+                  label: Text('${s.galleryPersonalTab} · ${paths.length}'),
+                ),
+                ButtonSegment(
+                  value: 1,
+                  label: Text('${s.galleryAlbumsTab} · ${albums.length}'),
+                ),
+              ],
+              selected: {_tab},
+              onSelectionChanged: (v) => setState(() => _tab = v.first),
+            ),
+          ),
         ),
       ),
-      body: TabBarView(
-        controller: _tc,
+      body: IndexedStack(
+        index: _tab,
         children: [
           _PersonalGrid(
             paths: paths,
@@ -344,7 +355,14 @@ class _PersonalGrid extends StatelessWidget {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          Image.file(File(path), fit: BoxFit.cover),
+                          Image.file(
+                            File(path),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => ColoredBox(
+                              color: cs.surfaceContainerHighest,
+                              child: Icon(Icons.broken_image_outlined, color: cs.error),
+                            ),
+                          ),
                           Positioned(
                             top: 4,
                             right: 4,

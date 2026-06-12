@@ -7,24 +7,33 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'ble_frame_scan_filter.dart';
 import 'ble_permissions_util.dart';
 import 'device_store.dart';
+import 'frame_mac_util.dart';
+import 'app_diag_log.dart';
 
 class BlufiProvisionResult {
-  const BlufiProvisionResult({required this.ok, required this.message, this.confirmed = false});
+  const BlufiProvisionResult({
+    required this.ok,
+    required this.message,
+    this.confirmed = false,
+  });
   final bool ok;
   final String message;
   final bool confirmed;
 }
 
-/// After Wi‑Fi, optional `mqtt_config` JSON (firmware V0.1.1+, use `host` not `broker` on V0.2.7+).
+/// After Wi‑Fi, optional `mqtt_config` JSON (`host`, `port`, `usr`, `pwd` in `data`).
 class SelfHostedMqttConfig {
   const SelfHostedMqttConfig({
     required this.host,
     this.port = 1883,
+    this.httpPort = 80,
     this.user = '',
     this.password = '',
   });
   final String host;
   final int port;
+  /// HTTP port for MYFM `.bin` download in MQTT `play` (VPS Nginx :80).
+  final int httpPort;
   final String user;
   final String password;
 }
@@ -32,7 +41,8 @@ class SelfHostedMqttConfig {
 class BlufiProvisioningService {
   BlufiProvisioningService._();
   static final BlufiProvisioningService instance = BlufiProvisioningService._();
-  static const _defaultFrameServiceUuid = '0000ffff-0000-1000-8000-00805f9b34fb';
+  static const _defaultFrameServiceUuid =
+      '0000ffff-0000-1000-8000-00805f9b34fb';
   static const _defaultFrameDataUuid = '0000ff01-0000-1000-8000-00805f9b34fb';
   static const _defaultFrameNotifyUuid = '0000ff02-0000-1000-8000-00805f9b34fb';
 
@@ -41,33 +51,48 @@ class BlufiProvisioningService {
   static const _vendorWriteUuid = '00002760-08c2-11e1-9073-0e8ac72e0001';
   static const _vendorNotifyUuid = '00002760-08c2-11e1-9073-0e8ac72e0002';
   static const _opModeSta = 0x01;
+  /// EspBlufi app sends custom JSON as BluFi DATA + CUSTOM_DATA (0x13), not raw GATT bytes.
+  static const _blufiSubtypeCustomData = 0x13;
+  static const _mqttBeforeWifiDelay = Duration(milliseconds: 800);
 
-  void _d(String m) {
-    if (kDebugMode) debugPrint('[BluFi] $m');
-  }
+  void _d(String m) => AppDiagLog.verbose('[BluFi] $m');
 
   Future<BlufiProvisionResult> provision({
     required PairedFrame paired,
     required String ssid,
     required String password,
     SelfHostedMqttConfig? selfHostedMqtt,
+    /// True when [reconfigureServer] already sent mqtt_config in a prior BLE session.
+    bool serverConfigAlreadySent = false,
   }) async {
     try {
-      _d('provision start ssid="$ssid" pwdLen=${password.length} '
-          'pairedDeviceId=${paired.deviceId} bleRemoteId=${paired.bleRemoteId} '
-          'bleNamePrefix=${paired.bleNamePrefix} bleService=${paired.bleServiceUuid} bleData=${paired.bleDataCharUuid}');
+      _d(
+        'provision start ssid="$ssid" pwdLen=${password.length} '
+        'pairedDeviceId=${paired.deviceId} bleRemoteId=${paired.bleRemoteId} '
+        'bleNamePrefix=${paired.bleNamePrefix} bleService=${paired.bleServiceUuid} bleData=${paired.bleDataCharUuid}',
+      );
       final granted = await _ensurePerms();
       if (!granted) {
         _d('abort: Bluetooth permission denied');
-        return const BlufiProvisionResult(ok: false, message: 'Bluetooth permission denied');
+        return const BlufiProvisionResult(
+          ok: false,
+          message: 'Bluetooth permission denied',
+        );
       }
       if (!await FlutterBluePlus.isSupported) {
         _d('abort: BLE not supported');
-        return const BlufiProvisionResult(ok: false, message: 'Bluetooth LE not supported');
+        return const BlufiProvisionResult(
+          ok: false,
+          message: 'Bluetooth LE not supported',
+        );
       }
-      if (!await FlutterBluePlus.isOn) {
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
         _d('abort: Bluetooth adapter off');
-        return const BlufiProvisionResult(ok: false, message: 'Bluetooth is off');
+        return const BlufiProvisionResult(
+          ok: false,
+          message: 'Bluetooth is off',
+        );
       }
       // Ensure no stale scan session competes with GATT provisioning.
       try {
@@ -86,8 +111,10 @@ class BlufiProvisioningService {
       }
       for (var i = 0; i < candidates.length; i++) {
         final d = candidates[i];
-        _d('candidate[${i + 1}/${candidates.length}] remoteId=${d.remoteId.str} '
-            'advName="${d.advName}" platformName="${d.platformName}"');
+        _d(
+          'candidate[${i + 1}/${candidates.length}] remoteId=${d.remoteId.str} '
+          'advName="${d.advName}" platformName="${d.platformName}"',
+        );
       }
 
       Object? lastFailure;
@@ -100,19 +127,44 @@ class BlufiProvisioningService {
           _d('connected state=${remote.isConnected} mtu=${remote.mtuNow}');
           _d('discoverServices (timeout 12s)…');
           final services = await remote.discoverServices(timeout: 12);
-          _d('discovered ${services.length} primary service(s): '
-              '${services.map((s) => s.uuid.str).join(", ")}');
+          _d(
+            'discovered ${services.length} primary service(s): '
+            '${services.map((s) => s.uuid.str).join(", ")}',
+          );
           final picked = _pickProvisionGatt(services, paired);
           if (picked == null) {
-            _d('no provisioning write char on ${remote.remoteId.str} — try next candidate');
+            _d(
+              'no provisioning write char on ${remote.remoteId.str} — try next candidate',
+            );
             await remote.disconnect();
             _d('disconnected (skipped candidate)');
             continue;
           }
-          _d('using write=${picked.write.uuid.str} notify=${picked.notifyGuid.str} '
-              'writeProps w=${picked.write.properties.write} wNoResp=${picked.write.properties.writeWithoutResponse}');
+          _d(
+            'using write=${picked.write.uuid.str} notify=${picked.notifyGuid.str} '
+            'writeProps w=${picked.write.properties.write} wNoResp=${picked.write.properties.writeWithoutResponse}',
+          );
 
-          _d('starting BluFi binary provisioning flow');
+          final sendMqttFirst = !serverConfigAlreadySent &&
+              selfHostedMqtt != null &&
+              selfHostedMqtt.host.trim().isNotEmpty;
+          if (sendMqttFirst) {
+            final mqtt = selfHostedMqtt;
+            _d(
+              'mqtt_config BEFORE Wi‑Fi (EspBlufi order) → '
+              '${mqtt.host}:${mqtt.port}',
+            );
+            await deliverMqttConfig(
+              services: services,
+              fallbackWrite: picked.write,
+              cfg: mqtt,
+            );
+            await Future<void>.delayed(_mqttBeforeWifiDelay);
+          } else if (serverConfigAlreadySent) {
+            _d('mqtt_config skipped — already sent in prior BLE session');
+          }
+
+          _d('starting BluFi Wi‑Fi provisioning flow');
           final ack = await _sendBlufiStaFrames(
             writeChar: picked.write,
             services: services,
@@ -120,15 +172,11 @@ class BlufiProvisioningService {
             ssid: ssid,
             password: password,
           );
-          if (ack &&
-              selfHostedMqtt != null &&
-              selfHostedMqtt.host.trim().isNotEmpty) {
-            _d('sending mqtt_config to broker ${selfHostedMqtt.host}:${selfHostedMqtt.port}');
-            await _sendMqttConfigJson(
-              picked.write,
-              selfHostedMqtt,
-            );
-            await Future<void>.delayed(const Duration(milliseconds: 200));
+          // EspBluFi order: mqtt_config only before Wi‑Fi (scan / manual config session), never after STA connect.
+          if (ack && serverConfigAlreadySent) {
+            _d('mqtt_config skipped after Wi‑Fi — already sent in prior BLE session');
+          } else if (ack && sendMqttFirst) {
+            _d('mqtt_config already sent before Wi‑Fi in this session (EspBluFi order)');
           }
           await Future<void>.delayed(const Duration(milliseconds: 120));
           if (ack) {
@@ -144,7 +192,9 @@ class BlufiProvisioningService {
             );
           }
           wroteWifiWithoutAck = true;
-          _d('no ack from ${remote.remoteId.str} — trying next candidate if any');
+          _d(
+            'no ack from ${remote.remoteId.str} — trying next candidate if any',
+          );
         } catch (e, st) {
           lastFailure = e;
           lastStack = st;
@@ -164,7 +214,9 @@ class BlufiProvisioningService {
         return BlufiProvisionResult(ok: false, message: lastFailure.toString());
       }
       if (wroteWifiWithoutAck) {
-        _d('abort: sent Wi-Fi credentials over BluFi but never got firmware ack/confirm');
+        _d(
+          'abort: sent Wi-Fi credentials over BluFi but never got firmware ack/confirm',
+        );
         return const BlufiProvisionResult(
           ok: false,
           confirmed: false,
@@ -191,13 +243,23 @@ class BlufiProvisioningService {
     try {
       final granted = await _ensurePerms();
       if (!granted) {
-        return const BlufiProvisionResult(ok: false, message: 'Bluetooth permission denied');
+        return const BlufiProvisionResult(
+          ok: false,
+          message: 'Bluetooth permission denied',
+        );
       }
       if (!await FlutterBluePlus.isSupported) {
-        return const BlufiProvisionResult(ok: false, message: 'Bluetooth LE not supported');
+        return const BlufiProvisionResult(
+          ok: false,
+          message: 'Bluetooth LE not supported',
+        );
       }
-      if (!await FlutterBluePlus.isOn) {
-        return const BlufiProvisionResult(ok: false, message: 'Bluetooth is off');
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (adapterState != BluetoothAdapterState.on) {
+        return const BlufiProvisionResult(
+          ok: false,
+          message: 'Bluetooth is off',
+        );
       }
       try {
         await FlutterBluePlus.stopScan();
@@ -206,7 +268,8 @@ class BlufiProvisioningService {
       if (candidates.isEmpty) {
         return const BlufiProvisionResult(
           ok: false,
-          message: 'No frame found over Bluetooth. Turn it on, stay close, and try again.',
+          message:
+              'No frame found over Bluetooth. Turn it on, stay close, and try again.',
         );
       }
       Object? lastFailure;
@@ -219,8 +282,12 @@ class BlufiProvisioningService {
             await remote.disconnect();
             continue;
           }
-          await _sendMqttConfigJson(picked.write, selfHostedMqtt);
-          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await deliverMqttConfig(
+            services: services,
+            fallbackWrite: picked.write,
+            cfg: selfHostedMqtt,
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 500));
           await _rememberBleIdentity(paired: paired, remote: remote);
           await remote.disconnect();
           return const BlufiProvisionResult(
@@ -237,7 +304,9 @@ class BlufiProvisioningService {
       }
       return BlufiProvisionResult(
         ok: false,
-        message: lastFailure?.toString() ?? 'Could not reconfigure the frame server.',
+        message:
+            lastFailure?.toString() ??
+            'Could not reconfigure the frame server.',
       );
     } catch (e) {
       return BlufiProvisionResult(ok: false, message: e.toString());
@@ -260,7 +329,26 @@ class BlufiProvisioningService {
       bleRemoteId: remoteId,
       bleNamePrefix: displayName.isEmpty ? null : displayName,
     );
-    _d('remembered BLE identity deviceId=${paired.deviceId} bleRemoteId=$remoteId name="$displayName"');
+    final mac = FrameMacUtil.macFromBleIdentity(
+      bleName: displayName,
+      fallbackText: paired.deviceId,
+    );
+    if (mac != null) {
+      await DeviceStore.instance.savePairedFrameMac(mac);
+      _d('saved pairedFrameMac=$mac from BLE name "$displayName"');
+    }
+    _d(
+      'remembered BLE identity deviceId=${paired.deviceId} bleRemoteId=$remoteId name="$displayName"',
+    );
+  }
+
+  Future<void> _negotiateMtu(BluetoothDevice remote) async {
+    try {
+      await remote.requestMtu(512);
+      _d('MTU negotiated mtuNow=${remote.mtuNow}');
+    } catch (e) {
+      _d('MTU request failed (non-fatal): $e');
+    }
   }
 
   Future<void> _connectWithRetry(BluetoothDevice remote) async {
@@ -269,6 +357,7 @@ class BlufiProvisioningService {
       try {
         _d('connect → ${remote.remoteId.str} attempt=$attempt timeout=14s');
         await remote.connect(timeout: const Duration(seconds: 14));
+        await _negotiateMtu(remote);
         return;
       } catch (e) {
         lastError = e;
@@ -315,13 +404,7 @@ class BlufiProvisioningService {
       final frameCtrl = checksum ? 0x02 : 0x00;
       final dataLen = payload.length & 0xff;
       final seqByte = seq & 0xff;
-      final frame = <int>[
-        typeSubtype,
-        frameCtrl,
-        seqByte,
-        dataLen,
-        ...payload,
-      ];
+      final frame = <int>[typeSubtype, frameCtrl, seqByte, dataLen, ...payload];
       if (checksum) {
         final toCheck = <int>[seqByte, dataLen, ...payload];
         final crc = crc16Esp(toCheck);
@@ -329,7 +412,9 @@ class BlufiProvisioningService {
         frame.add((crc >> 8) & 0xff);
       }
       seq++;
-      _d('blufi frame pkg=$pkgType subtype=0x${subtype.toRadixString(16)} len=${payload.length} seq=${seq - 1} frameCtrl=0x${frameCtrl.toRadixString(16)}');
+      _d(
+        'blufi frame pkg=$pkgType subtype=0x${subtype.toRadixString(16)} len=${payload.length} seq=${seq - 1} frameCtrl=0x${frameCtrl.toRadixString(16)}',
+      );
       await _writeRaw(writeChar, frame);
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
@@ -353,7 +438,9 @@ class BlufiProvisioningService {
         notifySub = notifyChar.lastValueStream.listen((p) {
           if (p.isEmpty) return;
           notifyPayloads.add(p);
-          _d('blufi notify len=${p.length} hex=${p.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}');
+          _d(
+            'blufi notify len=${p.length} hex=${p.map((b) => b.toRadixString(16).padLeft(2, "0")).join(" ")}',
+          );
         });
         _d('blufi: subscribed notify before writing');
       }
@@ -385,17 +472,23 @@ class BlufiProvisioningService {
           final payload = notifyPayloads[handledNotifyCount++];
           final parsed = _parseBlufiFrame(payload);
           if (parsed == null) continue;
-          if (parsed.pkgType == 0x01 && parsed.subtype == 0x0f && parsed.data.length >= 3) {
+          if (parsed.pkgType == 0x01 &&
+              parsed.subtype == 0x0f &&
+              parsed.data.length >= 3) {
             seenStatusFrame = true;
             final opMode = parsed.data[0];
             final staState = parsed.data[1];
             final softApConn = parsed.data[2];
             if (staState == 0x00) {
-              _d('blufi: Wi-Fi connected with IP confirmed (opMode=0x${opMode.toRadixString(16)} softApConn=$softApConn)');
+              _d(
+                'blufi: Wi-Fi connected with IP confirmed (opMode=0x${opMode.toRadixString(16)} softApConn=$softApConn)',
+              );
               ack = true;
               break;
             }
-            _d('blufi: status frame opMode=0x${opMode.toRadixString(16)} staState=0x${staState.toRadixString(16)} softApConn=$softApConn');
+            _d(
+              'blufi: status frame opMode=0x${opMode.toRadixString(16)} staState=0x${staState.toRadixString(16)} softApConn=$softApConn',
+            );
           }
         }
         if (ack) break;
@@ -405,7 +498,9 @@ class BlufiProvisioningService {
         await notifyChar?.setNotifyValue(false);
       } catch (_) {}
       if (!ack && seenStatusFrame) {
-        _d('blufi: status frame(s) received but no connected-with-ip state before timeout');
+        _d(
+          'blufi: status frame(s) received but no connected-with-ip state before timeout',
+        );
       }
       _d('blufi ack=$ack');
       return ack;
@@ -416,27 +511,99 @@ class BlufiProvisioningService {
     }
   }
 
-  Future<void> _sendMqttConfigJson(
-    BluetoothCharacteristic writeChar,
-    SelfHostedMqttConfig cfg,
-  ) async {
-    final payload = jsonEncode({
-      'msgid': DateTime.now().millisecondsSinceEpoch.toString(),
-      'action': 'mqtt_config',
-      'data': {
-        'host': cfg.host.trim(),
-        'broker': cfg.host.trim(),
-        'port': cfg.port,
-        'usr': cfg.user,
-        'pwd': cfg.password,
-      },
-    });
-    final bytes = utf8.encode(payload);
-    _d('mqtt_config json len=${bytes.length}');
-    await _writeUtf8Chunks(writeChar, bytes);
+  List<int> mqttConfigJsonBytes(SelfHostedMqttConfig cfg) {
+    final host = cfg.host.trim();
+    return utf8.encode(
+      jsonEncode({
+        'msgid': DateTime.now().millisecondsSinceEpoch.toString(),
+        'action': 'mqtt_config',
+        'data': {
+          'host': host,
+          'port': cfg.port,
+          'usr': cfg.user,
+          'pwd': cfg.password,
+        },
+      }),
+    );
   }
 
-  Future<void> _writeUtf8Chunks(BluetoothCharacteristic c, List<int> bytes) async {
+  /// Same transport as EspBlufi: BluFi CUSTOM_DATA on FFFF/ff01 when present, else raw vendor JSON.
+  Future<void> deliverMqttConfig({
+    required List<BluetoothService> services,
+    required BluetoothCharacteristic fallbackWrite,
+    required SelfHostedMqttConfig cfg,
+  }) async {
+    final bytes = mqttConfigJsonBytes(cfg);
+    _d('mqtt_config json len=${bytes.length}');
+    await deliverConfigJson(
+      services: services,
+      fallbackWrite: fallbackWrite,
+      jsonBytes: bytes,
+    );
+  }
+
+  Future<void> deliverConfigJson({
+    required List<BluetoothService> services,
+    required BluetoothCharacteristic fallbackWrite,
+    required List<int> jsonBytes,
+  }) async {
+    final blufiChar = _findBlufiDataChar(services);
+    if (blufiChar != null) {
+      _d(
+        'config via BluFi CUSTOM_DATA (0x13) on FFFF/ff01 '
+        '(matches EspBlufi mobile app)',
+      );
+      await _sendBlufiCustomData(blufiChar, jsonBytes);
+      return;
+    }
+    _d('config via raw JSON on ${fallbackWrite.uuid.str} (vendor channel)');
+    await _writeUtf8Chunks(fallbackWrite, jsonBytes);
+  }
+
+  BluetoothCharacteristic? _findBlufiDataChar(List<BluetoothService> services) {
+    for (final s in services) {
+      if (!_uuidEqStr(s.uuid.str, _defaultFrameServiceUuid)) continue;
+      for (final c in s.characteristics) {
+        if (_uuidEqStr(c.uuid.str, _defaultFrameDataUuid) &&
+            (c.properties.write || c.properties.writeWithoutResponse)) {
+          return c;
+        }
+      }
+    }
+    return null;
+  }
+
+  Future<void> _sendBlufiCustomData(
+    BluetoothCharacteristic writeChar,
+    List<int> bytes,
+  ) async {
+    const pkgData = 0x01;
+    // Firmware JSON.parse expects one complete mqtt_config per CUSTOM_DATA frame.
+    if (bytes.length > 250) {
+      throw StateError(
+        'mqtt_config too long (${bytes.length} B) for a single BluFi custom-data frame',
+      );
+    }
+    final typeSubtype =
+        ((_blufiSubtypeCustomData & 0x3f) << 2) | (pkgData & 0x03);
+    final frame = <int>[
+      typeSubtype,
+      0x00,
+      0,
+      bytes.length & 0xff,
+      ...bytes,
+    ];
+    _d('blufi custom data single frame len=${bytes.length} json="${utf8.decode(bytes)}"');
+    await _writeRaw(writeChar, frame);
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    await _writeRaw(writeChar, frame);
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+  }
+
+  Future<void> _writeUtf8Chunks(
+    BluetoothCharacteristic c,
+    List<int> bytes,
+  ) async {
     const chunk = 180;
     for (var i = 0; i < bytes.length; i += chunk) {
       final end = i + chunk < bytes.length ? i + chunk : bytes.length;
@@ -454,9 +621,9 @@ class BlufiProvisioningService {
 
   Future<void> _writeRaw(BluetoothCharacteristic c, List<int> bytes) async {
     final useNoResp = !c.properties.write && c.properties.writeWithoutResponse;
-    if (kDebugMode) {
-      debugPrint('[BluFi] raw write len=${bytes.length} withoutResponse=$useNoResp');
-    }
+    AppDiagLog.verbose(
+      '[BluFi] raw write len=${bytes.length} withoutResponse=$useNoResp',
+    );
     if (c.properties.write) {
       await c.write(bytes, withoutResponse: false);
     } else if (c.properties.writeWithoutResponse) {
@@ -476,7 +643,9 @@ class BlufiProvisioningService {
     final normTargetId = _normalizeBleId(targetId);
     final targetPrefix = (p.bleNamePrefix ?? 'IJ_').trim().toLowerCase();
     const companionPrefix = '3837';
-    _d('scan start 30s match: normBleId="$normTargetId" namePrefix="$targetPrefix" companionPrefix=$companionPrefix');
+    _d(
+      'scan start 30s match: normBleId="$normTargetId" namePrefix="$targetPrefix" companionPrefix=$companionPrefix',
+    );
 
     final companionOrder = <String>[];
     final primaryOrder = <String>[];
@@ -490,7 +659,9 @@ class BlufiProvisioningService {
         final normRid = _normalizeBleId(rid);
         final rawName = r.advertisementData.advName.trim().isNotEmpty
             ? r.advertisementData.advName
-            : (r.device.platformName.trim().isNotEmpty ? r.device.platformName : r.device.advName);
+            : (r.device.platformName.trim().isNotEmpty
+                  ? r.device.platformName
+                  : r.device.advName);
         final nameLower = rawName.toLowerCase();
         final idOk = normTargetId.isNotEmpty && normRid == normTargetId;
         final discoverable = BleFrameScanFilter.isDiscoverableEntry(
@@ -498,7 +669,8 @@ class BlufiProvisioningService {
           serviceUuids: r.advertisementData.serviceUuids,
           nativeServiceUuidStrings: null,
         );
-        final nameOk = targetPrefix.isNotEmpty && nameLower.contains(targetPrefix);
+        final nameOk =
+            targetPrefix.isNotEmpty && nameLower.contains(targetPrefix);
         if (nameLower.startsWith(companionPrefix)) {
           companionById[rid] = r.device;
           if (!companionOrder.contains(rid)) companionOrder.add(rid);
@@ -506,7 +678,9 @@ class BlufiProvisioningService {
         if (idOk || discoverable || nameOk) {
           primaryById[rid] = r.device;
           if (!primaryOrder.contains(rid)) primaryOrder.add(rid);
-          if (kDebugMode) debugPrint('[BluFi] scan primary id=$rid name=$rawName');
+          
+            AppDiagLog.verbose('[BluFi] scan primary id=$rid name=$rawName');
+          
         }
         if (nameLower.startsWith(companionPrefix)) {
           _d('scan hit companion id=$rid advName="$rawName"');
@@ -525,7 +699,9 @@ class BlufiProvisioningService {
     } catch (e) {
       final msg = e.toString().toLowerCase();
       if (msg.contains('scanning too frequently') || msg.contains('status=6')) {
-        _d('scan throttled by Android (status=6) — using paired device id fallback');
+        _d(
+          'scan throttled by Android (status=6) — using paired device id fallback',
+        );
         final rid = p.bleRemoteId?.trim();
         if (rid != null && rid.isNotEmpty) {
           return [BluetoothDevice.fromId(rid)];
@@ -553,8 +729,10 @@ class BlufiProvisioningService {
     for (final id in companionOrder) {
       addOrdered(companionById[id]);
     }
-    _d('scan done companions=${companionOrder.length} primary=${primaryOrder.length} '
-        'orderedCandidates=${ordered.length} (order: primary IJ_/MAC first, then 3837 companion)');
+    _d(
+      'scan done companions=${companionOrder.length} primary=${primaryOrder.length} '
+      'orderedCandidates=${ordered.length} (order: primary IJ_/MAC first, then 3837 companion)',
+    );
     return ordered;
   }
 
@@ -609,13 +787,16 @@ class BlufiProvisioningService {
       for (final s in services) {
         for (final c in s.characteristics) {
           if (_uuidEqStr(c.uuid.str, fallback.uuid.str)) continue;
-          if ((c.properties.notify || c.properties.indicate) && !_isSigAdoptedCharacteristic(c.uuid.str)) {
+          if ((c.properties.notify || c.properties.indicate) &&
+              !_isSigAdoptedCharacteristic(c.uuid.str)) {
             notifyGuid = c.uuid;
             break outer;
           }
         }
       }
-      _d('GATT pick: fallback custom writable=${fallback.uuid.str} notify=${notifyGuid.str}');
+      _d(
+        'GATT pick: fallback custom writable=${fallback.uuid.str} notify=${notifyGuid.str}',
+      );
       return (write: fallback, notifyGuid: notifyGuid);
     }
     _d('GATT pick: none (no vendor, no FFFF pair, no custom writable)');
@@ -640,7 +821,9 @@ class BlufiProvisioningService {
     return raw.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toLowerCase();
   }
 
-  BluetoothCharacteristic? _findCustomWritable(List<BluetoothService> services) {
+  BluetoothCharacteristic? _findCustomWritable(
+    List<BluetoothService> services,
+  ) {
     for (final s in services) {
       if (_isSigAdoptedService(s.uuid.str)) continue;
       for (final c in s.characteristics) {
@@ -656,16 +839,22 @@ class BlufiProvisioningService {
   bool _isSigAdoptedService(String uuid) {
     final u = _uuidNorm(uuid);
     // Standard adopted services are in the 0x18xx range under Bluetooth base UUID.
-    return RegExp(r'^(18[0-9a-f]{2}|000018[0-9a-f]{2}00001000800000805f9b34fb)$').hasMatch(u);
+    return RegExp(
+      r'^(18[0-9a-f]{2}|000018[0-9a-f]{2}00001000800000805f9b34fb)$',
+    ).hasMatch(u);
   }
 
   bool _isSigAdoptedCharacteristic(String uuid) {
     final u = _uuidNorm(uuid);
     // Standard adopted characteristics are in 0x2Axx / 0x2Bxx ranges.
-    return RegExp(r'^(2[ab][0-9a-f]{2}|00002[ab][0-9a-f]{2}00001000800000805f9b34fb)$').hasMatch(u);
+    return RegExp(
+      r'^(2[ab][0-9a-f]{2}|00002[ab][0-9a-f]{2}00001000800000805f9b34fb)$',
+    ).hasMatch(u);
   }
 
-  ({int pkgType, int subtype, List<int> data})? _parseBlufiFrame(List<int> payload) {
+  ({int pkgType, int subtype, List<int> data})? _parseBlufiFrame(
+    List<int> payload,
+  ) {
     if (payload.length < 4) return null;
     final typeSubtype = payload[0] & 0xff;
     final pkgType = typeSubtype & 0x03;

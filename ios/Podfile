@@ -1,8 +1,8 @@
-# Generated from Flutter's default iOS template — required for `pod install` and plugin builds.
+# Generated from Flutter's default iOS template - required for `pod install` and plugin builds.
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
-# Must be >= the Runner target in Xcode and >= each plugin’s minimum (raise if `pod install` warns).
+# Must be >= the Runner target in Xcode and >= each plugin's minimum (raise if `pod install` warns).
 platform :ios, '13.0'
 
 project 'Runner', {
@@ -40,5 +40,12 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+      definitions = config.build_settings['GCC_PREPROCESSOR_DEFINITIONS']
+      definitions << 'PERMISSION_BLUETOOTH=1'
+      definitions << 'PERMISSION_CAMERA=1'
+      definitions << 'PERMISSION_PHOTOS=1'
+    end
   end
 end

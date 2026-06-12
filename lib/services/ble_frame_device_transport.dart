@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'app_diag_log.dart';
 import 'ble_permissions_util.dart';
 import 'device_store.dart';
 import 'device_transport.dart';
@@ -120,11 +121,9 @@ class BleFrameDeviceTransport implements DeviceTransport {
       _emitConnection(FrameConnectionState.connected);
       await _writeAllBytes(_dataChar!, bytes);
 
-      if (kDebugMode) {
-        debugPrint(
-          '[MyFrame] BLE sent ${bytes.length}B file=$filename slideshow=${slideshow.apiValue} (session kept)',
-        );
-      }
+      AppDiagLog.verbose(
+        '[MyFrame] BLE sent ${bytes.length}B file=$filename slideshow=${slideshow.apiValue} (session kept)',
+      );
       return SendResult(ok: true, message: 'Sent ${bytes.length} bytes over BLE');
     } on TimeoutException catch (e) {
       return SendResult(ok: false, message: e.message ?? e.toString());
@@ -178,7 +177,7 @@ class BleFrameDeviceTransport implements DeviceTransport {
   }
 
   Future<void> _onPeripheralDisconnect() async {
-    if (kDebugMode) debugPrint('[MyFrame] BLE link dropped (peripheral or range)');
+    AppDiagLog.verbose('[MyFrame] BLE link dropped (peripheral or range)');
     await _disconnectAndClear(emit: true);
     _sessionFingerprint = null;
   }

@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 
 class FrameProfileSetupScreen extends StatefulWidget {
-  const FrameProfileSetupScreen({super.key});
+  const FrameProfileSetupScreen({
+    super.key,
+    this.requiredSetup = false,
+  });
+
+  /// First-time Wi‑Fi setup: user must tap Continue (no accidental back-out).
+  final bool requiredSetup;
 
   @override
   State<FrameProfileSetupScreen> createState() => _FrameProfileSetupScreenState();
@@ -31,19 +39,42 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
 
   Future<void> _save() async {
     setState(() => _busy = true);
-    await DeviceStore.instance.saveFrameProfile(
-      frameName: _nameCtrl.text,
-      orientation: _orientation,
-    );
-    if (!mounted) return;
-    Navigator.of(context).pop(true);
+    try {
+      var name = _nameCtrl.text.trim();
+      if (name.isEmpty) {
+        name = AppStrings.of(context).frameDefaultDisplayName;
+      }
+      await DeviceStore.instance.saveFrameProfile(
+        frameName: name,
+        orientation: _orientation,
+      );
+      if (!mounted) return;
+      setState(() => _busy = false);
+      await SchedulerBinding.instance.endOfFrame;
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (e, st) {
+      AppDiagLog.verbose('[Profile] save failed: $e\n$st');
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save frame profile. Try again.'),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    return Scaffold(
-      appBar: AppBar(title: Text(s.frameProfileTitle)),
+    return PopScope(
+      canPop: !widget.requiredSetup,
+      child: Scaffold(
+      appBar: AppBar(
+        title: Text(s.frameProfileTitle),
+        automaticallyImplyLeading: !widget.requiredSetup,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -78,6 +109,7 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
           ),
         ],
       ),
+    ),
     );
   }
 }

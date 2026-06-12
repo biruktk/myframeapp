@@ -1,29 +1,38 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:app_settings/app_settings.dart' as app_os;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image/image.dart' as im;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
-import '../services/family_group_store.dart';
 import '../settings/app_settings.dart';
 import 'image_editor_screen.dart';
-import 'slideshow_batch_screen.dart';
+import 'playlist_screen.dart';
+import '../services/ai_image_generate_service.dart';
+import '../widgets/text_input_bottom_sheet.dart';
 import '../services/ble_frame_device_transport.dart';
 import '../services/device_store.dart';
+import '../services/frame_guest_invite_service.dart';
+import '../services/frame_recovery_service.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
+import '../services/gallery_image_cache.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
-import '../services/share_incoming_service.dart';
+import '../services/permission_gate.dart';
 import '../widgets/send_album_settings_sheet.dart';
 import '../widgets/shell_navigation.dart';
+import '../models/pairing_nav_result.dart';
+import '../navigation/pairing_flow_nav.dart';
+import '../models/send_overlay_options.dart';
+import '../services/app_diag_log.dart';
 import 'device_discovery_screen.dart';
+import 'settings_ai_generate_screen.dart';
 
 enum _SendSource { gallery, camera, sharelink, ai }
 
@@ -43,6 +52,8 @@ class SendScreen extends StatefulWidget {
 class _SendScreenState extends State<SendScreen> {
   int _lastGalleryNonce = 0;
   List<String> _lastSharedPaths = const [];
+  bool _sendFlowBusy = false;
+  bool _pickerOpen = false;
 
   @override
   void initState() {
@@ -92,51 +103,95 @@ class _SendScreenState extends State<SendScreen> {
     });
   }
 
-  Future<bool> _ensureConnectedFrame(BuildContext context) async {
-    await DeviceStore.instance.load();
-    final paired = DeviceStore.instance.cached;
-    if (paired != null) return true;
-    if (!context.mounted) return false;
-    final ok = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute<bool>(builder: (_) => const DeviceDiscoveryScreen()),
-    );
-    await DeviceStore.instance.load();
-    return ok == true || DeviceStore.instance.cached != null;
-  }
-
   Future<void> _openCameraPermissionSettings() =>
       app_os.AppSettings.openAppSettings(type: app_os.AppSettingsType.settings);
 
-  Future<void> _shareInviteFromSend(BuildContext context) async {
-    final s = AppStrings.of(context);
-    final app = AppSettingsScope.of(context);
-    await FamilyGroupStore.instance.ensureLoaded(ownerDisplayName: () {
-      final name = app.profileName.trim();
-      if (name.isNotEmpty) return name;
-      final mail = app.accountEmail.trim();
-      if (mail.isNotEmpty) return mail.split('@').first;
-      return 'You';
-    });
+  Future<void> _shareGuestUploadLink(BuildContext context) async {
+    await DeviceStore.instance.load();
+    final paired = DeviceStore.instance.cached;
+    if (paired == null) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: const Text('Frame is not connected. Connect your frame now.'),
+          action: SnackBarAction(
+            label: 'Connect',
+            onPressed: () async {
+              final result = await Navigator.of(context).push<PairingNavResult>(
+                MaterialPageRoute<PairingNavResult>(
+                  builder: (_) => const DeviceDiscoveryScreen(),
+                ),
+              );
+              PairingFlowNav.onComplete(result);
+            },
+          ),
+        ),
+      );
+      return;
+    }
+
     if (!context.mounted) return;
-    final g = FamilyGroupStore.instance;
-    final inviteUrl =
-        'https://${VpsDefaults.hostnameInk}/join?code=${Uri.encodeComponent(g.inviteCode)}';
-    await Share.share(
-      s.familyInviteShareBody(g.familyName, g.inviteCode, inviteUrl),
-      subject: '${s.inviteFamily} · ${g.familyName}',
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Preparing upload link…'),
+        duration: Duration(seconds: 20),
+      ),
     );
+
+    final app = AppSettingsScope.of(context);
+    final invite = await FrameGuestInviteService.instance.createOrFetchInvite(
+      frame: paired,
+      userAuthToken: app.authToken,
+    );
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    if (invite == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          content: const Text('Could not create upload link. Try again.'),
+        ),
+      );
+      return;
+    }
+
+    final frameName = paired.frameName?.trim();
+    final label = frameName != null && frameName.isNotEmpty ? frameName : 'my frame';
+    await Share.share(
+      'Send a photo to $label — open this link, pick a photo, and it goes to the frame:\n${invite.inviteUrl}',
+      subject: 'Upload a photo to $label',
+    );
+    AppDiagLog.log('[ShareLink] shared ${invite.inviteUrl}');
   }
 
   Future<void> _startFlow(BuildContext context, _SendSource source) async {
-    final connected = await _ensureConnectedFrame(context);
-    if (!connected) return;
+    if (_sendFlowBusy) return;
+    _sendFlowBusy = true;
+    try {
+      await _startFlowImpl(context, source);
+    } finally {
+      _sendFlowBusy = false;
+    }
+  }
+
+  Future<void> _startFlowImpl(BuildContext context, _SendSource source) async {
+    if (source == _SendSource.sharelink) {
+      await _shareGuestUploadLink(context);
+      return;
+    }
     if (source == _SendSource.gallery) {
       await _startFromGalleryWithQueue(context);
       return;
     }
-    if (source == _SendSource.sharelink) {
-      await _shareInviteFromSend(context);
+    if (source == _SendSource.ai) {
+      await _startAiGenerate(context);
       return;
     }
     Uint8List? bytes;
@@ -182,7 +237,7 @@ class _SendScreenState extends State<SendScreen> {
     final Uint8List imageBytes = bytes;
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
 
-    final sent = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(
         builder: (_) => ImageEditorScreen(
@@ -191,9 +246,6 @@ class _SendScreenState extends State<SendScreen> {
         ),
       ),
     );
-    if (sent == true) {
-      ShellNavigation.goToTab(0);
-    }
   }
 
   /// Photo library: [pickMultiImage] with single-image fallback, then the editor for each selection in order.
@@ -210,22 +262,6 @@ class _SendScreenState extends State<SendScreen> {
         duration: const Duration(seconds: 3),
       ),
     );
-
-    final connected = await _ensureConnectedFrame(context);
-    if (!connected) {
-      ShareIncomingService.instance.requeuePaths(paths);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            content: Text(s.shareIncomingConnectFrame),
-          ),
-        );
-      }
-      return;
-    }
 
     final files = <XFile>[];
     for (final p in paths) {
@@ -247,8 +283,44 @@ class _SendScreenState extends State<SendScreen> {
     }
 
     if (!context.mounted) return;
+
+    final shareBytes = <Uint8List>[];
+    for (final f in files) {
+      try {
+        shareBytes.add(await f.readAsBytes());
+      } catch (e) {
+        AppDiagLog.verbose('[Send] share read failed ${f.path}: $e');
+      }
+    }
+    if (shareBytes.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text(s.noImageSelected),
+          ),
+        );
+      }
+      return;
+    }
+
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
-    final pathList = files.map((e) => e.path).toList();
+    final pathList = await GalleryImageCache.persistPaths(files.map((e) => e.path));
+    if (pathList.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text(s.noImageSelected),
+          ),
+        );
+      }
+      return;
+    }
     final sheet = await showSendAlbumSettingsSheet(context, photoPaths: pathList);
     if (!context.mounted || sheet == null) return;
 
@@ -257,25 +329,22 @@ class _SendScreenState extends State<SendScreen> {
     } else if (sheet.newAlbumName != null && sheet.newAlbumName!.trim().isNotEmpty) {
       await SendAlbumsStore.instance.createAlbum(sheet.newAlbumName!.trim(), pathList);
     }
-    await PersonalGalleryStore.instance.addPaths(pathList);
-
-    for (var i = 0; i < files.length; i++) {
-      if (!context.mounted) return;
-      final bytes = await files[i].readAsBytes();
+    for (var i = 0; i < shareBytes.length; i++) {
       if (!context.mounted) return;
       final sent = await Navigator.push<bool>(
         context,
         MaterialPageRoute<bool>(
           builder: (_) => ImageEditorScreen(
-            imageBytes: bytes,
+            imageBytes: shareBytes[i],
+            galleryPersistPath: pathList.length > i ? pathList[i] : null,
             slideshow: slideshow,
             overlay: sheet.overlay,
             overlayLocationOverride: sheet.locationLine,
+            displaySeconds: sheet.displaySeconds,
           ),
         ),
       );
       if (sent == true) {
-        ShellNavigation.goToTab(0);
         return;
       }
     }
@@ -314,47 +383,112 @@ class _SendScreenState extends State<SendScreen> {
     if (!context.mounted) return;
 
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
-    final paths = files.map((e) => e.path).toList();
-    final sheet = await showSendAlbumSettingsSheet(context, photoPaths: paths);
-    if (!context.mounted || sheet == null) return;
-
-    if (sheet.addToAlbumId != null) {
-      await SendAlbumsStore.instance.addPathsToAlbum(sheet.addToAlbumId!, paths);
-    } else if (sheet.newAlbumName != null && sheet.newAlbumName!.trim().isNotEmpty) {
-      await SendAlbumsStore.instance.createAlbum(sheet.newAlbumName!.trim(), paths);
+    // Copy out of image_picker /tmp first, then read durable copies (iOS-safe).
+    final paths = await GalleryImageCache.persistPaths(files.map((e) => e.path));
+    if (paths.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text(AppStrings.of(context).noImageSelected),
+          ),
+        );
+      }
+      return;
     }
-    await PersonalGalleryStore.instance.addPaths(paths);
 
-    for (var i = 0; i < files.length; i++) {
-      if (!context.mounted) return;
-      final bytes = await files[i].readAsBytes();
+    final fileBytes = <Uint8List>[];
+    for (final path in paths) {
+      try {
+        final bytes = await File(path).readAsBytes();
+        fileBytes.add(bytes);
+        AppDiagLog.verbose('[Send] gallery pick $path bytes=${bytes.length}');
+      } catch (e) {
+        AppDiagLog.verbose('[Send] gallery read failed $path: $e');
+      }
+    }
+    if (fileBytes.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            content: Text(AppStrings.of(context).noImageSelected),
+          ),
+        );
+      }
+      return;
+    }
+
+    final skipAlbumSheet = ShellNavigation.consumeSkipAlbumSheetOnNextGalleryPick();
+    SendAlbumSheetResult? sheet;
+    if (!skipAlbumSheet) {
+      sheet = await showSendAlbumSettingsSheet(context, photoPaths: paths);
+      if (!context.mounted || sheet == null) return;
+
+      if (sheet.addToAlbumId != null) {
+        await SendAlbumsStore.instance.addPathsToAlbum(sheet.addToAlbumId!, paths);
+      } else if (sheet.newAlbumName != null && sheet.newAlbumName!.trim().isNotEmpty) {
+        await SendAlbumsStore.instance.createAlbum(sheet.newAlbumName!.trim(), paths);
+      }
+    }
+
+    final overlay = sheet?.overlay ?? const SendOverlayOptions();
+    final locationLine = sheet?.locationLine;
+    final displaySeconds = sheet?.displaySeconds ?? 10;
+    final total = fileBytes.length;
+
+    for (var i = 0; i < fileBytes.length; i++) {
       if (!context.mounted) return;
       final sent = await Navigator.push<bool>(
         context,
         MaterialPageRoute<bool>(
           builder: (_) => ImageEditorScreen(
-            imageBytes: bytes,
+            imageBytes: fileBytes[i],
+            galleryPersistPath: paths[i],
             slideshow: slideshow,
-            overlay: sheet.overlay,
-            overlayLocationOverride: sheet.locationLine,
+            overlay: overlay,
+            overlayLocationOverride: locationLine,
+            displaySeconds: displaySeconds,
+            queueIndex: i + 1,
+            queueTotal: total,
           ),
         ),
       );
-      if (sent == true) {
-        ShellNavigation.goToTab(0);
-        return;
+      if (sent == true && i + 1 < fileBytes.length) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            duration: const Duration(seconds: 5),
+            content: Text(
+              AppStrings.of(context).sendQueueWaitForFrame(i + 1, fileBytes.length),
+            ),
+          ),
+        );
+        await DeviceStore.instance.load();
+        final paired = DeviceStore.instance.cached;
+        if (paired != null) {
+          try {
+            await FrameRecoveryService.instance.sendLoginAck(paired);
+          } catch (_) {}
+        }
+        await Future<void>.delayed(const Duration(seconds: 8));
       }
     }
   }
 
   /// Multi-select when available; otherwise a single [pickImage].
   Future<List<XFile>> _pickFromGallery(BuildContext context) async {
+    if (_pickerOpen) return [];
+    _pickerOpen = true;
+    try {
     if (Platform.isAndroid || Platform.isIOS) {
-      final st = await Permission.photos.status;
-      var next = st;
-      if (!st.isGranted && !st.isLimited) {
-        next = await Permission.photos.request();
-      }
+      final next = await PermissionGate.photos();
       if (!next.isGranted && !next.isLimited && next.isPermanentlyDenied && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -380,6 +514,9 @@ class _SendScreenState extends State<SendScreen> {
       if (one != null) list = [one];
     }
     return list;
+    } finally {
+      _pickerOpen = false;
+    }
   }
 
   Future<Uint8List?> _resolveImageBytes(_SendSource source) async {
@@ -390,8 +527,7 @@ class _SendScreenState extends State<SendScreen> {
       case _SendSource.gallery:
         throw StateError('Gallery uses _startFromGalleryWithQueue / _pickFromGallery');
       case _SendSource.camera:
-        var cam = await Permission.camera.status;
-        if (!cam.isGranted) cam = await Permission.camera.request();
+        final cam = await PermissionGate.camera();
         if (!cam.isGranted) return null;
         final x = await picker.pickImage(
           source: ImageSource.camera,
@@ -400,20 +536,81 @@ class _SendScreenState extends State<SendScreen> {
         );
         return x == null ? null : x.readAsBytes();
       case _SendSource.ai:
-        return _demoImageBytes();
+        throw StateError('AI uses _startAiGenerate');
     }
   }
 
-  Uint8List _demoImageBytes() {
-    final image = im.Image(width: 900, height: 1200);
-    im.fill(image, color: im.ColorRgb8(130, 70, 180));
-    for (var y = 0; y < image.height; y++) {
-      for (var x = 0; x < image.width; x++) {
-        final b = (x * 255 ~/ image.width);
-        image.setPixelRgb(x, y, 200, 80 + b ~/ 3, 120);
-      }
+  Future<void> _startAiGenerate(BuildContext context) async {
+    final s = AppStrings.of(context);
+    var app = AppSettingsScope.of(context);
+    var provider = app.aiImageProvider;
+    var apiKey = app.activeAiImageApiKey;
+    if (apiKey.isEmpty) {
+      if (!context.mounted) return;
+      final saved = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute<bool>(
+          builder: (_) => const SettingsAiGenerateScreen(autoReturnAfterSave: true),
+        ),
+      );
+      if (!context.mounted || saved != true) return;
+      app = AppSettingsScope.of(context);
+      provider = app.aiImageProvider;
+      apiKey = app.activeAiImageApiKey;
+      if (apiKey.isEmpty) return;
     }
-    return Uint8List.fromList(im.encodeJpg(image, quality: 90));
+
+    final prompt = await TextInputBottomSheet.show(
+      context,
+      title: s.aiGeneratePromptTitle,
+      label: s.aiGeneratePromptLabel,
+      confirmLabel: s.aiGeneratePromptConfirm,
+      textCapitalization: TextCapitalization.sentences,
+    );
+    if (prompt == null || prompt.trim().isEmpty || !context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(s.aiGenerateWorking),
+        duration: const Duration(seconds: 90),
+      ),
+    );
+
+    Uint8List? bytes;
+    try {
+      bytes = await AiImageGenerateService.instance.generate(
+        provider: provider,
+        apiKey: apiKey,
+        prompt: prompt.trim(),
+      );
+    } on AiImageGenerateException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.aiGenerateFailed(e.detail ?? e.code))),
+      );
+      return;
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.aiGenerateFailed('$e'))),
+      );
+      return;
+    }
+
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    final slideshow = app.defaultSlideshowStyle;
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute<bool>(
+        builder: (_) => ImageEditorScreen(
+          imageBytes: bytes!,
+          slideshow: slideshow,
+        ),
+      ),
+    );
   }
 
   @override
@@ -470,15 +667,13 @@ class _SendScreenState extends State<SendScreen> {
           ),
           _SendRow(
             icon: Icons.view_carousel_outlined,
-            title: s.slideshowBatchTitle,
-            subtitle: s.slideshowPickInterval,
+            title: s.navPlaylist,
+            subtitle: s.sendSlideshowOpensPlaylist,
             onTap: () async {
-              final connected = await _ensureConnectedFrame(context);
-              if (!connected) return;
               if (!context.mounted) return;
               await Navigator.push<void>(
                 context,
-                MaterialPageRoute<void>(builder: (_) => const SlideshowBatchScreen()),
+                MaterialPageRoute<void>(builder: (_) => const PlaylistScreen()),
               );
             },
           ),
@@ -510,14 +705,6 @@ class _SendScreenState extends State<SendScreen> {
             icon: Icons.auto_awesome,
             title: s.aiGenerate,
             subtitle: s.aiGenerateSub,
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.purple.shade50,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(s.pro, style: TextStyle(color: Colors.purple.shade800, fontSize: 11)),
-            ),
             highlighted: true,
             onTap: () => _startFlow(context, _SendSource.ai),
           ),
