@@ -26,6 +26,11 @@ class _SettingsAppearanceScreenState extends State<SettingsAppearanceScreen> {
     _loaded = true;
   }
 
+  Future<void> _applyThemeMode(ThemeMode mode) async {
+    setState(() => _mode = mode);
+    await AppSettingsScope.of(context).setThemeMode(mode);
+  }
+
   Future<void> _save() async {
     final app = AppSettingsScope.of(context);
     await app.setThemeMode(_mode);
@@ -48,20 +53,24 @@ class _SettingsAppearanceScreenState extends State<SettingsAppearanceScreen> {
           RadioListTile<ThemeMode>(
             value: ThemeMode.light,
             groupValue: _mode,
-            onChanged: (v) => setState(() => _mode = v!),
+            onChanged: (v) => _applyThemeMode(v!),
             title: Text(s.themeLight),
           ),
           RadioListTile<ThemeMode>(
             value: ThemeMode.dark,
             groupValue: _mode,
-            onChanged: (v) => setState(() => _mode = v!),
+            onChanged: (v) => _applyThemeMode(v!),
             title: Text(s.themeDark),
           ),
           RadioListTile<ThemeMode>(
             value: ThemeMode.system,
             groupValue: _mode,
-            onChanged: (v) => setState(() => _mode = v!),
+            onChanged: (v) => _applyThemeMode(v!),
             title: Text(s.themeSystem),
+            subtitle: Text(
+              s.themeSystemSubtitle,
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+            ),
           ),
           const Divider(),
           Text(s.themeAccentSection, style: const TextStyle(fontWeight: FontWeight.w700)),

@@ -31,6 +31,8 @@ class AppSettings extends ChangeNotifier {
   String profileName = '';
   String accountEmail = '';
   String birthday = '';
+  /// Local profile photo path (device-only until backend avatar API exists).
+  String profileAvatarPath = '';
   bool notifyBirthdayReminders = true;
   bool notifyPhotoDelivered = true;
   bool notifyFamilyActivity = true;
@@ -87,6 +89,7 @@ class AppSettings extends ChangeNotifier {
   static const _kProfileName = 'settings_profile_name';
   static const _kAccountEmail = 'settings_account_email';
   static const _kBirthday = 'settings_birthday';
+  static const _kProfileAvatar = 'settings_profile_avatar_path';
   static const _kNotifyDelivered = 'settings_notify_delivered';
   static const _kNotifyFamily = 'settings_notify_family';
   static const _kNotifyBirthday = 'settings_notify_birthday';
@@ -140,6 +143,7 @@ class AppSettings extends ChangeNotifier {
     profileName = p.getString(_kProfileName) ?? '';
     accountEmail = p.getString(_kAccountEmail) ?? '';
     birthday = p.getString(_kBirthday) ?? '';
+    profileAvatarPath = p.getString(_kProfileAvatar) ?? '';
     notifyBirthdayReminders = p.getBool(_kNotifyBirthday) ?? true;
     notifyPhotoDelivered = p.getBool(_kNotifyDelivered) ?? true;
     notifyFamilyActivity = p.getBool(_kNotifyFamily) ?? true;
@@ -208,6 +212,17 @@ class AppSettings extends ChangeNotifier {
       await p.remove(_kLanguage);
     } else {
       await p.setString(_kLanguage, code);
+    }
+  }
+
+  Future<void> setProfileAvatarPath(String path) async {
+    profileAvatarPath = path.trim();
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    if (profileAvatarPath.isEmpty) {
+      await p.remove(_kProfileAvatar);
+    } else {
+      await p.setString(_kProfileAvatar, profileAvatarPath);
     }
   }
 

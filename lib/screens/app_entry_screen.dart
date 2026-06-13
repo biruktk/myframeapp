@@ -80,20 +80,18 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
+      body: ColoredBox(
+        color: Colors.white,
         child: Center(
-          child: Transform.translate(
-            offset: const Offset(0, -18),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SplashBrandingIcon(size: _iconSize),
-                const SizedBox(height: 22),
-                const _MyFrameWordmark(fontSize: 34),
-              ],
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SplashBrandingIcon(size: _iconSize),
+              SizedBox(height: 22),
+              _MyFrameWordmark(fontSize: 34),
+            ],
           ),
         ),
       ),
@@ -483,8 +481,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
   var _busy = false;
   var _waitingForGoogleBrowser = false;
 
-  /// Modern Chinese–inspired auth shell: warm paper tones + vermillion accents.
-  static const _paperWhite = Colors.white;
+  /// WeChat brand green for the social sign-in button.
   static const _weChatGreen = Color(0xFF07C160);
 
   @override
@@ -908,6 +905,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     return InputDecoration(
       labelText: label,
       hintText: hint,
+      labelStyle: TextStyle(color: cs.onSurfaceVariant),
+      hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.75)),
+      floatingLabelStyle: TextStyle(color: cs.primary),
       floatingLabelBehavior: FloatingLabelBehavior.auto,
       isDense: true,
       contentPadding: const EdgeInsets.only(top: 12, bottom: 14),
@@ -928,7 +928,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: cs.outlineVariant),
       ),
@@ -976,12 +976,15 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: selected ? _paperWhite : Colors.transparent,
+            color: selected ? cs.surface : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
+            border: selected
+                ? Border.all(color: cs.outlineVariant.withValues(alpha: 0.65))
+                : null,
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: cs.primary.withValues(alpha: 0.12),
+                      color: cs.shadow.withValues(alpha: 0.08),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -994,9 +997,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
               style: TextStyle(
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 fontSize: 15,
-                color: selected
-                    ? cs.primary
-                    : cs.onSurface.withValues(alpha: 0.55),
+                color: selected ? cs.primary : cs.onSurfaceVariant,
               ),
             ),
           ),
@@ -1094,8 +1095,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
+    final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: scaffoldBg,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1122,13 +1124,13 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: _paperWhite,
+                  color: cs.surface,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(28),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
+                      color: cs.shadow.withValues(alpha: 0.12),
                       blurRadius: 24,
                       offset: const Offset(0, -4),
                     ),
@@ -1157,6 +1159,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   controller: _email,
                                   keyboardType: TextInputType.emailAddress,
                                   textInputAction: TextInputAction.next,
+                                  style: TextStyle(color: cs.onSurface),
                                   decoration: _underlineField(cs, s.emailLabel),
                                   enabled: !_busy,
                                 ),
@@ -1166,6 +1169,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   obscureText: true,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submitLogin(),
+                                  style: TextStyle(color: cs.onSurface),
                                   decoration: _underlineField(
                                     cs,
                                     s.passwordLabel,
@@ -1232,6 +1236,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   controller: _regName,
                                   textInputAction: TextInputAction.next,
                                   textCapitalization: TextCapitalization.words,
+                                  style: TextStyle(color: cs.onSurface),
                                   decoration: _underlineField(
                                     cs,
                                     s.authUsernameLabel,
@@ -1243,6 +1248,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   controller: _regEmail,
                                   keyboardType: TextInputType.emailAddress,
                                   textInputAction: TextInputAction.next,
+                                  style: TextStyle(color: cs.onSurface),
                                   decoration: _underlineField(cs, s.emailLabel),
                                   enabled: !_busy,
                                 ),
@@ -1252,6 +1258,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                   obscureText: true,
                                   textInputAction: TextInputAction.done,
                                   onSubmitted: (_) => _submitRegister(),
+                                  style: TextStyle(color: cs.onSurface),
                                   decoration: _underlineField(
                                     cs,
                                     s.passwordLabel,

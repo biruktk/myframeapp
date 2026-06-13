@@ -18,6 +18,7 @@ import 'settings_log_screen.dart';
 import 'settings_debug_screen.dart';
 import 'settings_display_screen.dart';
 import 'settings_pairing_screen.dart';
+import '../widgets/connect_frame_dialog.dart';
 import 'device_management_screen.dart';
 import 'playlist_screen.dart';
 
@@ -105,6 +106,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (ok != true || !mounted) return;
     await FrameForgetService.instance.forgetFrame(paired.deviceId);
     await _load();
+  }
+
+  Future<void> _requireFrame(VoidCallback whenPaired) async {
+    if (_paired == null) {
+      await showConnectFrameFirstDialog(context);
+      return;
+    }
+    whenPaired();
   }
 
   @override
@@ -248,14 +257,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   title: Text(s.settingsReconfigureFrameTitle),
                   subtitle: Text(s.settingsReconfigureFrameSub),
                   trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
-                  onTap: _paired == null ? null : _openFrameConfig,
+                  onTap: () => _requireFrame(_openFrameConfig),
                 ),
                 const Divider(height: 1),
                 ListTile(
                   leading: Icon(Icons.delete_outline, color: cs.error),
                   title: Text(s.settingsForgetFrameTitle),
                   subtitle: Text(s.settingsForgetFrameSub),
-                  onTap: _paired == null ? null : _forgetFrame,
+                  onTap: () => _requireFrame(_forgetFrame),
                 ),
               ],
             ),

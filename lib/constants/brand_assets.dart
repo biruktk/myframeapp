@@ -11,6 +11,6 @@ class BrandAssets {
   /// Red square app symbol only (no “MyFrame” text in the image).
   static const String appIconPath = 'assets/branding/myframe_app_icon.png';
 
-  /// PNG app symbol for in-app branding (white canvas; clip to squircle on white pages).
-  static const String splashIconPath = 'assets/branding/myframe_splash_logo.png';
+  /// PNG app symbol for splash / auth on white backgrounds.
+  static const String splashIconPath = BrandAssets.appIconPath;
 }

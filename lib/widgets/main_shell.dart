@@ -96,7 +96,13 @@ class MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
+    final app = AppSettingsScope.of(context);
     final primary = cs.primary;
+    final barColor = cs.surface;
+    final comfort = app.comfortMode;
+    final barHeight = comfort ? 72.0 : 64.0;
+    final iconSize = comfort ? 28.0 : 24.0;
+    final labelSize = comfort ? 11.0 : 10.0;
 
     return Scaffold(
       extendBody: true,
@@ -136,17 +142,19 @@ class MainShellState extends State<MainShell> {
         ),
       ),
       bottomNavigationBar: Container(
-        color: Colors.white,
+        color: barColor,
         child: SafeArea(
           top: false,
           child: BottomAppBar(
             clipBehavior: Clip.antiAlias,
-            color: Colors.white,
+            color: barColor,
             surfaceTintColor: Colors.transparent,
-            shadowColor: Colors.black12,
+            shadowColor: cs.brightness == Brightness.dark
+                ? Colors.black54
+                : Colors.black12,
             elevation: 8,
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            height: 64,
+            height: barHeight,
             shape: const CircularNotchedRectangle(),
             notchMargin: 8,
             child: Row(
@@ -157,6 +165,8 @@ class MainShellState extends State<MainShell> {
                   label: s.navMyFrames,
                   selected: _index == 0,
                   primary: primary,
+                  iconSize: iconSize,
+                  labelSize: labelSize,
                   onTap: () => _setIndex(0),
                 ),
                 _DockItem(
@@ -165,15 +175,19 @@ class MainShellState extends State<MainShell> {
                   label: s.navGallery,
                   selected: _index == 1,
                   primary: primary,
+                  iconSize: iconSize,
+                  labelSize: labelSize,
                   onTap: () => _setIndex(1),
                 ),
-                const SizedBox(width: 80),
+                SizedBox(width: comfort ? 88 : 80),
                 _DockItem(
                   icon: Icons.groups_outlined,
                   selIcon: Icons.groups_rounded,
                   label: s.navFamily,
                   selected: _index == 3,
                   primary: primary,
+                  iconSize: iconSize,
+                  labelSize: labelSize,
                   onTap: () => _setIndex(3),
                 ),
                 _DockItem(
@@ -182,6 +196,8 @@ class MainShellState extends State<MainShell> {
                   label: s.navSettings,
                   selected: _index == 4,
                   primary: primary,
+                  iconSize: iconSize,
+                  labelSize: labelSize,
                   onTap: () => _setIndex(4),
                 ),
               ],
@@ -201,6 +217,8 @@ class _DockItem extends StatelessWidget {
     required this.selected,
     required this.primary,
     required this.onTap,
+    this.iconSize = 24,
+    this.labelSize = 10,
   });
 
   final IconData icon;
@@ -209,26 +227,37 @@ class _DockItem extends StatelessWidget {
   final bool selected;
   final Color primary;
   final VoidCallback onTap;
+  final double iconSize;
+  final double labelSize;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final col = selected ? primary : cs.onSurfaceVariant;
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(selected ? selIcon : icon, color: col, size: 24),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10, fontWeight: selected ? FontWeight.w800 : FontWeight.w500, color: col),
-            ),
-          ],
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(selected ? selIcon : icon, color: col, size: iconSize),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: labelSize,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
+                  color: col,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

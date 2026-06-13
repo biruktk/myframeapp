@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../services/slideshow_style.dart';
 import '../settings/app_settings.dart';
+import 'settings_display_screen.dart';
 import 'settings_appearance_screen.dart';
 
 class SettingsAppPreferencesScreen extends StatefulWidget {
@@ -138,18 +139,17 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
             ),
           ],
           const SizedBox(height: 4),
-          SwitchListTile.adaptive(
-            value: app.comfortMode,
-            onChanged: (v) async {
-              await app.setComfortMode(v);
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(v ? s.comfortModeOn : s.comfortModeOff)),
-              );
-              setState(() {});
-            },
+          ListTile(
+            leading: Icon(Icons.accessibility_new_outlined, color: cs.primary),
             title: Text(s.comfortMode),
             subtitle: Text(s.comfortModeSubtitle),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(builder: (_) => const SettingsDisplayScreen()),
+              );
+            },
           ),
         ],
       ),

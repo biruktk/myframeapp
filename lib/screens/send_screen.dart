@@ -15,6 +15,7 @@ import '../settings/app_settings.dart';
 import 'image_editor_screen.dart';
 import 'playlist_screen.dart';
 import '../services/ai_image_generate_service.dart';
+import '../widgets/ai_content_notice.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import '../services/ble_frame_device_transport.dart';
 import '../services/device_store.dart';
@@ -22,6 +23,7 @@ import '../services/frame_guest_invite_service.dart';
 import '../services/frame_recovery_service.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
 import '../services/gallery_image_cache.dart';
+import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
 import '../services/permission_gate.dart';
@@ -482,38 +484,28 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
-  /// Multi-select when available; otherwise a single [pickImage].
+  /// Multi-select when available; on iOS cancel does not reopen single picker.
   Future<List<XFile>> _pickFromGallery(BuildContext context) async {
     if (_pickerOpen) return [];
     _pickerOpen = true;
     try {
-    if (Platform.isAndroid || Platform.isIOS) {
-      final next = await PermissionGate.photos();
-      if (!next.isGranted && !next.isLimited && next.isPermanentlyDenied && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            content: const Text('Allow Photos/Videos permission to pick images.'),
-            action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
-          ),
-        );
-        return [];
+      if (Platform.isAndroid || Platform.isIOS) {
+        final next = await PermissionGate.photos();
+        if (!next.isGranted && !next.isLimited && next.isPermanentlyDenied && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              content: const Text('Allow Photos/Videos permission to pick images.'),
+              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+            ),
+          );
+          return [];
+        }
+        if (!next.isGranted && !next.isLimited) return [];
       }
-      if (!next.isGranted && !next.isLimited) return [];
-    }
-    final picker = ImagePicker();
-    var list = await picker.pickMultiImage();
-    if (list.isEmpty) {
-      final one = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 4096,
-        maxHeight: 4096,
-      );
-      if (one != null) list = [one];
-    }
-    return list;
+      return GalleryPhotoPicker.pickMulti(context);
     } finally {
       _pickerOpen = false;
     }
@@ -608,6 +600,7 @@ class _SendScreenState extends State<SendScreen> {
         builder: (_) => ImageEditorScreen(
           imageBytes: bytes!,
           slideshow: slideshow,
+          isAiGenerated: true,
         ),
       ),
     );
@@ -707,6 +700,10 @@ class _SendScreenState extends State<SendScreen> {
             subtitle: s.aiGenerateSub,
             highlighted: true,
             onTap: () => _startFlow(context, _SendSource.ai),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
+            child: AiContentNotice(compact: true),
           ),
         ],
       ),

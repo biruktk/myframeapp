@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
 import '../widgets/pick_personal_photos_dialog.dart';
@@ -110,16 +110,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
 
   Future<void> _addNewPhotos() async {
     final albumId = widget.albumId;
-    final picker = ImagePicker();
-    final list = await picker.pickMultiImage();
-    List<String> paths;
-    if (list.isEmpty) {
-      final one = await picker.pickImage(source: ImageSource.gallery);
-      if (one == null) return;
-      paths = [one.path];
-    } else {
-      paths = list.map((e) => e.path).toList();
-    }
+    final list = await GalleryPhotoPicker.pickMulti(context);
+    if (list.isEmpty) return;
+    final paths = list.map((e) => e.path).toList();
     await PersonalGalleryStore.instance.addPaths(paths);
     await SendAlbumsStore.instance.addPathsToAlbum(albumId, paths);
     await _reload();

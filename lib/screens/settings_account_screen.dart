@@ -1,6 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/gallery_image_cache.dart';
+import '../services/permission_gate.dart';
 import '../settings/app_settings.dart';
 
 class SettingsAccountScreen extends StatefulWidget {
@@ -15,6 +21,7 @@ class _SettingsAccountScreenState extends State<SettingsAccountScreen> {
   late final TextEditingController _email = TextEditingController();
   late final TextEditingController _birthdayCtrl = TextEditingController();
   var _loaded = false;
+  var _avatarBusy = false;
   DateTime? _birthday;
 
   @override
@@ -58,6 +65,31 @@ class _SettingsAccountScreenState extends State<SettingsAccountScreen> {
     _email.dispose();
     _birthdayCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickAvatar() async {
+    if (_avatarBusy) return;
+    setState(() => _avatarBusy = true);
+    try {
+      final perm = await PermissionGate.photos();
+      if (!perm.isGranted && !perm.isLimited) return;
+      final x = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+      );
+      if (x == null || !mounted) return;
+      final stored = await GalleryImageCache.persistFromPath(x.path);
+      if (stored == null || !mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppStrings.of(context).avatarUpdateFailed)),
+        );
+        return;
+      }
+      await AppSettingsScope.of(context).setProfileAvatarPath(stored);
+    } finally {
+      if (mounted) setState(() => _avatarBusy = false);
+    }
   }
 
   Future<void> _save() async {
@@ -111,7 +143,18 @@ class _SettingsAccountScreenState extends State<SettingsAccountScreen> {
               padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
               child: Column(
                 children: [
-                  _ProfileAvatar(gradient: _avatarGradient(cs)),
+                  _ProfileAvatar(
+                    gradient: _avatarGradient(cs),
+                    imagePath: app.profileAvatarPath,
+                    busy: _avatarBusy,
+                    onTap: _pickAvatar,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    s.avatarChangeHint,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     _name.text.trim().isEmpty ? '—' : _name.text.trim(),
@@ -223,23 +266,72 @@ class _SettingsAccountScreenState extends State<SettingsAccountScreen> {
 }
 
 class _ProfileAvatar extends StatelessWidget {
-  const _ProfileAvatar({required this.gradient});
+  const _ProfileAvatar({
+    required this.gradient,
+    required this.imagePath,
+    required this.onTap,
+    this.busy = false,
+  });
 
   final LinearGradient gradient;
+  final String imagePath;
+  final VoidCallback onTap;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 80,
-      height: 80,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: gradient,
-      ),
-      child: const Icon(
-        Icons.person,
-        size: 36,
-        color: Colors.white,
+    final hasImage = imagePath.trim().isNotEmpty && File(imagePath).existsSync();
+    return Semantics(
+      button: true,
+      label: AppStrings.of(context).avatarChangeHint,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: busy ? null : onTap,
+          customBorder: const CircleBorder(),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: hasImage ? null : gradient,
+                  image: hasImage
+                      ? DecorationImage(
+                          image: FileImage(File(imagePath)),
+                          fit: BoxFit.cover,
+                        )
+                      : null,
+                ),
+                child: hasImage
+                    ? null
+                    : const Icon(
+                        Icons.person,
+                        size: 36,
+                        color: Colors.white,
+                      ),
+              ),
+              if (busy)
+                const SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: CircleAvatar(
+                    radius: 14,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

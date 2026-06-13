@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:app_settings/app_settings.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -13,9 +12,7 @@ import '../models/pairing_nav_result.dart';
 import '../services/ble_display_name.dart';
 import '../services/ble_frame_scan_filter.dart';
 import '../services/ble_permissions_util.dart';
-import '../config/vps_defaults.dart';
 import '../services/device_store.dart';
-import '../services/pairing_mqtt_presetup.dart';
 import 'wifi_provision_screen.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
@@ -447,19 +444,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         await _stopUserScan();
       } catch (_) {}
       await _disconnectTelemetry();
-      AppDiagLog.verbose('[BLE] sending mqtt_config before Wi‑Fi (EspBlufi order)…');
-      final serverConfigSent = await PairingMqttPresetup.sendDefaultBrokerBeforeWifi();
-      AppDiagLog.verbose(
-        '[BLE] mqtt_config pre-Wi‑Fi ok=$serverConfigSent broker=${VpsDefaults.host}:${VpsDefaults.mqttPort}',
-      );
       if (!mounted) return;
-      AppDiagLog.verbose('[BLE] opening WifiProvisionScreen…');
+      AppDiagLog.verbose('[BLE] opening WifiProvisionScreen — MQTT + Wi‑Fi will run in one BluFi session…');
       final wifiResult = await SafeNav.push<PairingNavResult>(
         context,
         MaterialPageRoute<PairingNavResult>(
           builder: (_) => WifiProvisionScreen(
             firstTimeSetup: true,
-            serverConfigAlreadySent: serverConfigSent,
+            serverConfigAlreadySent: false,
             openSendAfterSetup: widget.openSendAfterSetup,
           ),
         ),

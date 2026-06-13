@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../widgets/ai_content_notice.dart';
 import '../settings/app_settings.dart';
 
 /// OpenAI + Gemini API keys for Send → AI Generate.
@@ -60,6 +61,8 @@ class _SettingsAiGenerateScreenState extends State<SettingsAiGenerateScreen> {
             s.aiImageSettingsIntro,
             style: TextStyle(color: cs.onSurfaceVariant, height: 1.4),
           ),
+          const SizedBox(height: 12),
+          const AiContentNotice(),
           const SizedBox(height: 16),
           Text(s.aiImageDefaultProviderLabel, style: const TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),

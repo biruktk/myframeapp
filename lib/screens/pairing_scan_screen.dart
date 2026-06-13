@@ -7,7 +7,6 @@ import '../models/pairing_payload.dart';
 import '../models/pairing_nav_result.dart';
 import '../services/app_release_guard.dart';
 import '../services/device_store.dart';
-import '../services/pairing_mqtt_presetup.dart';
 import '../navigation/pairing_flow_nav.dart';
 import 'wifi_provision_screen.dart';
 
@@ -68,14 +67,13 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
 
   Future<void> _pairFromPayload(PairingPayload payload) async {
     await _store.saveFromPayload(payload);
-    final serverConfigSent = await PairingMqttPresetup.sendDefaultBrokerBeforeWifi();
     if (!mounted) return;
     final wifiResult = await SafeNav.push<PairingNavResult>(
       context,
       MaterialPageRoute<PairingNavResult>(
-        builder: (_) => WifiProvisionScreen(
+        builder: (_) => const WifiProvisionScreen(
           firstTimeSetup: true,
-          serverConfigAlreadySent: serverConfigSent,
+          serverConfigAlreadySent: false,
         ),
       ),
     );

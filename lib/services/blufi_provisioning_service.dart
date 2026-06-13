@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'ble_frame_scan_filter.dart';
@@ -145,16 +144,18 @@ class BlufiProvisioningService {
             'writeProps w=${picked.write.properties.write} wNoResp=${picked.write.properties.writeWithoutResponse}',
           );
 
-          final sendMqttFirst = !serverConfigAlreadySent &&
+          final sendMqttFirst =
+              !serverConfigAlreadySent &&
               selfHostedMqtt != null &&
               selfHostedMqtt.host.trim().isNotEmpty;
+          int? blufiStaStartSeq;
           if (sendMqttFirst) {
             final mqtt = selfHostedMqtt;
             _d(
               'mqtt_config BEFORE Wi‑Fi (EspBlufi order) → '
               '${mqtt.host}:${mqtt.port}',
             );
-            await deliverMqttConfig(
+            blufiStaStartSeq = await deliverMqttConfig(
               services: services,
               fallbackWrite: picked.write,
               cfg: mqtt,
@@ -171,6 +172,7 @@ class BlufiProvisioningService {
             preferredNotify: picked.notifyGuid,
             ssid: ssid,
             password: password,
+            startSeq: blufiStaStartSeq,
           );
           // EspBluFi order: mqtt_config only before Wi‑Fi (scan / manual config session), never after STA connect.
           if (ack && serverConfigAlreadySent) {
@@ -377,8 +379,9 @@ class BlufiProvisioningService {
     required Guid preferredNotify,
     required String ssid,
     required String password,
+    int? startSeq,
   }) async {
-    var seq = 0;
+    var seq = startSeq ?? 0;
     int crc16Esp(List<int> data) {
       var crc = 0xffff;
       for (final b in data) {
@@ -528,21 +531,21 @@ class BlufiProvisioningService {
   }
 
   /// Same transport as EspBlufi: BluFi CUSTOM_DATA on FFFF/ff01 when present, else raw vendor JSON.
-  Future<void> deliverMqttConfig({
+  Future<int?> deliverMqttConfig({
     required List<BluetoothService> services,
     required BluetoothCharacteristic fallbackWrite,
     required SelfHostedMqttConfig cfg,
   }) async {
     final bytes = mqttConfigJsonBytes(cfg);
     _d('mqtt_config json len=${bytes.length}');
-    await deliverConfigJson(
+    return deliverConfigJson(
       services: services,
       fallbackWrite: fallbackWrite,
       jsonBytes: bytes,
     );
   }
 
-  Future<void> deliverConfigJson({
+  Future<int?> deliverConfigJson({
     required List<BluetoothService> services,
     required BluetoothCharacteristic fallbackWrite,
     required List<int> jsonBytes,
@@ -553,11 +556,11 @@ class BlufiProvisioningService {
         'config via BluFi CUSTOM_DATA (0x13) on FFFF/ff01 '
         '(matches EspBlufi mobile app)',
       );
-      await _sendBlufiCustomData(blufiChar, jsonBytes);
-      return;
+      return _sendBlufiCustomData(blufiChar, jsonBytes);
     }
     _d('config via raw JSON on ${fallbackWrite.uuid.str} (vendor channel)');
     await _writeUtf8Chunks(fallbackWrite, jsonBytes);
+    return null;
   }
 
   BluetoothCharacteristic? _findBlufiDataChar(List<BluetoothService> services) {
@@ -573,31 +576,53 @@ class BlufiProvisioningService {
     return null;
   }
 
-  Future<void> _sendBlufiCustomData(
+  Future<int> _sendBlufiCustomData(
     BluetoothCharacteristic writeChar,
     List<int> bytes,
   ) async {
     const pkgData = 0x01;
-    // Firmware JSON.parse expects one complete mqtt_config per CUSTOM_DATA frame.
-    if (bytes.length > 250) {
-      throw StateError(
-        'mqtt_config too long (${bytes.length} B) for a single BluFi custom-data frame',
-      );
-    }
-    final typeSubtype =
+    const maxFrameBytes = 20;
+    const headerBytes = 4;
+    const fragCtrl = 0x10;
+    const fragMetaBytes = 2;
+    const typeSubtype =
         ((_blufiSubtypeCustomData & 0x3f) << 2) | (pkgData & 0x03);
-    final frame = <int>[
-      typeSubtype,
-      0x00,
-      0,
-      bytes.length & 0xff,
-      ...bytes,
-    ];
-    _d('blufi custom data single frame len=${bytes.length} json="${utf8.decode(bytes)}"');
-    await _writeRaw(writeChar, frame);
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
-    await _writeRaw(writeChar, frame);
-    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    final frames = <List<int>>[];
+    var offset = 0;
+    var seq = 0;
+    while (offset < bytes.length) {
+      final remaining = bytes.length - offset;
+      const finalPayloadMax = maxFrameBytes - headerBytes;
+      if (remaining <= finalPayloadMax) {
+        final part = bytes.sublist(offset);
+        frames.add(<int>[typeSubtype, 0x00, seq & 0xff, part.length, ...part]);
+        offset = bytes.length;
+      } else {
+        const partLen = maxFrameBytes - headerBytes - fragMetaBytes;
+        final end = offset + partLen;
+        final part = bytes.sublist(offset, end);
+        frames.add(<int>[
+          typeSubtype,
+          fragCtrl,
+          seq & 0xff,
+          part.length + fragMetaBytes,
+          remaining & 0xff,
+          (remaining >> 8) & 0xff,
+          ...part,
+        ]);
+        offset = end;
+      }
+      seq += 1;
+    }
+    _d(
+      'blufi custom data fragmented len=${bytes.length} frames=${frames.length} json="${utf8.decode(bytes)}"',
+    );
+    for (final frame in frames) {
+      await _writeRaw(writeChar, frame);
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    return frames.length;
   }
 
   Future<void> _writeUtf8Chunks(
@@ -736,31 +761,11 @@ class BlufiProvisioningService {
     return ordered;
   }
 
-  /// Resolves write + notify UUIDs: vendor `2760` service first, then FFFF / QR overrides, then any custom writable.
+  /// Resolves write + notify UUIDs: FFFF / QR overrides first, then vendor `2760`, then any custom writable.
   ({BluetoothCharacteristic write, Guid notifyGuid})? _pickProvisionGatt(
     List<BluetoothService> services,
     PairedFrame paired,
   ) {
-    for (final s in services) {
-      if (!_uuidEqStr(s.uuid.str, _vendorServiceUuid)) continue;
-      BluetoothCharacteristic? w;
-      BluetoothCharacteristic? n;
-      for (final c in s.characteristics) {
-        if (_uuidEqStr(c.uuid.str, _vendorWriteUuid) &&
-            (c.properties.write || c.properties.writeWithoutResponse)) {
-          w = c;
-        }
-        if (_uuidEqStr(c.uuid.str, _vendorNotifyUuid) &&
-            (c.properties.notify || c.properties.indicate)) {
-          n = c;
-        }
-      }
-      if (w != null) {
-        _d('GATT pick: vendor service $_vendorServiceUuid');
-        return (write: w, notifyGuid: n?.uuid ?? Guid(_vendorNotifyUuid));
-      }
-    }
-
     final svcStr = paired.bleServiceUuid ?? _defaultFrameServiceUuid;
     final dataStr = paired.bleDataCharUuid ?? _defaultFrameDataUuid;
     BluetoothCharacteristic? w;
@@ -778,6 +783,29 @@ class BlufiProvisioningService {
     if (w != null) {
       _d('GATT pick: FFFF service=$svcStr data=$dataStr');
       return (write: w, notifyGuid: Guid(_defaultFrameNotifyUuid));
+    }
+
+    for (final s in services) {
+      if (!_uuidEqStr(s.uuid.str, _vendorServiceUuid)) continue;
+      BluetoothCharacteristic? vendorWrite;
+      BluetoothCharacteristic? vendorNotify;
+      for (final c in s.characteristics) {
+        if (_uuidEqStr(c.uuid.str, _vendorWriteUuid) &&
+            (c.properties.write || c.properties.writeWithoutResponse)) {
+          vendorWrite = c;
+        }
+        if (_uuidEqStr(c.uuid.str, _vendorNotifyUuid) &&
+            (c.properties.notify || c.properties.indicate)) {
+          vendorNotify = c;
+        }
+      }
+      if (vendorWrite != null) {
+        _d('GATT pick: vendor service $_vendorServiceUuid');
+        return (
+          write: vendorWrite,
+          notifyGuid: vendorNotify?.uuid ?? Guid(_vendorNotifyUuid),
+        );
+      }
     }
 
     final fallback = _findCustomWritable(services);

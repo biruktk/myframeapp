@@ -38,6 +38,15 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
           ),
           const SizedBox(height: 12),
           Card(
+            child: ListTile(
+              enabled: false,
+              leading: Icon(Icons.mic_none_outlined, color: cs.onSurfaceVariant),
+              title: Text(s.voiceCommandsTitle),
+              subtitle: Text(s.voiceCommandsComingSoon),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

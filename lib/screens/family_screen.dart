@@ -98,6 +98,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
   Future<void> _showJoinSheet(BuildContext context, AppStrings s,
       {String? prefill}) async {
     final appTok = AppSettingsScope.of(context).authToken.trim();
+    final birthdayPrefill = AppSettingsScope.of(context).birthday;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -105,6 +106,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
       builder: (ctx) => _JoinFamilySheet(
         strings: s,
         prefill: prefill,
+        birthdayPrefill: birthdayPrefill,
         authToken: appTok,
         onJoined: () {
           if (mounted) setState(() {});
@@ -572,6 +574,7 @@ class _JoinFamilySheet extends StatefulWidget {
   const _JoinFamilySheet({
     required this.strings,
     required this.prefill,
+    required this.birthdayPrefill,
     required this.authToken,
     required this.onJoined,
     required this.onBusyChanged,
@@ -580,6 +583,7 @@ class _JoinFamilySheet extends StatefulWidget {
 
   final AppStrings strings;
   final String? prefill;
+  final String birthdayPrefill;
   final String authToken;
   final VoidCallback onJoined;
   final void Function(bool busy) onBusyChanged;
@@ -597,6 +601,19 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: widget.prefill ?? '');
+    _birthdayPick = _parseBirthday(widget.birthdayPrefill);
+  }
+
+  DateTime? _parseBirthday(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return null;
+    final p = s.split('-');
+    if (p.length != 3) return null;
+    final y = int.tryParse(p[0]);
+    final m = int.tryParse(p[1]);
+    final d = int.tryParse(p[2]);
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
   }
 
   @override
@@ -693,23 +710,45 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
             ),
             autocorrect: false,
           ),
+          const SizedBox(height: 20),
+          Divider(color: Theme.of(context).colorScheme.outlineVariant),
           const SizedBox(height: 12),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(s.joinFamilyBirthdayLabel),
-            subtitle: Text(
-              _birthdayPick == null ? '—' : _isoBirthday(_birthdayPick!),
+          Text(
+            s.joinFamilyProfileSection,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            s.joinFamilyBirthdayHint,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              height: 1.4,
+              fontSize: 13,
             ),
-            trailing: const Icon(Icons.cake_outlined),
-            onTap: () async {
-              final d = await showDatePicker(
-                context: context,
-                initialDate: _birthdayPick ?? DateTime(1990, 6, 15),
-                firstDate: DateTime(1900),
-                lastDate: DateTime.now(),
-              );
-              if (d != null && mounted) setState(() => _birthdayPick = d);
-            },
+          ),
+          const SizedBox(height: 8),
+          Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+            ),
+            child: ListTile(
+              title: Text(s.joinFamilyBirthdayLabel),
+              subtitle: Text(
+                _birthdayPick == null ? '—' : _isoBirthday(_birthdayPick!),
+              ),
+              trailing: const Icon(Icons.cake_outlined),
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: _birthdayPick ?? DateTime(1990, 6, 15),
+                  firstDate: DateTime(1900),
+                  lastDate: DateTime.now(),
+                );
+                if (d != null && mounted) setState(() => _birthdayPick = d);
+              },
+            ),
           ),
           const SizedBox(height: 10),
           FilledButton(

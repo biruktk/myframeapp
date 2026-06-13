@@ -1420,6 +1420,62 @@ class AppStrings {
     de: 'System',
     ja: 'システム',
   );
+  String get themeSystemSubtitle => _l6(
+    en: 'Follow system appearance',
+    zh: '跟随系统外观',
+    es: 'Seguir apariencia del sistema',
+    fr: 'Suivre l’apparence du système',
+    de: 'Systemdarstellung folgen',
+    ja: '端末の外観に合わせる',
+  );
+  String get joinFamilyBirthdayHint => _l6(
+    en: 'Used for birthday reminders in your family group.',
+    zh: '用于家庭群组中的生日提醒。',
+    es: 'Se usa para recordatorios de cumpleaños en tu grupo familiar.',
+    fr: 'Utilisé pour les rappels d’anniversaire dans votre groupe familial.',
+    de: 'Für Geburtstags-Erinnerungen in Ihrer Familiengruppe.',
+    ja: 'ファミリーグループの誕生日リマインダーに使用します。',
+  );
+  String get joinFamilyProfileSection => _l6(
+    en: 'Your profile',
+    zh: '你的资料',
+    es: 'Tu perfil',
+    fr: 'Votre profil',
+    de: 'Ihr Profil',
+    ja: 'プロフィール',
+  );
+  String get avatarChangeHint => _l6(
+    en: 'Tap to change photo',
+    zh: '点击更换头像',
+    es: 'Toca para cambiar la foto',
+    fr: 'Appuyez pour changer la photo',
+    de: 'Tippen, um Foto zu ändern',
+    ja: 'タップして写真を変更',
+  );
+  String get avatarUpdateFailed => _l6(
+    en: 'Could not update profile photo.',
+    zh: '无法更新头像。',
+    es: 'No se pudo actualizar la foto.',
+    fr: 'Impossible de mettre à jour la photo.',
+    de: 'Profilfoto konnte nicht aktualisiert werden.',
+    ja: 'プロフィール写真を更新できませんでした。',
+  );
+  String get voiceCommandsTitle => _l6(
+    en: 'Voice commands',
+    zh: '语音指令',
+    es: 'Comandos de voz',
+    fr: 'Commandes vocales',
+    de: 'Sprachbefehle',
+    ja: '音声コマンド',
+  );
+  String get voiceCommandsComingSoon => _l6(
+    en: 'Coming soon — voice control is not available yet.',
+    zh: '即将推出 — 语音控制暂不可用。',
+    es: 'Próximamente — el control por voz aún no está disponible.',
+    fr: 'Bientôt disponible — le contrôle vocal n’est pas encore disponible.',
+    de: 'Demnächst — Sprachsteuerung ist noch nicht verfügbar.',
+    ja: '近日対応予定 — 音声操作はまだ利用できません。',
+  );
   String get themeModeSection => _l6(
     en: 'Theme mode',
     zh: '主题模式',
@@ -2766,12 +2822,36 @@ class AppStrings {
     ja: '通知',
   );
   String get notificationsSub => _l6(
-    en: 'Birthday alerts',
-    zh: '生日提醒',
-    es: 'Cumpleaños',
-    fr: 'Anniversaires',
-    de: 'Geburtstage',
-    ja: '誕生日',
+    en: 'Recent activity updates',
+    zh: '最近动态更新',
+    es: 'Actualizaciones de actividad reciente',
+    fr: 'Mises à jour d’activité récente',
+    de: 'Aktuelle Aktivitäts-Updates',
+    ja: '最近のアクティビティ更新',
+  );
+  String get connectFrameFirst => _l6(
+    en: 'Please connect a frame first.',
+    zh: '请先连接相框。',
+    es: 'Conecta un marco primero.',
+    fr: 'Connectez d’abord un cadre.',
+    de: 'Bitte zuerst einen Rahmen verbinden.',
+    ja: '先にフレームを接続してください。',
+  );
+  String get gotItLabel => _l6(
+    en: 'Got it',
+    zh: '知道了',
+    es: 'Entendido',
+    fr: 'Compris',
+    de: 'Verstanden',
+    ja: '了解',
+  );
+  String get aiContentSafetyNotice => _l6(
+    en: 'AI-generated content may be inaccurate or inappropriate. Please review before use.',
+    zh: 'AI 生成内容可能不准确或不合适，使用前请仔细核对。',
+    es: 'El contenido generado por IA puede ser inexacto o inapropiado. Revísalo antes de usarlo.',
+    fr: 'Le contenu généré par l’IA peut être inexact ou inapproprié. Vérifiez-le avant utilisation.',
+    de: 'KI-generierte Inhalte können ungenau oder unangemessen sein. Bitte vor der Nutzung prüfen.',
+    ja: 'AI 生成コンテンツは不正確または不適切な場合があります。使用前にご確認ください。',
   );
   String get language => _l6(
     en: 'Language',

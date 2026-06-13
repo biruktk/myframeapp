@@ -19,6 +19,7 @@ import '../services/app_diag_log.dart';
 import '../services/app_release_guard.dart';
 import '../services/cloud_photo_upload_service.dart';
 import '../services/in_app_notification_store.dart';
+import '../widgets/ai_content_notice.dart';
 import '../widgets/debug_slog_overlay.dart';
 import '../services/frame_cloud_cast_service.dart';
 import '../services/editor_settings_cache.dart';
@@ -50,6 +51,7 @@ class ImageEditorScreen extends StatefulWidget {
     this.queueIndex = 1,
     this.queueTotal = 1,
     this.galleryPersistPath,
+    this.isAiGenerated = false,
   });
 
   final Uint8List imageBytes;
@@ -70,6 +72,8 @@ class ImageEditorScreen extends StatefulWidget {
 
   /// Durable gallery file from Send pick — updated in place after a successful send.
   final String? galleryPersistPath;
+
+  final bool isAiGenerated;
 
   @override
   State<ImageEditorScreen> createState() => _ImageEditorScreenState();
@@ -721,6 +725,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                       ),
                     ),
                   ),
+                if (widget.isAiGenerated) ...[
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 10),
+                    child: AiContentNotice(compact: true),
+                  ),
+                ],
                 ConstrainedBox(
                   constraints: BoxConstraints(maxHeight: previewMaxHeight),
                   child: Container(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../constants/brand_assets.dart';
 import '../constants/splash_branding.dart';
 
 /// Red MyFrame app icon for splash / auth headers (always visible on white).
@@ -13,26 +14,46 @@ class SplashBrandingIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bytes = SplashBranding.iconPngBytes;
     final radius = size * 0.223;
+    final bytes = SplashBranding.iconPngBytes;
 
+    Widget image;
     if (bytes != null && bytes.isNotEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: Image.memory(
-          bytes,
-          width: size,
-          height: size,
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          gaplessPlayback: true,
-          semanticLabel: 'MyFrame',
-          errorBuilder: (_, __, ___) => _FallbackIcon(size: size),
-        ),
+      image = Image.memory(
+        bytes,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        gaplessPlayback: true,
+        semanticLabel: 'MyFrame',
+        errorBuilder: (_, __, ___) => _assetImage(size),
       );
+    } else {
+      image = _assetImage(size);
     }
 
-    return _FallbackIcon(size: size);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: image,
+      ),
+    );
+  }
+
+  Widget _assetImage(double size) {
+    return Image.asset(
+      BrandAssets.appIconPath,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
+      semanticLabel: 'MyFrame',
+      errorBuilder: (_, __, ___) => _FallbackIcon(size: size),
+    );
   }
 }
 

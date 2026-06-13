@@ -13,6 +13,7 @@ class MyFrameBrandingLockup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final iconSize = width * 0.46;
     final wordmarkSize = width * 0.13;
     return Column(
@@ -28,14 +29,14 @@ class MyFrameBrandingLockup extends StatelessWidget {
               fontWeight: FontWeight.w900,
               height: 1,
             ),
-            children: const [
+            children: [
               TextSpan(
                 text: 'My',
                 style: TextStyle(color: Color(0xFFD91E1E)),
               ),
               TextSpan(
                 text: 'Frame',
-                style: TextStyle(color: Colors.black),
+                style: TextStyle(color: cs.onSurface),
               ),
             ],
           ),

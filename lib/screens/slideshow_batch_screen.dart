@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 
+import '../services/gallery_photo_picker.dart';
 import '../config/api_config.dart';
 import '../l10n/app_strings.dart';
 import '../models/send_overlay_options.dart';
@@ -59,20 +59,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
     };
   }
 
-  Future<List<XFile>> _pickPhotos() async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      var next = await Permission.photos.status;
-      if (!next.isGranted && !next.isLimited) next = await Permission.photos.request();
-      if (!next.isGranted && !next.isLimited) return [];
-    }
-    final picker = ImagePicker();
-    var list = await picker.pickMultiImage();
-    if (list.isEmpty) {
-      final one = await picker.pickImage(source: ImageSource.gallery, maxWidth: 4096, maxHeight: 4096);
-      if (one != null) list = [one];
-    }
-    return list;
-  }
+  Future<List<XFile>> _pickPhotos() => GalleryPhotoPicker.pickMulti(context);
 
   Future<void> _runPipeline() async {
     if (_busy) return;

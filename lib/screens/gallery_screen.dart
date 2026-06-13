@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/user_gallery_cloud_service.dart';
 import '../settings/app_settings.dart';
@@ -68,17 +68,11 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
   }
 
   Future<void> _addFromPicker() async {
-    final picker = ImagePicker();
-    final list = await picker.pickMultiImage();
+    final list = await GalleryPhotoPicker.pickMulti(context);
     await PersonalGalleryStore.instance.load();
     final before = Set<String>.from(PersonalGalleryStore.instance.paths);
-    if (list.isEmpty) {
-      final one = await picker.pickImage(source: ImageSource.gallery);
-      if (one == null) return;
-      await PersonalGalleryStore.instance.addPaths([one.path]);
-    } else {
-      await PersonalGalleryStore.instance.addPaths(list.map((e) => e.path).toList());
-    }
+    if (list.isEmpty) return;
+    await PersonalGalleryStore.instance.addPaths(list.map((e) => e.path).toList());
     if (!mounted) return;
     final tok = AppSettingsScope.of(context).authToken;
     if (tok.trim().isNotEmpty) {
