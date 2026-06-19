@@ -31,6 +31,7 @@ class SelfHostedMqttConfig {
   });
   final String host;
   final int port;
+
   /// HTTP port for MYFM `.bin` download in MQTT `play` (VPS Nginx :80).
   final int httpPort;
   final String user;
@@ -50,6 +51,7 @@ class BlufiProvisioningService {
   static const _vendorWriteUuid = '00002760-08c2-11e1-9073-0e8ac72e0001';
   static const _vendorNotifyUuid = '00002760-08c2-11e1-9073-0e8ac72e0002';
   static const _opModeSta = 0x01;
+
   /// EspBlufi app sends custom JSON as BluFi DATA + CUSTOM_DATA (0x13), not raw GATT bytes.
   static const _blufiSubtypeCustomData = 0x13;
   static const _mqttBeforeWifiDelay = Duration(milliseconds: 800);
@@ -61,6 +63,7 @@ class BlufiProvisioningService {
     required String ssid,
     required String password,
     SelfHostedMqttConfig? selfHostedMqtt,
+
     /// True when [reconfigureServer] already sent mqtt_config in a prior BLE session.
     bool serverConfigAlreadySent = false,
   }) async {
@@ -176,9 +179,13 @@ class BlufiProvisioningService {
           );
           // EspBluFi order: mqtt_config only before Wi‑Fi (scan / manual config session), never after STA connect.
           if (ack && serverConfigAlreadySent) {
-            _d('mqtt_config skipped after Wi‑Fi — already sent in prior BLE session');
+            _d(
+              'mqtt_config skipped after Wi‑Fi — already sent in prior BLE session',
+            );
           } else if (ack && sendMqttFirst) {
-            _d('mqtt_config already sent before Wi‑Fi in this session (EspBluFi order)');
+            _d(
+              'mqtt_config already sent before Wi‑Fi in this session (EspBluFi order)',
+            );
           }
           await Future<void>.delayed(const Duration(milliseconds: 120));
           if (ack) {
@@ -601,13 +608,21 @@ class BlufiProvisioningService {
         const partLen = maxFrameBytes - headerBytes - fragMetaBytes;
         final end = offset + partLen;
         final part = bytes.sublist(offset, end);
+        final totalContentLen = bytes.length - offset;
+        final dataLen = part.length + fragMetaBytes;
+        if (totalContentLen < part.length ||
+            dataLen > maxFrameBytes - headerBytes) {
+          throw StateError(
+            'Invalid BluFi fragment length: total=$totalContentLen part=${part.length}',
+          );
+        }
         frames.add(<int>[
           typeSubtype,
           fragCtrl,
           seq & 0xff,
-          part.length + fragMetaBytes,
-          remaining & 0xff,
-          (remaining >> 8) & 0xff,
+          dataLen,
+          totalContentLen & 0xff,
+          (totalContentLen >> 8) & 0xff,
           ...part,
         ]);
         offset = end;
@@ -618,6 +633,13 @@ class BlufiProvisioningService {
       'blufi custom data fragmented len=${bytes.length} frames=${frames.length} json="${utf8.decode(bytes)}"',
     );
     for (final frame in frames) {
+      if ((frame[1] & fragCtrl) != 0) {
+        final declaredTotal = frame[4] | (frame[5] << 8);
+        final contentLen = frame[3] - fragMetaBytes;
+        _d(
+          'blufi custom fragment seq=${frame[2]} declaredTotal=$declaredTotal contentLen=$contentLen rawLen=${frame.length}',
+        );
+      }
       await _writeRaw(writeChar, frame);
       await Future<void>.delayed(const Duration(milliseconds: 120));
     }
@@ -703,9 +725,8 @@ class BlufiProvisioningService {
         if (idOk || discoverable || nameOk) {
           primaryById[rid] = r.device;
           if (!primaryOrder.contains(rid)) primaryOrder.add(rid);
-          
-            AppDiagLog.verbose('[BluFi] scan primary id=$rid name=$rawName');
-          
+
+          AppDiagLog.verbose('[BluFi] scan primary id=$rid name=$rawName');
         }
         if (nameLower.startsWith(companionPrefix)) {
           _d('scan hit companion id=$rid advName="$rawName"');

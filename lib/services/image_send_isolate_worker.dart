@@ -55,8 +55,11 @@ class FrameProcessOnlyArgs {
 FrameImageFilter _filterEnumAt(int index) {
   final vals = FrameImageFilter.values;
   final last = vals.length - 1;
-  final i =
-      index < 0 ? 0 : index > last ? last : index; // avoids num vs [] trailing-comma quirks
+  final i = index < 0
+      ? 0
+      : index > last
+      ? last
+      : index; // avoids num vs [] trailing-comma quirks
   return vals[i];
 }
 
@@ -153,4 +156,30 @@ Uint8List? isolateComposeUploadFrameJpeg(ComposeUploadIsolateArgs args) {
 
   final graded = proc.processWorkImageForFrame(work);
   return graded?.frameJpeg;
+}
+
+/// Full-color high-quality JPEG for Google Photos / iCloud Photos copies.
+Uint8List? isolateComposeCloudJpeg(ComposeUploadIsolateArgs args) {
+  final filter = _filterEnumAt(args.filterIndex);
+  final proc = ImageProcessorService();
+  final decoded = proc.decode(args.imageBytes);
+  if (decoded == null) return null;
+
+  var work = proc.buildCloudCopyImage(
+    source: decoded,
+    quarterTurns: args.quarterTurns,
+    brightness: args.brightness,
+    contrast: args.contrast,
+    saturation: args.saturation,
+    filter: filter,
+  );
+  if (work == null) return null;
+  if (args.overlay.hasAnyOverlay) {
+    work = drawSendOverlayOnImage(
+      work,
+      args.overlay,
+      locationText: args.locationText,
+    );
+  }
+  return proc.encodeJpg(work, quality: 100);
 }

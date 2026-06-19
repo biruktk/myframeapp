@@ -126,6 +126,8 @@
 	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>MyFrame needs access to your photo library to send images to the frame.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MyFrame saves processed photos to Apple Photos so iCloud Photos can sync them.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

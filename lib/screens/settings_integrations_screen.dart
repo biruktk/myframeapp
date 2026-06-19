@@ -2,10 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../config/dropbox_config.dart';
 import '../l10n/app_strings.dart';
-import '../services/dropbox_service.dart';
-import '../services/google_drive_service.dart';
+import '../services/google_photos_service.dart';
+import '../services/icloud_photos_service.dart';
 import '../settings/app_settings.dart';
 import '../widgets/integration_brand_logo.dart';
 
@@ -13,33 +12,35 @@ class SettingsIntegrationsScreen extends StatefulWidget {
   const SettingsIntegrationsScreen({super.key});
 
   @override
-  State<SettingsIntegrationsScreen> createState() => _SettingsIntegrationsScreenState();
+  State<SettingsIntegrationsScreen> createState() =>
+      _SettingsIntegrationsScreenState();
 }
 
-class _SettingsIntegrationsScreenState extends State<SettingsIntegrationsScreen> {
-  var _driveBusy = false;
-  var _dropboxBusy = false;
+class _SettingsIntegrationsScreenState
+    extends State<SettingsIntegrationsScreen> {
+  var _googlePhotosBusy = false;
+  var _icloudBusy = false;
 
   @override
   void initState() {
     super.initState();
-    unawaited(GoogleDriveService.instance.loadPrefs());
-    unawaited(DropboxService.instance.loadPrefs());
+    unawaited(GooglePhotosService.instance.loadPrefs());
+    unawaited(ICloudPhotosService.instance.loadPrefs());
   }
 
-  Future<void> _toggleGoogleDrive() async {
-    setState(() => _driveBusy = true);
+  Future<void> _toggleGooglePhotos() async {
+    setState(() => _googlePhotosBusy = true);
     try {
-      if (GoogleDriveService.instance.isConnected) {
-        await GoogleDriveService.instance.disconnect();
-        final app = AppSettingsScope.of(context);
-        if (app.photoStorageBackend == 'google_drive') {
+      final app = AppSettingsScope.of(context);
+      if (GooglePhotosService.instance.isConnected) {
+        await GooglePhotosService.instance.disconnect();
+        if (app.photoStorageBackend == 'google_photos') {
           await app.setPhotoStorageBackend('vps');
         }
       } else {
-        await GoogleDriveService.instance.connect();
-        if (GoogleDriveService.instance.isConnected && mounted) {
-          await AppSettingsScope.of(context).setPhotoStorageBackend('google_drive');
+        await GooglePhotosService.instance.connect();
+        if (GooglePhotosService.instance.isConnected && mounted) {
+          await app.setPhotoStorageBackend('google_photos');
         }
       }
       if (mounted) setState(() {});
@@ -47,47 +48,45 @@ class _SettingsIntegrationsScreenState extends State<SettingsIntegrationsScreen>
       if (!mounted) return;
       final s = AppStrings.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.integrationErrorDrive('$e'))),
+        SnackBar(content: Text(s.integrationErrorGooglePhotos('$e'))),
       );
     } finally {
-      if (mounted) setState(() => _driveBusy = false);
+      if (mounted) setState(() => _googlePhotosBusy = false);
     }
   }
 
-  Future<void> _toggleDropbox() async {
-    setState(() => _dropboxBusy = true);
+  Future<void> _toggleICloudPhotos() async {
+    setState(() => _icloudBusy = true);
     try {
-      if (DropboxService.instance.isConnected) {
-        await DropboxService.instance.disconnect();
-        final app = AppSettingsScope.of(context);
-        if (app.photoStorageBackend == 'dropbox') {
+      final app = AppSettingsScope.of(context);
+      if (ICloudPhotosService.instance.isConnected) {
+        await ICloudPhotosService.instance.disconnect();
+        if (app.photoStorageBackend == 'icloud_photos') {
           await app.setPhotoStorageBackend('vps');
         }
       } else {
-        if (!DropboxConfig.isConfigured) {
+        if (!ICloudPhotosService.instance.isAvailable) {
           if (!mounted) return;
           final s = AppStrings.of(context);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(s.dropboxKeyMissing)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(s.icloudPhotosUnavailable)));
           return;
         }
-        await DropboxService.instance.connect();
-        if (!mounted) return;
-        final s = AppStrings.of(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(s.dropboxBrowserSignIn)),
-        );
+        await ICloudPhotosService.instance.connect();
+        if (ICloudPhotosService.instance.isConnected && mounted) {
+          await app.setPhotoStorageBackend('icloud_photos');
+        }
       }
       if (mounted) setState(() {});
     } catch (e) {
       if (!mounted) return;
       final s = AppStrings.of(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.integrationErrorDropbox('$e'))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(s.integrationErrorICloud('$e'))));
     } finally {
-      if (mounted) setState(() => _dropboxBusy = false);
+      if (mounted) setState(() => _icloudBusy = false);
     }
   }
 
@@ -95,8 +94,9 @@ class _SettingsIntegrationsScreenState extends State<SettingsIntegrationsScreen>
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
-    final driveOn = GoogleDriveService.instance.isConnected;
-    final dropboxOn = DropboxService.instance.isConnected;
+    final googlePhotosOn = GooglePhotosService.instance.isConnected;
+    final icloudOn = ICloudPhotosService.instance.isConnected;
+    final showICloud = ICloudPhotosService.instance.isAvailable;
 
     return Scaffold(
       appBar: AppBar(title: Text(s.integrations)),
@@ -105,31 +105,39 @@ class _SettingsIntegrationsScreenState extends State<SettingsIntegrationsScreen>
         children: [
           Text(
             s.integrationsCloudStorageIntro,
-            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, height: 1.4),
+            style: TextStyle(
+              fontSize: 13,
+              color: cs.onSurfaceVariant,
+              height: 1.4,
+            ),
           ),
           const SizedBox(height: 14),
           Card(
             child: Column(
               children: [
                 _IntegrationTile(
-                  logo: const IntegrationBrandLogo.googleDrive(size: 28),
-                  title: 'Google Drive',
-                  subtitle: driveOn ? s.integrationsDriveConnectedSub : s.notConnected,
-                  connected: driveOn,
-                  busy: _driveBusy,
-                  onPressed: () => unawaited(_toggleGoogleDrive()),
-                ),
-                const Divider(height: 1, indent: 72),
-                _IntegrationTile(
-                  logo: const IntegrationBrandLogo.dropbox(size: 28),
-                  title: 'Dropbox',
-                  subtitle: dropboxOn
-                      ? (DropboxService.instance.accountName ?? s.integrationsDropboxConnectedSub)
+                  logo: const IntegrationBrandLogo.googlePhotos(size: 28),
+                  title: 'Google Photos',
+                  subtitle: googlePhotosOn
+                      ? s.integrationsGooglePhotosConnectedSub
                       : s.notConnected,
-                  connected: dropboxOn,
-                  busy: _dropboxBusy,
-                  onPressed: () => unawaited(_toggleDropbox()),
+                  connected: googlePhotosOn,
+                  busy: _googlePhotosBusy,
+                  onPressed: () => unawaited(_toggleGooglePhotos()),
                 ),
+                if (showICloud) ...[
+                  const Divider(height: 1, indent: 72),
+                  _IntegrationTile(
+                    logo: const IntegrationBrandLogo.icloud(size: 28),
+                    title: 'iCloud Photos',
+                    subtitle: icloudOn
+                        ? s.integrationsICloudConnectedSub
+                        : s.notConnected,
+                    connected: icloudOn,
+                    busy: _icloudBusy,
+                    onPressed: () => unawaited(_toggleICloudPhotos()),
+                  ),
+                ],
               ],
             ),
           ),
@@ -179,11 +187,8 @@ class _IntegrationTile extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : connected
-              ? TextButton(onPressed: onPressed, child: Text(s.disconnectLabel))
-              : OutlinedButton(
-                  onPressed: onPressed,
-                  child: Text(s.connectLabel),
-                ),
+          ? TextButton(onPressed: onPressed, child: Text(s.disconnectLabel))
+          : OutlinedButton(onPressed: onPressed, child: Text(s.connectLabel)),
       onTap: busy ? null : onPressed,
     );
   }

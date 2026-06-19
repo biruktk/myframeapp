@@ -8,12 +8,14 @@ import '../theme/app_theme.dart';
 /// Persisted accent color, brightness mode, and optional language override.
 class AppSettings extends ChangeNotifier {
   AppAccent accent = AppAccent.red;
+
   /// Default **light** (matches `ra/ui` mockup); users can still pick system/dark in Settings.
   ThemeMode themeMode = ThemeMode.light;
 
   /// Bigger type and slightly larger hit targets (top-right Home switch).
   bool comfortMode = false;
   bool onboardingDone = false;
+
   /// After first onboarding completion, show coachmark on Home **+** (add frame).
   bool pendingHomeAddFrameCoachmark = false;
   bool signedIn = false;
@@ -31,6 +33,7 @@ class AppSettings extends ChangeNotifier {
   String profileName = '';
   String accountEmail = '';
   String birthday = '';
+
   /// Local profile photo path (device-only until backend avatar API exists).
   String profileAvatarPath = '';
   bool notifyBirthdayReminders = true;
@@ -46,22 +49,28 @@ class AppSettings extends ChangeNotifier {
   bool iCloudConnected = false;
   bool homeAssistantConnected = false;
   bool googlePhotosAutoSync = true;
-  /// Where processed send photos are stored: `vps`, `google_drive`, or `dropbox`.
+
+  /// Where processed send photos are stored: `vps`, `google_photos`, or `icloud_photos`.
   String photoStorageBackend = 'vps';
   bool autoInstallUpdates = true;
   String aiApiKey = '';
+
   /// `openai` or `gemini` — used for Send → AI Generate.
   String aiImageProvider = 'openai';
   String aiOpenAiApiKey = '';
   String aiGeminiApiKey = '';
   bool sms2faEnabled = false;
 
-  String get activeAiImageApiKey =>
-      aiImageProvider == 'gemini' ? aiGeminiApiKey.trim() : aiOpenAiApiKey.trim();
+  String get activeAiImageApiKey => aiImageProvider == 'gemini'
+      ? aiGeminiApiKey.trim()
+      : aiOpenAiApiKey.trim();
+
   /// Shown in Account / Pro; replace with entitlements from your backend.
   bool isProMember = false;
+
   /// Developer diagnostics; persisted for convenience.
   bool debugModeEnabled = false;
+
   /// When `true`, user pauses OTA (Wi‑Fi) firmware install on the frame — wire to device API when available.
   bool stopFrameFirmwareOta = false;
 
@@ -72,7 +81,8 @@ class AppSettings extends ChangeNotifier {
   bool get isFrameOtaEnabled => autoInstallUpdates && !stopFrameFirmwareOta;
 
   /// Unified UI: automatic Wi‑Fi OTA when on (default); off blocks auto updates.
-  bool get automaticFrameFirmwareUpdates => autoInstallUpdates && !stopFrameFirmwareOta;
+  bool get automaticFrameFirmwareUpdates =>
+      autoInstallUpdates && !stopFrameFirmwareOta;
 
   Locale? get locale => languageCode == null ? null : Locale(languageCode!);
 
@@ -112,7 +122,8 @@ class AppSettings extends ChangeNotifier {
   static const _kSms2faEnabled = 'settings_sms_2fa_enabled';
   static const _kProMember = 'settings_pro_member';
   static const _kDebugModeEnabled = 'settings_debug_mode_enabled';
-  static const _kStopFrameFirmwareOta = 'settings_device_stop_frame_firmware_ota';
+  static const _kStopFrameFirmwareOta =
+      'settings_device_stop_frame_firmware_ota';
   static const _kDefaultSlideshow = 'settings_default_slideshow_style';
 
   Future<void> load() async {
@@ -157,7 +168,11 @@ class AppSettings extends ChangeNotifier {
     iCloudConnected = p.getBool(_kICloudConnected) ?? false;
     homeAssistantConnected = p.getBool(_kHomeAssistantConnected) ?? false;
     googlePhotosAutoSync = p.getBool(_kGooglePhotosAutoSync) ?? true;
-    photoStorageBackend = p.getString(_kPhotoStorageBackend) ?? 'vps';
+    final rawPhotoStorageBackend = p.getString(_kPhotoStorageBackend) ?? 'vps';
+    photoStorageBackend = _normalizePhotoStorageBackend(rawPhotoStorageBackend);
+    if (photoStorageBackend != rawPhotoStorageBackend) {
+      await p.setString(_kPhotoStorageBackend, photoStorageBackend);
+    }
     autoInstallUpdates = p.getBool(_kAutoInstallUpdates) ?? true;
     aiApiKey = p.getString(_kAiApiKey) ?? '';
     aiImageProvider = p.getString(_kAiImageProvider) ?? 'openai';
@@ -306,7 +321,9 @@ class AppSettings extends ChangeNotifier {
     homeAssistantConnected = homeAssistant;
     googlePhotosAutoSync = googleAutoSync;
     if (photoStorageBackend != null) {
-      this.photoStorageBackend = photoStorageBackend;
+      this.photoStorageBackend = _normalizePhotoStorageBackend(
+        photoStorageBackend,
+      );
     }
     notifyListeners();
     final p = await SharedPreferences.getInstance();
@@ -315,15 +332,30 @@ class AppSettings extends ChangeNotifier {
     await p.setBool(_kHomeAssistantConnected, homeAssistant);
     await p.setBool(_kGooglePhotosAutoSync, googleAutoSync);
     if (photoStorageBackend != null) {
-      await p.setString(_kPhotoStorageBackend, photoStorageBackend);
+      await p.setString(_kPhotoStorageBackend, this.photoStorageBackend);
     }
   }
 
   Future<void> setPhotoStorageBackend(String backend) async {
-    photoStorageBackend = backend;
+    photoStorageBackend = _normalizePhotoStorageBackend(backend);
     notifyListeners();
     final p = await SharedPreferences.getInstance();
-    await p.setString(_kPhotoStorageBackend, backend);
+    await p.setString(_kPhotoStorageBackend, photoStorageBackend);
+  }
+
+  String _normalizePhotoStorageBackend(String backend) {
+    switch (backend) {
+      case 'google_drive':
+        return 'google_photos';
+      case 'dropbox':
+        return 'icloud_photos';
+      case 'google_photos':
+      case 'icloud_photos':
+      case 'vps':
+        return backend;
+      default:
+        return 'vps';
+    }
   }
 
   Future<void> setAppPreferences({
@@ -393,10 +425,7 @@ class AppSettings extends ChangeNotifier {
     await p.remove(_kPendingHomeAddCoach);
   }
 
-  Future<void> setSignedIn({
-    required bool value,
-    String? provider,
-  }) async {
+  Future<void> setSignedIn({required bool value, String? provider}) async {
     if (value && !hasAuthenticatedSession) {
       return;
     }
@@ -437,7 +466,10 @@ class AppSettings extends ChangeNotifier {
   }
 
   /// Persists Bearer JWT returned by `/api/auth/login` or `/api/auth/register`.
-  Future<void> setAuthJwt({required String token, required String userId}) async {
+  Future<void> setAuthJwt({
+    required String token,
+    required String userId,
+  }) async {
     authToken = token.trim();
     authUserId = userId.trim();
     notifyListeners();
@@ -512,7 +544,8 @@ class AppSettingsScope extends InheritedNotifier<AppSettings> {
   });
 
   static AppSettings of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<AppSettingsScope>();
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<AppSettingsScope>();
     assert(scope != null, 'AppSettingsScope not found');
     return scope!.notifier!;
   }

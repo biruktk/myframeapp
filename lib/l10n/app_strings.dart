@@ -448,7 +448,7 @@ class AppStrings {
     en:
         'Google Sign-In is not configured for this Android build.\n\n'
         'In Google Cloud Console → APIs & Services → Credentials, add:\n'
-        '1) OAuth Android client — package com.myframe.minyuex, SHA-1 68:29:F9:6E:9D:40:58:02:32:2E:21:E0:19:88:76:DD:02:9C:4B:77\n'
+        '1) OAuth Android client — ID 824694546060-9rlpc8r18kv38t0lvdkktbeai8nn7s58…, package com.myframe.minyuex, SHA-1 68:29:F9:6E:9D:40:58:02:32:2E:21:E0:19:88:76:DD:02:9C:4B:77\n'
         '2) OAuth Web client — ID must match the app serverClientId (824694546060-rjs2fvoshtngpprrbbtedda9uda28qsm…).\n\n'
         'Save, wait ~10 minutes, then reinstall the APK.',
     zh:
@@ -2997,9 +2997,7 @@ class AppStrings {
     de: daysUntil <= 0
         ? '$name hat heute Geburtstag!'
         : '$name hat in $daysUntil Tagen Geburtstag.',
-    ja: daysUntil <= 0
-        ? '今日は $name の誕生日です！'
-        : '$name の誕生日まであと $daysUntil 日です。',
+    ja: daysUntil <= 0 ? '今日は $name の誕生日です！' : '$name の誕生日まであと $daysUntil 日です。',
   );
   String get inAppNotifOfflineTitle => _l6(
     en: 'Frame offline',
@@ -3023,9 +3021,7 @@ class AppStrings {
     de: frameName.isEmpty
         ? 'Ihr Rahmen scheint offline zu sein.'
         : '$frameName scheint offline zu sein.',
-    ja: frameName.isEmpty
-        ? 'フレームがオフラインのようです。'
-        : '$frameName がオフラインのようです。',
+    ja: frameName.isEmpty ? 'フレームがオフラインのようです。' : '$frameName がオフラインのようです。',
   );
   String get inAppNotifFamilyTitle => _l6(
     en: 'Family activity',
@@ -3059,29 +3055,29 @@ class AppStrings {
     de: 'Etwas ist in MyFrame passiert.',
     ja: 'MyFrame で何かがありました。',
   );
-  String integrationErrorDrive(String detail) => _l6(
-    en: 'Google Drive: $detail',
-    zh: 'Google Drive：$detail',
-    es: 'Google Drive: $detail',
-    fr: 'Google Drive : $detail',
-    de: 'Google Drive: $detail',
-    ja: 'Google Drive: $detail',
+  String integrationErrorGooglePhotos(String detail) => _l6(
+    en: 'Google Photos: $detail',
+    zh: 'Google 相册：$detail',
+    es: 'Google Fotos: $detail',
+    fr: 'Google Photos : $detail',
+    de: 'Google Fotos: $detail',
+    ja: 'Google フォト: $detail',
   );
-  String integrationErrorDropbox(String detail) => _l6(
-    en: 'Dropbox: $detail',
-    zh: 'Dropbox：$detail',
-    es: 'Dropbox: $detail',
-    fr: 'Dropbox : $detail',
-    de: 'Dropbox: $detail',
-    ja: 'Dropbox: $detail',
+  String integrationErrorICloud(String detail) => _l6(
+    en: 'iCloud Photos: $detail',
+    zh: 'iCloud 照片：$detail',
+    es: 'Fotos de iCloud: $detail',
+    fr: 'Photos iCloud : $detail',
+    de: 'iCloud Fotos: $detail',
+    ja: 'iCloud 写真: $detail',
   );
   String get integrationsCloudStorageIntro => _l6(
-    en: 'Connect cloud storage for your photos instead of MyFrame servers.',
-    zh: '连接云存储，将照片保存到您的账户而非 MyFrame 服务器。',
-    es: 'Conecta almacenamiento en la nube para tus fotos.',
-    fr: 'Connectez un cloud pour vos photos.',
-    de: 'Cloud-Speicher für Ihre Fotos verbinden.',
-    ja: 'MyFrame サーバーではなくクラウドに写真を保存します。',
+    en: 'Save processed frame photos to your photo cloud.',
+    zh: '将处理后的相框照片保存到您的照片云端。',
+    es: 'Guarda las fotos procesadas del marco en tu nube de fotos.',
+    fr: 'Enregistrez les photos du cadre dans votre cloud photo.',
+    de: 'Speichern Sie verarbeitete Rahmenfotos in Ihrer Fotocloud.',
+    ja: '処理したフレーム写真を写真クラウドに保存します。',
   );
   String get disconnectLabel => _l6(
     en: 'Disconnect',
@@ -3091,37 +3087,29 @@ class AppStrings {
     de: 'Trennen',
     ja: '切断',
   );
-  String get integrationsDriveConnectedSub => _l6(
-    en: 'Connected — photos save to your MyFrame folder',
-    zh: '已连接 — 照片保存到 MyFrame 文件夹',
-    es: 'Conectado — fotos en carpeta MyFrame',
-    fr: 'Connecté — photos dans le dossier MyFrame',
-    de: 'Verbunden — Fotos im MyFrame-Ordner',
-    ja: '接続済み — MyFrame フォルダに保存',
+  String get integrationsGooglePhotosConnectedSub => _l6(
+    en: 'Connected - photos save to your MyFrame album',
+    zh: '已连接 - 照片保存到 MyFrame 相册',
+    es: 'Conectado - fotos en el álbum MyFrame',
+    fr: 'Connecté - photos dans l’album MyFrame',
+    de: 'Verbunden - Fotos im MyFrame-Album',
+    ja: '接続済み - MyFrame アルバムに保存',
   );
-  String get integrationsDropboxConnectedSub => _l6(
-    en: 'Connected — photos save to /MyFrame',
-    zh: '已连接 — 照片保存到 /MyFrame',
-    es: 'Conectado — fotos en /MyFrame',
-    fr: 'Connecté — photos dans /MyFrame',
-    de: 'Verbunden — Fotos in /MyFrame',
-    ja: '接続済み — /MyFrame に保存',
+  String get integrationsICloudConnectedSub => _l6(
+    en: 'Connected - iOS saves photos to Apple Photos',
+    zh: '已连接 - iOS 会将照片保存到 Apple 照片',
+    es: 'Conectado - iOS guarda fotos en Apple Fotos',
+    fr: 'Connecté - iOS enregistre dans Photos Apple',
+    de: 'Verbunden - iOS speichert in Apple Fotos',
+    ja: '接続済み - iOS が Apple 写真に保存',
   );
-  String get dropboxKeyMissing => _l6(
-    en: 'Dropbox app key not configured. Set DROPBOX_APP_KEY via --dart-define.',
-    zh: '未配置 Dropbox 应用密钥。请通过 --dart-define 设置 DROPBOX_APP_KEY。',
-    es: 'Falta la clave de Dropbox. Configure DROPBOX_APP_KEY.',
-    fr: 'Clé Dropbox manquante. Définissez DROPBOX_APP_KEY.',
-    de: 'Dropbox-App-Schlüssel fehlt. DROPBOX_APP_KEY setzen.',
-    ja: 'Dropbox アプリキーが未設定です。DROPBOX_APP_KEY を設定してください。',
-  );
-  String get dropboxBrowserSignIn => _l6(
-    en: 'Complete sign-in in your browser, then return to MyFrame.',
-    zh: '请在浏览器中完成登录，然后返回 MyFrame。',
-    es: 'Complete el inicio de sesión en el navegador y vuelva a MyFrame.',
-    fr: 'Terminez la connexion dans le navigateur, puis revenez à MyFrame.',
-    de: 'Anmeldung im Browser abschließen und zu MyFrame zurückkehren.',
-    ja: 'ブラウザでサインインを完了し、MyFrame に戻ってください。',
+  String get icloudPhotosUnavailable => _l6(
+    en: 'iCloud Photos upload is available only on iOS. Use Google Photos on Android.',
+    zh: 'iCloud 照片上传仅在 iOS 可用。Android 请使用 Google 相册。',
+    es: 'Fotos de iCloud solo está disponible en iOS. Usa Google Fotos en Android.',
+    fr: 'Photos iCloud est disponible uniquement sur iOS. Utilisez Google Photos sur Android.',
+    de: 'iCloud Fotos ist nur unter iOS verfügbar. Nutzen Sie Google Fotos auf Android.',
+    ja: 'iCloud 写真のアップロードは iOS のみ対応です。Android では Google フォトを使用してください。',
   );
   String get debugModeTitle => _l6(
     en: 'Debug Mode',
@@ -5088,7 +5076,12 @@ class AppStrings {
     de: 'Auf dem Gerät: $count Fotos · alle $interval',
     ja: '端末: ${count}枚 · $interval ごと',
   );
-  String playlistCloudDeviceStatus(String name, bool online, int count, String interval) => _l6(
+  String playlistCloudDeviceStatus(
+    String name,
+    bool online,
+    int count,
+    String interval,
+  ) => _l6(
     en: 'Cloud · $name: ${online ? "online" : "offline"} · $count photos · $interval',
     zh: '云端 · $name：${online ? "在线" : "离线"} · $count 张 · $interval',
     es: 'Nube · $name: ${online ? "en línea" : "desconectado"} · $count · $interval',
@@ -5394,8 +5387,7 @@ class AppStrings {
   );
 
   String sendQueueWaitForFrame(int nextIndex, int total) => _l6(
-    en:
-        'Photo ${nextIndex - 1} of $total sent. The frame shows your latest photo — wait a few seconds before the next one.',
+    en: 'Photo ${nextIndex - 1} of $total sent. The frame shows your latest photo — wait a few seconds before the next one.',
     zh: '第 ${nextIndex - 1}/$total 张已发送。相框显示最新一张，请稍候再发下一张。',
     es: 'Foto ${nextIndex - 1} de $total enviada. El marco muestra la última — espera unos segundos.',
     fr: 'Photo ${nextIndex - 1}/$total envoyée. Le cadre affiche la dernière — patientez.',
@@ -5404,8 +5396,7 @@ class AppStrings {
   );
 
   String sendQueueFrameShowsLatest(int index, int total) => _l6(
-    en:
-        'Photo $index of $total. The frame always shows your most recent send (e‑ink can take up to a minute).',
+    en: 'Photo $index of $total. The frame always shows your most recent send (e‑ink can take up to a minute).',
     zh: '第 $index/$total 张。相框只显示最近发送的一张（墨水屏刷新可能需要一分钟）。',
     es: 'Foto $index de $total. El marco muestra siempre la última foto enviada.',
     fr: 'Photo $index/$total. Le cadre affiche toujours la photo la plus récente.',
@@ -5531,233 +5522,233 @@ class AppStrings {
 
   /// Built-in FAQs — fully translated; used when language is Chinese or any locale.
   List<FaqItem> get helpFaqEntries => [
-        FaqItem(
-          id: 'pairing',
-          question: _l6(
-            en: 'How do I pair my frame?',
-            zh: '如何配对相框？',
-            es: '¿Cómo emparejo mi marco?',
-            fr: 'Comment appairer mon cadre ?',
-            de: 'Wie koppelt man den Rahmen?',
-            ja: 'フレームのペア方法は？',
-          ),
-          answer: _l6(
-            en: 'Open My Frames, turn on Bluetooth, and tap your frame when it appears. The app sends server settings, then guides you through Wi‑Fi. Finish profile setup, then send your first photo.',
-            zh: '打开「我的相框」，开启蓝牙，在列表中点击您的相框。应用会先发送服务器配置，再引导您连接 Wi‑Fi。完成资料设置后即可发送第一张照片。',
-            es: 'Abre Mis marcos, activa Bluetooth y toca tu marco. La app envía la configuración del servidor y luego la Wi‑Fi.',
-            fr: 'Ouvrez Mes cadres, activez le Bluetooth et touchez votre cadre. L’app envoie les réglages serveur puis le Wi‑Fi.',
-            de: 'Öffnen Sie Meine Rahmen, Bluetooth ein, Rahmen antippen. Die App sendet Server- und WLAN-Einstellungen.',
-            ja: '「マイフレーム」を開き、Bluetoothをオンにしてフレームをタップ。サーバー設定後にWi‑Fi設定へ進みます。',
-          ),
-        ),
-        FaqItem(
-          id: 'photos_not_showing',
-          question: _l6(
-            en: 'Photos upload but do not appear on the frame',
-            zh: '照片已上传但相框不显示',
-            es: 'Las fotos se suben pero no se ven en el marco',
-            fr: 'Les photos sont envoyées mais n’apparaissent pas',
-            de: 'Fotos werden hochgeladen, Rahmen zeigt nichts',
-            ja: '送信したのにフレームに表示されない',
-          ),
-          answer: _l6(
-            en: 'Stay near the frame on the same Wi‑Fi. In Send, wait until the app reports delivered to frame. If it fails, open Frame settings → Reconfigure frame server to refresh MQTT over Bluetooth.',
-            zh: '请靠近相框并确保在同一 Wi‑Fi。发送时请等待应用显示「已送达相框」。若失败，请到相框设置 → 重新配置相框服务器，通过蓝牙刷新 MQTT。',
-            es: 'Quédate cerca del marco en la misma Wi‑Fi. Espera “entregado al marco”. Si falla, reconfigura el servidor por Bluetooth.',
-            fr: 'Restez près du cadre sur le même Wi‑Fi. Attendez la confirmation. Sinon, reconfigurez le serveur via Bluetooth.',
-            de: 'Nahe am Rahmen im gleichen WLAN bleiben. Auf Zustellung warten. Bei Fehler: Rahmen-Server per Bluetooth neu konfigurieren.',
-            ja: '同じWi‑Fiでフレームの近くにいて、配信完了を待ってください。失敗時はBluetoothでサーバー再設定。',
-          ),
-        ),
-        FaqItem(
-          id: 'send_photo',
-          question: _l6(
-            en: 'How do I send a single photo?',
-            zh: '如何发送单张照片？',
-            es: '¿Cómo envío una foto?',
-            fr: 'Comment envoyer une photo ?',
-            de: 'Wie sende ich ein Foto?',
-            ja: '1枚の写真を送るには？',
-          ),
-          answer: _l6(
-            en: 'Tap the center Send button, pick a photo, adjust color if you like, then tap Send. The frame downloads the image from the server over Wi‑Fi.',
-            zh: '点击底部中间的「发送」，选择照片，可按需调色，然后点发送。相框会通过 Wi‑Fi 从服务器下载图片。',
-            es: 'Pulsa Enviar, elige foto, ajusta y envía. El marco descarga por Wi‑Fi.',
-            fr: 'Appuyez sur Envoyer, choisissez une photo, ajustez et envoyez.',
-            de: 'Senden antippen, Foto wählen, anpassen, senden. Der Rahmen lädt per WLAN.',
-            ja: '中央の送信から写真を選び、調整して送信。フレームがWi‑Fiで取得します。',
-          ),
-        ),
-        FaqItem(
-          id: 'playlist',
-          question: _l6(
-            en: 'How do playlists and slideshows work?',
-            zh: '播放列表和幻灯片如何工作？',
-            es: '¿Cómo funcionan las listas y el pase de diapositivas?',
-            fr: 'Comment fonctionnent les listes et diaporamas ?',
-            de: 'Wie funktionieren Playlists und Diashows?',
-            ja: 'プレイリストとスライドショーは？',
-          ),
-          answer: _l6(
-            en: 'Settings → Application → Playlist → Create New Playlist. Name it, add photos, choose rotation interval (1h–24h), then Send to frame. Saved playlists appear in Gallery → Albums too.',
-            zh: '设置 → 应用 → 播放列表 → 新建播放列表。命名、添加照片、选择轮播间隔（1–24 小时），然后发送到相框。保存的列表也会出现在「相册 → 相册集」中。',
-            es: 'Ajustes → Aplicación → Lista → Crear. Nombre, fotos, intervalo y enviar.',
-            fr: 'Réglages → Application → Liste → Créer. Nom, photos, intervalle, envoyer.',
-            de: 'Einstellungen → App → Playlist → Erstellen. Name, Fotos, Intervall, senden.',
-            ja: '設定→アプリ→プレイリスト→新規作成。名前・写真・間隔を選び送信。',
-          ),
-        ),
-        FaqItem(
-          id: 'family',
-          question: _l6(
-            en: 'How do family invites work?',
-            zh: '家庭邀请如何使用？',
-            es: '¿Cómo funcionan las invitaciones familiares?',
-            fr: 'Comment fonctionnent les invitations famille ?',
-            de: 'Wie funktionieren Familieneinladungen?',
-            ja: '家族招待の使い方は？',
-          ),
-          answer: _l6(
-            en: 'Family tab shows your invite code and QR link (myframe.ink/join). Share it so others install MyFrame and join your group. They can then send to your paired frame.',
-            zh: '「家庭」页显示邀请码和二维码链接（myframe.ink/join）。分享给家人安装 MyFrame 并加入您的家庭组，即可向已配对的相框发送照片。',
-            es: 'La pestaña Familia muestra código y QR (myframe.ink/join) para unirse.',
-            fr: 'L’onglet Famille affiche code et QR (myframe.ink/join).',
-            de: 'Register Familie zeigt Code und QR (myframe.ink/join).',
-            ja: '家族タブのコード/QR（myframe.ink/join）を共有して参加してもらいます。',
-          ),
-        ),
-        FaqItem(
-          id: 'language',
-          question: _l6(
-            en: 'How do I change the app language?',
-            zh: '如何更改应用语言？',
-            es: '¿Cómo cambio el idioma?',
-            fr: 'Comment changer la langue ?',
-            de: 'Wie ändere ich die Sprache?',
-            ja: '言語を変更するには？',
-          ),
-          answer: _l6(
-            en: 'Settings → Application → Language. Choose 中文 for Chinese, or English, Spanish, French, German, or Japanese. Help text and FAQs follow your choice.',
-            zh: '设置 → 应用 → 语言。选择「中文」即可使用中文界面；也可选英语、西班牙语、法语、德语或日语。帮助与常见问题会随语言切换。',
-            es: 'Ajustes → Aplicación → Idioma. Elige 中文 u otro idioma.',
-            fr: 'Réglages → Application → Langue. Choisissez 中文 ou une autre langue.',
-            de: 'Einstellungen → App → Sprache. Wählen Sie 中文 oder eine andere Sprache.',
-            ja: '設定→アプリ→言語。中文などを選択。',
-          ),
-        ),
-        FaqItem(
-          id: 'wifi_ble',
-          question: _l6(
-            en: 'Bluetooth or Wi‑Fi problems during setup',
-            zh: '配对时蓝牙或 Wi‑Fi 有问题',
-            es: 'Problemas de Bluetooth o Wi‑Fi al configurar',
-            fr: 'Problèmes Bluetooth ou Wi‑Fi à la configuration',
-            de: 'Bluetooth- oder WLAN-Probleme bei der Einrichtung',
-            ja: '設定時のBluetooth/Wi‑Fiの問題',
-          ),
-          answer: _l6(
-            en: 'Keep the phone within a few feet of the frame. Grant Bluetooth and location permissions on Android. If Wi‑Fi list is empty, type the network name manually. Retry Reconfigure frame server from Settings.',
-            zh: '请将手机靠近相框（几米内）。Android 请授予蓝牙和定位权限。若 Wi‑Fi 列表为空，可手动输入网络名称。可在设置的相框设置中重试「重新配置相框服务器」。',
-            es: 'Acércate al marco. Concede permisos en Android. Escribe la red manualmente si hace falta.',
-            fr: 'Restez près du cadre. Autorisations Bluetooth/localisation sur Android.',
-            de: 'Nah am Rahmen bleiben. Android: Bluetooth- und Standortrechte. WLAN ggf. manuell eingeben.',
-            ja: 'フレームの近くで。AndroidはBluetooth/位置の許可。Wi‑Fiは手入力も可。',
-          ),
-        ),
-        FaqItem(
-          id: 'sign_in',
-          question: _l6(
-            en: 'Which sign-in options are available?',
-            zh: '有哪些登录方式？',
-            es: '¿Qué opciones de inicio de sesión hay?',
-            fr: 'Quelles options de connexion ?',
-            de: 'Welche Anmeldeoptionen gibt es?',
-            ja: 'ログイン方法は？',
-          ),
-          answer: _l6(
-            en: 'iPhone: Apple, Google, or WeChat. Android: Google or WeChat. Sign in to sync cloud playlists and family groups across devices.',
-            zh: 'iPhone：Apple、Google 或微信。Android：Google 或微信。登录后可同步云端播放列表与家庭组。',
-            es: 'iPhone: Apple, Google o WeChat. Android: Google o WeChat.',
-            fr: 'iPhone : Apple, Google ou WeChat. Android : Google ou WeChat.',
-            de: 'iPhone: Apple, Google oder WeChat. Android: Google oder WeChat.',
-            ja: 'iPhone: Apple/Google/WeChat。Android: Google/WeChat。',
-          ),
-        ),
-        FaqItem(
-          id: 'gallery_albums',
-          question: _l6(
-            en: 'What is the difference between Gallery and albums?',
-            zh: '「相册」和「相册集」有什么区别？',
-            es: '¿Diferencia entre Galería y álbumes?',
-            fr: 'Différence entre Galerie et albums ?',
-            de: 'Unterschied Galerie und Alben?',
-            ja: 'ギャラリーとアルバムの違いは？',
-          ),
-          answer: _l6(
-            en: 'Gallery → Personal is your full photo library on this phone. Gallery → Albums (and Playlists) are named collections you build for batch send or slideshow rotation.',
-            zh: '「相册 → 个人」是本机全部照片。「相册 → 相册集」（及播放列表）是您为批量发送或幻灯片轮播创建的分组。',
-            es: 'Personal = todas las fotos. Álbumes/listas = colecciones para enviar.',
-            fr: 'Personnel = toutes les photos. Albums/listes = collections pour envoi.',
-            de: 'Persönlich = alle Fotos. Alben/Playlists = Sammlungen zum Senden.',
-            ja: '個人=全写真。アルバム/プレイリスト=送信用のまとまり。',
-          ),
-        ),
-        FaqItem(
-          id: 'firmware',
-          question: _l6(
-            en: 'How do firmware updates work?',
-            zh: '固件如何更新？',
-            es: '¿Cómo funcionan las actualizaciones de firmware?',
-            fr: 'Comment fonctionnent les mises à jour firmware ?',
-            de: 'Wie funktionieren Firmware-Updates?',
-            ja: 'ファームウェア更新は？',
-          ),
-          answer: _l6(
-            en: 'Settings → Frame settings → Device info. Enable automatic updates in Application → App preferences when available. The frame installs OTA over Wi‑Fi.',
-            zh: '设置 → 相框设置 → 设备信息。可在「应用 → 应用偏好」中开启自动更新（若可用）。相框通过 Wi‑Fi OTA 安装。',
-            es: 'Ajustes → Marco → Info del dispositivo. Activa actualizaciones automáticas en Preferencias.',
-            fr: 'Réglages → Cadre → Infos appareil. Activez les mises à jour auto dans Préférences.',
-            de: 'Einstellungen → Rahmen → Geräteinfo. Automatische Updates unter App-Einstellungen.',
-            ja: '設定→フレーム→デバイス情報。アプリ設定で自動更新。',
-          ),
-        ),
-        FaqItem(
-          id: 'contact',
-          question: _l6(
-            en: 'How do I contact support?',
-            zh: '如何联系客服？',
-            es: '¿Cómo contacto con soporte?',
-            fr: 'Comment contacter le support ?',
-            de: 'Wie erreiche ich den Support?',
-            ja: 'サポートへの連絡方法は？',
-          ),
-          answer: _l6(
-            en: 'Settings → Help → Contact us. Email contact@myframe.ink — tap to copy. Include your frame name and what you tried.',
-            zh: '设置 → 帮助 → 联系我们。邮箱 contact@myframe.ink，点击可复制。请注明相框名称与已尝试的步骤。',
-            es: 'Ajustes → Ayuda → Contáctanos. Email contact@myframe.ink.',
-            fr: 'Réglages → Aide → Nous contacter. E-mail contact@myframe.ink.',
-            de: 'Einstellungen → Hilfe → Kontakt. E-Mail contact@myframe.ink.',
-            ja: '設定→ヘルプ→お問い合わせ。contact@myframe.ink',
-          ),
-        ),
-        FaqItem(
-          id: 'share_intent',
-          question: _l6(
-            en: 'Can I share photos from other apps into MyFrame?',
-            zh: '能从其他应用分享照片到 MyFrame 吗？',
-            es: '¿Puedo compartir fotos desde otras apps?',
-            fr: 'Partager des photos depuis d’autres apps ?',
-            de: 'Fotos aus anderen Apps teilen?',
-            ja: '他アプリから写真を共有できる？',
-          ),
-          answer: _l6(
-            en: 'Yes. In Photos or Gallery, tap Share → MyFrame. The app opens Send with your images ready to edit and upload.',
-            zh: '可以。在相册或图库中点「分享」→ MyFrame，应用会打开发送页，照片可直接编辑并上传。',
-            es: 'Sí. Compartir → MyFrame desde Fotos.',
-            fr: 'Oui. Partager → MyFrame depuis Photos.',
-            de: 'Ja. Teilen → MyFrame aus Fotos.',
-            ja: 'はい。写真アプリから共有→MyFrame。',
-          ),
-        ),
-      ];
+    FaqItem(
+      id: 'pairing',
+      question: _l6(
+        en: 'How do I pair my frame?',
+        zh: '如何配对相框？',
+        es: '¿Cómo emparejo mi marco?',
+        fr: 'Comment appairer mon cadre ?',
+        de: 'Wie koppelt man den Rahmen?',
+        ja: 'フレームのペア方法は？',
+      ),
+      answer: _l6(
+        en: 'Open My Frames, turn on Bluetooth, and tap your frame when it appears. The app sends server settings, then guides you through Wi‑Fi. Finish profile setup, then send your first photo.',
+        zh: '打开「我的相框」，开启蓝牙，在列表中点击您的相框。应用会先发送服务器配置，再引导您连接 Wi‑Fi。完成资料设置后即可发送第一张照片。',
+        es: 'Abre Mis marcos, activa Bluetooth y toca tu marco. La app envía la configuración del servidor y luego la Wi‑Fi.',
+        fr: 'Ouvrez Mes cadres, activez le Bluetooth et touchez votre cadre. L’app envoie les réglages serveur puis le Wi‑Fi.',
+        de: 'Öffnen Sie Meine Rahmen, Bluetooth ein, Rahmen antippen. Die App sendet Server- und WLAN-Einstellungen.',
+        ja: '「マイフレーム」を開き、Bluetoothをオンにしてフレームをタップ。サーバー設定後にWi‑Fi設定へ進みます。',
+      ),
+    ),
+    FaqItem(
+      id: 'photos_not_showing',
+      question: _l6(
+        en: 'Photos upload but do not appear on the frame',
+        zh: '照片已上传但相框不显示',
+        es: 'Las fotos se suben pero no se ven en el marco',
+        fr: 'Les photos sont envoyées mais n’apparaissent pas',
+        de: 'Fotos werden hochgeladen, Rahmen zeigt nichts',
+        ja: '送信したのにフレームに表示されない',
+      ),
+      answer: _l6(
+        en: 'Stay near the frame on the same Wi‑Fi. In Send, wait until the app reports delivered to frame. If it fails, open Frame settings → Reconfigure frame server to refresh MQTT over Bluetooth.',
+        zh: '请靠近相框并确保在同一 Wi‑Fi。发送时请等待应用显示「已送达相框」。若失败，请到相框设置 → 重新配置相框服务器，通过蓝牙刷新 MQTT。',
+        es: 'Quédate cerca del marco en la misma Wi‑Fi. Espera “entregado al marco”. Si falla, reconfigura el servidor por Bluetooth.',
+        fr: 'Restez près du cadre sur le même Wi‑Fi. Attendez la confirmation. Sinon, reconfigurez le serveur via Bluetooth.',
+        de: 'Nahe am Rahmen im gleichen WLAN bleiben. Auf Zustellung warten. Bei Fehler: Rahmen-Server per Bluetooth neu konfigurieren.',
+        ja: '同じWi‑Fiでフレームの近くにいて、配信完了を待ってください。失敗時はBluetoothでサーバー再設定。',
+      ),
+    ),
+    FaqItem(
+      id: 'send_photo',
+      question: _l6(
+        en: 'How do I send a single photo?',
+        zh: '如何发送单张照片？',
+        es: '¿Cómo envío una foto?',
+        fr: 'Comment envoyer une photo ?',
+        de: 'Wie sende ich ein Foto?',
+        ja: '1枚の写真を送るには？',
+      ),
+      answer: _l6(
+        en: 'Tap the center Send button, pick a photo, adjust color if you like, then tap Send. The frame downloads the image from the server over Wi‑Fi.',
+        zh: '点击底部中间的「发送」，选择照片，可按需调色，然后点发送。相框会通过 Wi‑Fi 从服务器下载图片。',
+        es: 'Pulsa Enviar, elige foto, ajusta y envía. El marco descarga por Wi‑Fi.',
+        fr: 'Appuyez sur Envoyer, choisissez une photo, ajustez et envoyez.',
+        de: 'Senden antippen, Foto wählen, anpassen, senden. Der Rahmen lädt per WLAN.',
+        ja: '中央の送信から写真を選び、調整して送信。フレームがWi‑Fiで取得します。',
+      ),
+    ),
+    FaqItem(
+      id: 'playlist',
+      question: _l6(
+        en: 'How do playlists and slideshows work?',
+        zh: '播放列表和幻灯片如何工作？',
+        es: '¿Cómo funcionan las listas y el pase de diapositivas?',
+        fr: 'Comment fonctionnent les listes et diaporamas ?',
+        de: 'Wie funktionieren Playlists und Diashows?',
+        ja: 'プレイリストとスライドショーは？',
+      ),
+      answer: _l6(
+        en: 'Settings → Application → Playlist → Create New Playlist. Name it, add photos, choose rotation interval (1h–24h), then Send to frame. Saved playlists appear in Gallery → Albums too.',
+        zh: '设置 → 应用 → 播放列表 → 新建播放列表。命名、添加照片、选择轮播间隔（1–24 小时），然后发送到相框。保存的列表也会出现在「相册 → 相册集」中。',
+        es: 'Ajustes → Aplicación → Lista → Crear. Nombre, fotos, intervalo y enviar.',
+        fr: 'Réglages → Application → Liste → Créer. Nom, photos, intervalle, envoyer.',
+        de: 'Einstellungen → App → Playlist → Erstellen. Name, Fotos, Intervall, senden.',
+        ja: '設定→アプリ→プレイリスト→新規作成。名前・写真・間隔を選び送信。',
+      ),
+    ),
+    FaqItem(
+      id: 'family',
+      question: _l6(
+        en: 'How do family invites work?',
+        zh: '家庭邀请如何使用？',
+        es: '¿Cómo funcionan las invitaciones familiares?',
+        fr: 'Comment fonctionnent les invitations famille ?',
+        de: 'Wie funktionieren Familieneinladungen?',
+        ja: '家族招待の使い方は？',
+      ),
+      answer: _l6(
+        en: 'Family tab shows your invite code and QR link (myframe.ink/join). Share it so others install MyFrame and join your group. They can then send to your paired frame.',
+        zh: '「家庭」页显示邀请码和二维码链接（myframe.ink/join）。分享给家人安装 MyFrame 并加入您的家庭组，即可向已配对的相框发送照片。',
+        es: 'La pestaña Familia muestra código y QR (myframe.ink/join) para unirse.',
+        fr: 'L’onglet Famille affiche code et QR (myframe.ink/join).',
+        de: 'Register Familie zeigt Code und QR (myframe.ink/join).',
+        ja: '家族タブのコード/QR（myframe.ink/join）を共有して参加してもらいます。',
+      ),
+    ),
+    FaqItem(
+      id: 'language',
+      question: _l6(
+        en: 'How do I change the app language?',
+        zh: '如何更改应用语言？',
+        es: '¿Cómo cambio el idioma?',
+        fr: 'Comment changer la langue ?',
+        de: 'Wie ändere ich die Sprache?',
+        ja: '言語を変更するには？',
+      ),
+      answer: _l6(
+        en: 'Settings → Application → Language. Choose 中文 for Chinese, or English, Spanish, French, German, or Japanese. Help text and FAQs follow your choice.',
+        zh: '设置 → 应用 → 语言。选择「中文」即可使用中文界面；也可选英语、西班牙语、法语、德语或日语。帮助与常见问题会随语言切换。',
+        es: 'Ajustes → Aplicación → Idioma. Elige 中文 u otro idioma.',
+        fr: 'Réglages → Application → Langue. Choisissez 中文 ou une autre langue.',
+        de: 'Einstellungen → App → Sprache. Wählen Sie 中文 oder eine andere Sprache.',
+        ja: '設定→アプリ→言語。中文などを選択。',
+      ),
+    ),
+    FaqItem(
+      id: 'wifi_ble',
+      question: _l6(
+        en: 'Bluetooth or Wi‑Fi problems during setup',
+        zh: '配对时蓝牙或 Wi‑Fi 有问题',
+        es: 'Problemas de Bluetooth o Wi‑Fi al configurar',
+        fr: 'Problèmes Bluetooth ou Wi‑Fi à la configuration',
+        de: 'Bluetooth- oder WLAN-Probleme bei der Einrichtung',
+        ja: '設定時のBluetooth/Wi‑Fiの問題',
+      ),
+      answer: _l6(
+        en: 'Keep the phone within a few feet of the frame. Grant Bluetooth and location permissions on Android. If Wi‑Fi list is empty, type the network name manually. Retry Reconfigure frame server from Settings.',
+        zh: '请将手机靠近相框（几米内）。Android 请授予蓝牙和定位权限。若 Wi‑Fi 列表为空，可手动输入网络名称。可在设置的相框设置中重试「重新配置相框服务器」。',
+        es: 'Acércate al marco. Concede permisos en Android. Escribe la red manualmente si hace falta.',
+        fr: 'Restez près du cadre. Autorisations Bluetooth/localisation sur Android.',
+        de: 'Nah am Rahmen bleiben. Android: Bluetooth- und Standortrechte. WLAN ggf. manuell eingeben.',
+        ja: 'フレームの近くで。AndroidはBluetooth/位置の許可。Wi‑Fiは手入力も可。',
+      ),
+    ),
+    FaqItem(
+      id: 'sign_in',
+      question: _l6(
+        en: 'Which sign-in options are available?',
+        zh: '有哪些登录方式？',
+        es: '¿Qué opciones de inicio de sesión hay?',
+        fr: 'Quelles options de connexion ?',
+        de: 'Welche Anmeldeoptionen gibt es?',
+        ja: 'ログイン方法は？',
+      ),
+      answer: _l6(
+        en: 'iPhone: Apple, Google, or WeChat. Android: Google or WeChat. Sign in to sync cloud playlists and family groups across devices.',
+        zh: 'iPhone：Apple、Google 或微信。Android：Google 或微信。登录后可同步云端播放列表与家庭组。',
+        es: 'iPhone: Apple, Google o WeChat. Android: Google o WeChat.',
+        fr: 'iPhone : Apple, Google ou WeChat. Android : Google ou WeChat.',
+        de: 'iPhone: Apple, Google oder WeChat. Android: Google oder WeChat.',
+        ja: 'iPhone: Apple/Google/WeChat。Android: Google/WeChat。',
+      ),
+    ),
+    FaqItem(
+      id: 'gallery_albums',
+      question: _l6(
+        en: 'What is the difference between Gallery and albums?',
+        zh: '「相册」和「相册集」有什么区别？',
+        es: '¿Diferencia entre Galería y álbumes?',
+        fr: 'Différence entre Galerie et albums ?',
+        de: 'Unterschied Galerie und Alben?',
+        ja: 'ギャラリーとアルバムの違いは？',
+      ),
+      answer: _l6(
+        en: 'Gallery → Personal is your full photo library on this phone. Gallery → Albums (and Playlists) are named collections you build for batch send or slideshow rotation.',
+        zh: '「相册 → 个人」是本机全部照片。「相册 → 相册集」（及播放列表）是您为批量发送或幻灯片轮播创建的分组。',
+        es: 'Personal = todas las fotos. Álbumes/listas = colecciones para enviar.',
+        fr: 'Personnel = toutes les photos. Albums/listes = collections pour envoi.',
+        de: 'Persönlich = alle Fotos. Alben/Playlists = Sammlungen zum Senden.',
+        ja: '個人=全写真。アルバム/プレイリスト=送信用のまとまり。',
+      ),
+    ),
+    FaqItem(
+      id: 'firmware',
+      question: _l6(
+        en: 'How do firmware updates work?',
+        zh: '固件如何更新？',
+        es: '¿Cómo funcionan las actualizaciones de firmware?',
+        fr: 'Comment fonctionnent les mises à jour firmware ?',
+        de: 'Wie funktionieren Firmware-Updates?',
+        ja: 'ファームウェア更新は？',
+      ),
+      answer: _l6(
+        en: 'Settings → Frame settings → Device info. Enable automatic updates in Application → App preferences when available. The frame installs OTA over Wi‑Fi.',
+        zh: '设置 → 相框设置 → 设备信息。可在「应用 → 应用偏好」中开启自动更新（若可用）。相框通过 Wi‑Fi OTA 安装。',
+        es: 'Ajustes → Marco → Info del dispositivo. Activa actualizaciones automáticas en Preferencias.',
+        fr: 'Réglages → Cadre → Infos appareil. Activez les mises à jour auto dans Préférences.',
+        de: 'Einstellungen → Rahmen → Geräteinfo. Automatische Updates unter App-Einstellungen.',
+        ja: '設定→フレーム→デバイス情報。アプリ設定で自動更新。',
+      ),
+    ),
+    FaqItem(
+      id: 'contact',
+      question: _l6(
+        en: 'How do I contact support?',
+        zh: '如何联系客服？',
+        es: '¿Cómo contacto con soporte?',
+        fr: 'Comment contacter le support ?',
+        de: 'Wie erreiche ich den Support?',
+        ja: 'サポートへの連絡方法は？',
+      ),
+      answer: _l6(
+        en: 'Settings → Help → Contact us. Email contact@myframe.ink — tap to copy. Include your frame name and what you tried.',
+        zh: '设置 → 帮助 → 联系我们。邮箱 contact@myframe.ink，点击可复制。请注明相框名称与已尝试的步骤。',
+        es: 'Ajustes → Ayuda → Contáctanos. Email contact@myframe.ink.',
+        fr: 'Réglages → Aide → Nous contacter. E-mail contact@myframe.ink.',
+        de: 'Einstellungen → Hilfe → Kontakt. E-Mail contact@myframe.ink.',
+        ja: '設定→ヘルプ→お問い合わせ。contact@myframe.ink',
+      ),
+    ),
+    FaqItem(
+      id: 'share_intent',
+      question: _l6(
+        en: 'Can I share photos from other apps into MyFrame?',
+        zh: '能从其他应用分享照片到 MyFrame 吗？',
+        es: '¿Puedo compartir fotos desde otras apps?',
+        fr: 'Partager des photos depuis d’autres apps ?',
+        de: 'Fotos aus anderen Apps teilen?',
+        ja: '他アプリから写真を共有できる？',
+      ),
+      answer: _l6(
+        en: 'Yes. In Photos or Gallery, tap Share → MyFrame. The app opens Send with your images ready to edit and upload.',
+        zh: '可以。在相册或图库中点「分享」→ MyFrame，应用会打开发送页，照片可直接编辑并上传。',
+        es: 'Sí. Compartir → MyFrame desde Fotos.',
+        fr: 'Oui. Partager → MyFrame depuis Photos.',
+        de: 'Ja. Teilen → MyFrame aus Fotos.',
+        ja: 'はい。写真アプリから共有→MyFrame。',
+      ),
+    ),
+  ];
 }

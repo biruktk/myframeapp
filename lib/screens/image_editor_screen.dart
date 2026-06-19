@@ -192,7 +192,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     );
   }
 
-  Future<void> _finishSuccessfulSend(String status, {Uint8List? sentJpeg}) async {
+  Future<void> _finishSuccessfulSend(
+    String status, {
+    Uint8List? sentJpeg,
+  }) async {
     if (!mounted) return;
     setState(() {
       _status = status;
@@ -204,11 +207,18 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     unawaited(UsageMetricsStore.instance.markPhotoSentNow());
     unawaited(
       InAppNotificationStore.instance.photoSent(
-        frameName: _paired?.frameName ?? _paired?.listDisplayTitle(_strings ?? AppStrings(AppLocale.en)),
+        frameName:
+            _paired?.frameName ??
+            _paired?.listDisplayTitle(_strings ?? AppStrings(AppLocale.en)),
       ),
     );
     if (sentJpeg != null && sentJpeg.isNotEmpty) {
-      unawaited(_saveSentPhotoToGallery(sentJpeg, persistPath: widget.galleryPersistPath));
+      unawaited(
+        _saveSentPhotoToGallery(
+          sentJpeg,
+          persistPath: widget.galleryPersistPath,
+        ),
+      );
     }
   }
 
@@ -235,6 +245,41 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     }
   }
 
+  Future<void> _saveCloudCopyIfConfigured({
+    required AppSettings app,
+    required ComposeUploadIsolateArgs composeArgs,
+    required String filename,
+  }) async {
+    if (CloudPhotoUploadService.instance.backendFor(app) ==
+        PhotoStorageBackend.vps) {
+      return;
+    }
+    try {
+      final jpeg = await compute(isolateComposeCloudJpeg, composeArgs);
+      if (jpeg == null || jpeg.isEmpty) {
+        AppDiagLog.log('[Editor] cloud copy skipped: JPEG render failed');
+        return;
+      }
+      final cloud = await CloudPhotoUploadService.instance.uploadIfConfigured(
+        app: app,
+        bytes: jpeg,
+        filename: filename,
+      );
+      if (cloud == null) return;
+      if (!cloud.ok) {
+        AppDiagLog.log('[Editor] cloud copy failed: ${cloud.error}');
+        return;
+      }
+      await InAppNotificationStore.instance.cloudUpload(
+        provider: cloud.provider,
+        fileName: filename,
+      );
+      AppDiagLog.log('[Editor] saved to ${cloud.provider} ${cloud.webUrl}');
+    } catch (e, st) {
+      AppDiagLog.log('[Editor] cloud copy failed: $e\n$st');
+    }
+  }
+
   void _leaveEditorAfterSend() {
     if (!mounted) return;
     Navigator.of(context).pop(true);
@@ -244,7 +289,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   void initState() {
     super.initState();
     final cached = EditorSettingsCache.instance.last;
-    final sheetOverlay = widget.overlay.hasAnyOverlay ||
+    final sheetOverlay =
+        widget.overlay.hasAnyOverlay ||
         widget.overlay.customText.trim().isNotEmpty ||
         (widget.overlayLocationOverride?.trim().isNotEmpty ?? false);
     _transport = TransportKind.wifi;
@@ -397,7 +443,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       final result = await SafeNav.push<PairingNavResult>(
         context,
         MaterialPageRoute<PairingNavResult>(
-          builder: (_) => const DeviceDiscoveryScreen(openSendAfterSetup: false),
+          builder: (_) =>
+              const DeviceDiscoveryScreen(openSendAfterSetup: false),
         ),
       );
       await DeviceStore.instance.load();
@@ -408,7 +455,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         return;
       }
       if (_paired == null) {
-        setState(() => _status = 'No frame paired yet. Scan a frame to continue.');
+        setState(
+          () => _status = 'No frame paired yet. Scan a frame to continue.',
+        );
         return;
       }
     }
@@ -452,22 +501,19 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     try {
       if (!mounted) return;
       final s = AppStrings.of(context);
-      AppDiagLog.verbose(
-        '[Editor] input bytes=${widget.imageBytes.length}',
+      final app = AppSettingsScope.of(context);
+      AppDiagLog.verbose('[Editor] input bytes=${widget.imageBytes.length}');
+      final composeArgs = ComposeUploadIsolateArgs(
+        imageBytes: widget.imageBytes,
+        quarterTurns: _quarterTurns,
+        brightness: 1.0 + _brightness * 0.35,
+        contrast: 1.0 + _contrast * 0.45,
+        saturation: 1.0 + _saturation * 0.45,
+        filterIndex: _filter.index,
+        overlay: _currentOverlay,
+        locationText: _overlayLocationValue,
       );
-      final uploadBin = await compute(
-        isolateComposeUploadBin,
-        ComposeUploadIsolateArgs(
-          imageBytes: widget.imageBytes,
-          quarterTurns: _quarterTurns,
-          brightness: 1.0 + _brightness * 0.35,
-          contrast: 1.0 + _contrast * 0.45,
-          saturation: 1.0 + _saturation * 0.45,
-          filterIndex: _filter.index,
-          overlay: _currentOverlay,
-          locationText: _overlayLocationValue,
-        ),
-      );
+      final uploadBin = await compute(isolateComposeUploadBin, composeArgs);
       if (uploadBin == null) {
         if (!mounted) return;
         setState(() => _status = s.processingFailed);
@@ -478,29 +524,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
       final httpName = 'photo_$ts.bin';
 
-      final app = AppSettingsScope.of(context);
-      final cloud = await CloudPhotoUploadService.instance.uploadIfConfigured(
-        app: app,
-        bytes: uploadBin,
-        filename: httpName,
-      );
-      if (cloud != null) {
-        if (!cloud.ok) {
-          if (!mounted) return;
-          setState(() {
-            _uploading = false;
-            _status = cloud.error;
-          });
-          return;
-        }
-        await InAppNotificationStore.instance.cloudUpload(
-          provider: cloud.provider,
-          fileName: httpName,
-        );
-        AppDiagLog.log('[Editor] saved to ${cloud.provider} ${cloud.webUrl}');
-      }
-
       final authToken = app.authToken;
+      unawaited(
+        _saveCloudCopyIfConfigured(
+          app: app,
+          composeArgs: composeArgs,
+          filename: 'photo_$ts.jpg',
+        ),
+      );
       final cast = await FrameCloudCastService.instance.castPhoto(
         api: _api,
         paired: activePaired,
@@ -571,19 +602,23 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               'Cannot resolve $host. Check DNS/network, or set API_BASE to a reachable URL.';
         });
       } else {
-        setState(() => _status = AppDiagLog.userFacingStatus(
-              '${s.sendOfflineNoNetworkForWifi} ($e)',
-              fallback: s.sendOfflineNoNetworkForWifi,
-            ));
+        setState(
+          () => _status = AppDiagLog.userFacingStatus(
+            '${s.sendOfflineNoNetworkForWifi} ($e)',
+            fallback: s.sendOfflineNoNetworkForWifi,
+          ),
+        );
       }
     } on TimeoutException catch (e) {
       if (mounted) setState(() => _status = AppStrings.of(context).apiError(e));
     } catch (e) {
       if (mounted) {
-        setState(() => _status = AppDiagLog.userFacingStatus(
-              '$e',
-              fallback: 'Could not send the photo. Try again.',
-            ));
+        setState(
+          () => _status = AppDiagLog.userFacingStatus(
+            '$e',
+            fallback: 'Could not send the photo. Try again.',
+          ),
+        );
       }
     } finally {
       if (mounted) {
@@ -632,10 +667,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _status = AppDiagLog.userFacingStatus(
-              '$e',
-              fallback: 'Export failed. Try again.',
-            ));
+        setState(
+          () => _status = AppDiagLog.userFacingStatus(
+            '$e',
+            fallback: 'Export failed. Try again.',
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -662,115 +699,125 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
     return DebugSlogOverlay(
       child: PopScope(
-      canPop: !_uploading,
-      child: Scaffold(
-      resizeToAvoidBottomInset: true,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: Text(
-          widget.queueTotal > 1
-              ? '${s.editTitle} (${widget.queueIndex}/${widget.queueTotal})'
-              : s.editTitle,
-        ),
-        automaticallyImplyLeading: !_uploading,
-        leading: _uploading
-            ? null
-            : BackButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-        actions: [
-          if (debugOn &&
-              (_castLogLines.isNotEmpty || (_status?.trim().isNotEmpty ?? false)))
-            IconButton(
-              tooltip: 'Copy log',
-              onPressed: _copyCastDiagnostics,
-              icon: const Icon(Icons.copy_outlined),
+        canPop: !_uploading,
+        child: Scaffold(
+          resizeToAvoidBottomInset: true,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          appBar: AppBar(
+            title: Text(
+              widget.queueTotal > 1
+                  ? '${s.editTitle} (${widget.queueIndex}/${widget.queueTotal})'
+                  : s.editTitle,
             ),
-          IconButton(
-            tooltip: s.rotateTooltip,
-            onPressed: _decoded == null
+            automaticallyImplyLeading: !_uploading,
+            leading: _uploading
                 ? null
-                : () {
-                    setState(() {
-                      _quarterTurns = (_quarterTurns + 1) % 4;
-                      _invalidateProcessCache();
-                    });
-                    _schedulePreview();
-                  },
-            icon: const Icon(Icons.rotate_right),
+                : BackButton(onPressed: () => Navigator.of(context).maybePop()),
+            actions: [
+              if (debugOn &&
+                  (_castLogLines.isNotEmpty ||
+                      (_status?.trim().isNotEmpty ?? false)))
+                IconButton(
+                  tooltip: 'Copy log',
+                  onPressed: _copyCastDiagnostics,
+                  icon: const Icon(Icons.copy_outlined),
+                ),
+              IconButton(
+                tooltip: s.rotateTooltip,
+                onPressed: _decoded == null
+                    ? null
+                    : () {
+                        setState(() {
+                          _quarterTurns = (_quarterTurns + 1) % 4;
+                          _invalidateProcessCache();
+                        });
+                        _schedulePreview();
+                      },
+                icon: const Icon(Icons.rotate_right),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: _decoded == null
-          ? Center(child: Text(_status ?? s.noImage))
-          : SingleChildScrollView(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + viewInsets.bottom),
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                if (widget.queueTotal > 1)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      s.sendQueueFrameShowsLatest(
-                        widget.queueIndex,
-                        widget.queueTotal,
-                      ),
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.35,
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
+          body: _decoded == null
+              ? Center(child: Text(_status ?? s.noImage))
+              : SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    8,
+                    16,
+                    16 + viewInsets.bottom,
                   ),
-                if (widget.isAiGenerated) ...[
-                  const Padding(
-                    padding: EdgeInsets.only(bottom: 10),
-                    child: AiContentNotice(compact: true),
-                  ),
-                ],
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: previewMaxHeight),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: cs.outlineVariant),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: AspectRatio(
-                      aspectRatio: 3 / 4,
-                      child: _previewBytes == null
-                          ? const ColoredBox(color: Color(0xFFE5E7EB))
-                          : InteractiveViewer(
-                              minScale: 1,
-                              maxScale: 4,
-                              panEnabled: !keyboardOpen,
-                              boundaryMargin: const EdgeInsets.all(24),
-                              child: Center(
-                                child: Image.memory(
-                                  _previewBytes!,
-                                  fit: BoxFit.contain,
-                                ),
-                              ),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (widget.queueTotal > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            s.sendQueueFrameShowsLatest(
+                              widget.queueIndex,
+                              widget.queueTotal,
                             ),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    s.targetFrameHint(
-                      ImageProcessorService.frameWidth,
-                      ImageProcessorService.frameHeight,
-                    ),
-                    style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                const SizedBox(height: 14),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              height: 1.35,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      if (widget.isAiGenerated) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 10),
+                          child: AiContentNotice(compact: true),
+                        ),
+                      ],
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: previewMaxHeight,
+                        ),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: cs.outlineVariant),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: AspectRatio(
+                            aspectRatio: 3 / 4,
+                            child: _previewBytes == null
+                                ? const ColoredBox(color: Color(0xFFE5E7EB))
+                                : InteractiveViewer(
+                                    minScale: 1,
+                                    maxScale: 4,
+                                    panEnabled: !keyboardOpen,
+                                    boundaryMargin: const EdgeInsets.all(24),
+                                    child: Center(
+                                      child: Image.memory(
+                                        _previewBytes!,
+                                        fit: BoxFit.contain,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          s.targetFrameHint(
+                            ImageProcessorService.frameWidth,
+                            ImageProcessorService.frameHeight,
+                          ),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: cs.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
                       _editorSectionTitle(s.editorSectionLook, cs),
                       const SizedBox(height: 4),
                       _slider(
@@ -1001,11 +1048,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                         const SizedBox(height: 8),
                         FilledButton.icon(
                           onPressed: () async {
-                            final result = await Navigator.of(context).push<PairingNavResult>(
-                              MaterialPageRoute<PairingNavResult>(
-                                builder: (_) => const DeviceDiscoveryScreen(),
-                              ),
-                            );
+                            final result = await Navigator.of(context)
+                                .push<PairingNavResult>(
+                                  MaterialPageRoute<PairingNavResult>(
+                                    builder: (_) =>
+                                        const DeviceDiscoveryScreen(),
+                                  ),
+                                );
                             await _loadPairing();
                             PairingFlowNav.onComplete(result);
                           },
@@ -1090,11 +1139,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                         icon: const Icon(Icons.sd_card),
                         label: Text(s.exportSdButton),
                       ),
-                ],
-              ),
-            ),
+                    ],
+                  ),
+                ),
+        ),
       ),
-    ),
     );
   }
 
@@ -1175,10 +1224,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 }
 
 class _CastActivityLog extends StatelessWidget {
-  const _CastActivityLog({
-    required this.lines,
-    required this.onCopy,
-  });
+  const _CastActivityLog({required this.lines, required this.onCopy});
 
   final List<String> lines;
   final VoidCallback onCopy;
@@ -1226,10 +1272,7 @@ class _CastActivityLog extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          SelectableText(
-            lines.join('\n'),
-            style: mono,
-          ),
+          SelectableText(lines.join('\n'), style: mono),
         ],
       ),
     );

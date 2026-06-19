@@ -23,6 +23,7 @@ class ImageProcessorService {
   /// Fixed XT pre‑quantize steps (spec), applied after resize to frame size.
   static const double _xtContrastFactor = 1.28;
   static const double _xtSharpnessFactor = 1.45;
+
   /// E6 color panel needs boosted saturation before server MYFM / Floyd–Steinberg.
   static const double _xtSaturationFactor = 1.58;
   static const double _xtBrightnessFactor = 1.04;
@@ -94,7 +95,12 @@ class ImageProcessorService {
       height: nh,
       interpolation: img.Interpolation.linear,
     );
-    work = _applyColorGrade(work, brightness: brightness, contrast: contrast, saturation: saturation);
+    work = _applyColorGrade(
+      work,
+      brightness: brightness,
+      contrast: contrast,
+      saturation: saturation,
+    );
     work = _applyNamedFilter(work, filter);
     return work;
   }
@@ -118,7 +124,44 @@ class ImageProcessorService {
         interpolation: img.Interpolation.cubic,
       );
       work = _liftVeryDark(work);
-      work = _applyColorGrade(work, brightness: brightness, contrast: contrast, saturation: saturation);
+      work = _applyColorGrade(
+        work,
+        brightness: brightness,
+        contrast: contrast,
+        saturation: saturation,
+      );
+      return _applyNamedFilter(work, filter);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// High-quality full-color copy for user cloud libraries. This keeps the same
+  /// crop/edit intent as the frame send, but skips the e-paper color boosting,
+  /// sharpening, palette conversion, and binary encoding steps.
+  img.Image? buildCloudCopyImage({
+    required img.Image source,
+    int quarterTurns = 0,
+    double brightness = 1.0,
+    double contrast = 1.0,
+    double saturation = 1.0,
+    FrameImageFilter filter = FrameImageFilter.none,
+  }) {
+    try {
+      var work = _applyRotation(source, quarterTurns);
+      work = _centerCropAspect(work, frameWidth / frameHeight);
+      work = img.copyResize(
+        work,
+        width: frameWidth,
+        height: frameHeight,
+        interpolation: img.Interpolation.cubic,
+      );
+      work = _applyColorGrade(
+        work,
+        brightness: brightness,
+        contrast: contrast,
+        saturation: saturation,
+      );
       return _applyNamedFilter(work, filter);
     } catch (_) {
       return null;
@@ -196,7 +239,12 @@ class ImageProcessorService {
       final bin = _buildXt13e6Bin(eink);
 
       assert(bin.bytes.length == _xtBinTotalBytes);
-      assert(bin.bytes[0] == 0x04 && bin.bytes[1] == 0xB0 && bin.bytes[2] == 0x06 && bin.bytes[3] == 0x40);
+      assert(
+        bin.bytes[0] == 0x04 &&
+            bin.bytes[1] == 0xB0 &&
+            bin.bytes[2] == 0x06 &&
+            bin.bytes[3] == 0x40,
+      );
 
       return ProcessedFrameResult(
         frameJpeg: encodeJpg(xtSharp, quality: 95),
@@ -380,7 +428,14 @@ class ImageProcessorService {
     final flatIdx = Uint8List(len);
     final preview = img.Image(width: w, height: h);
 
-    void diffuseError(int nx, int ny, double er, double eg, double eb, double f) {
+    void diffuseError(
+      int nx,
+      int ny,
+      double er,
+      double eg,
+      double eb,
+      double f,
+    ) {
       if (nx < 0 || nx >= w || ny < 0 || ny >= h) return;
       final j = ny * w + nx;
       wr[j] += er * f;

@@ -17,8 +17,8 @@ import 'services/mobile_auth_deep_link.dart';
 import 'services/share_incoming_service.dart';
 import 'services/app_diag_log.dart';
 import 'services/app_release_guard.dart';
-import 'services/dropbox_deep_link.dart';
-import 'services/google_drive_service.dart';
+import 'services/google_photos_service.dart';
+import 'services/icloud_photos_service.dart';
 
 final DeviceTransport _globalTransport = BleFrameDeviceTransport.instance;
 
@@ -29,9 +29,7 @@ Future<void> main() async {
     final settings = AppSettings();
     await _guardStartup('app settings', settings.load);
     FlutterError.onError = (details) {
-      AppDiagLog.verbose(
-        '[FlutterError] ${details.exceptionAsString()}',
-      );
+      AppDiagLog.verbose('[FlutterError] ${details.exceptionAsString()}');
       if (kDebugMode) {
         FlutterError.presentError(details);
       }
@@ -41,8 +39,14 @@ Future<void> main() async {
       FamilyInviteDeepLink.bootstrap,
     );
     await _guardStartup('mobile auth deep links', MobileAuthDeepLink.bootstrap);
-    await _guardStartup('dropbox deep links', DropboxDeepLink.bootstrap);
-    await _guardStartup('google drive prefs', GoogleDriveService.instance.loadPrefs);
+    await _guardStartup(
+      'google photos prefs',
+      GooglePhotosService.instance.loadPrefs,
+    );
+    await _guardStartup(
+      'icloud photos prefs',
+      ICloudPhotosService.instance.loadPrefs,
+    );
     await _guardStartup(
       'share incoming service',
       ShareIncomingService.instance.bootstrap,
