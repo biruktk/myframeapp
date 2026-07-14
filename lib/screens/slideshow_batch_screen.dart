@@ -41,8 +41,8 @@ class SlideshowBatchScreen extends StatefulWidget {
 }
 
 class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
-  static const _intervals = [60, 240, 480, 1440];
-  int _intervalMinutes = 240;
+  static const _intervals = [5, 10, 30];
+  int _intervalMinutes = 10;
   var _busy = false;
   final _api = FrameApiClient();
 
@@ -51,10 +51,9 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
 
   String _intervalLabel(AppStrings s, int m) {
     return switch (m) {
-      60 => '1 h',
-      240 => '4 h',
-      480 => '8 h',
-      1440 => '24 h',
+      5 => '5 min',
+      10 => '10 min',
+      30 => '30 min',
       _ => '$m min',
     };
   }
