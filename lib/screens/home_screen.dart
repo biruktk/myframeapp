@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
+import '../utils/platform_share.dart';
 
 import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
@@ -13,7 +13,6 @@ import '../services/frame_forget_service.dart';
 import '../services/app_release_guard.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
-import '../navigation/app_routes.dart';
 import '../services/family_group_store.dart';
 import '../services/frame_manual_config_service.dart';
 import '../services/frame_mac_util.dart';
@@ -179,8 +178,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final g = FamilyGroupStore.instance;
     final url =
         'https://${VpsDefaults.hostnameInk}/join?code=${Uri.encodeComponent(g.inviteCode)}';
-    await Share.share(
-      s.familyInviteShareBody(g.familyName, g.inviteCode, url),
+    await platformShareText(
+      context,
+      text: s.familyInviteShareBody(g.familyName, g.inviteCode, url),
       subject: '${s.inviteFamily} · ${g.familyName}',
     );
   }
@@ -289,20 +289,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 10),
                         Row(
                           children: [
-                            FilledButton(
-                              onPressed: () {
-                                final mac = DeviceStore.instance.pairedFrameMac ??
-                                    FrameMacUtil.normalizeSlug(active.deviceId);
-                                AppRoutes.openFrameConfig(
-                                  context,
-                                  deviceName: active.bleNamePrefix,
-                                  mac: mac,
-                                  bleRemoteId: active.bleRemoteId,
-                                );
-                              },
-                              child: const Text('Reconfigure'),
-                            ),
-                            const SizedBox(width: 8),
                             OutlinedButton(
                               onPressed: _refreshActiveFrameStatus,
                               child: const Text('Retry'),

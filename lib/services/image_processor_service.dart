@@ -105,10 +105,17 @@ class ImageProcessorService {
     return work;
   }
 
-  /// Rotate, crop, resize to frame size, grade, filter — before overlay / XT encode.
+  /// Rotate, optional flip, aspect crop + zoom/pan, resize to frame, grade, filter.
   img.Image? buildFrameWorkImage({
     required img.Image source,
     int quarterTurns = 0,
+    bool flipH = false,
+    bool flipV = false,
+    /// Width/height ratio for the crop window. `<= 0` means frame 3:4.
+    double cropAspect = 0,
+    double cropZoom = 1.0,
+    double cropPanX = 0,
+    double cropPanY = 0,
     double brightness = 1.0,
     double contrast = 1.0,
     double saturation = 1.0,
@@ -116,7 +123,20 @@ class ImageProcessorService {
   }) {
     try {
       var work = _applyRotation(source, quarterTurns);
-      work = _centerCropAspect(work, frameWidth / frameHeight);
+      if (flipH) work = img.flipHorizontal(work);
+      if (flipV) work = img.flipVertical(work);
+
+      final frameAspect = frameWidth / frameHeight;
+      final windowAspect = cropAspect > 0 ? cropAspect : frameAspect;
+      work = _cropWithZoomPan(
+        work,
+        windowAspect,
+        cropZoom.clamp(1.0, 3.0),
+        cropPanX.clamp(-1.0, 1.0),
+        cropPanY.clamp(-1.0, 1.0),
+      );
+      work = _fitIntoFrame(work, frameAspect);
+
       work = img.copyResize(
         work,
         width: frameWidth,
@@ -142,6 +162,12 @@ class ImageProcessorService {
   img.Image? buildCloudCopyImage({
     required img.Image source,
     int quarterTurns = 0,
+    bool flipH = false,
+    bool flipV = false,
+    double cropAspect = 0,
+    double cropZoom = 1.0,
+    double cropPanX = 0,
+    double cropPanY = 0,
     double brightness = 1.0,
     double contrast = 1.0,
     double saturation = 1.0,
@@ -149,7 +175,20 @@ class ImageProcessorService {
   }) {
     try {
       var work = _applyRotation(source, quarterTurns);
-      work = _centerCropAspect(work, frameWidth / frameHeight);
+      if (flipH) work = img.flipHorizontal(work);
+      if (flipV) work = img.flipVertical(work);
+
+      final frameAspect = frameWidth / frameHeight;
+      final windowAspect = cropAspect > 0 ? cropAspect : frameAspect;
+      work = _cropWithZoomPan(
+        work,
+        windowAspect,
+        cropZoom.clamp(1.0, 3.0),
+        cropPanX.clamp(-1.0, 1.0),
+        cropPanY.clamp(-1.0, 1.0),
+      );
+      work = _fitIntoFrame(work, frameAspect);
+
       work = img.copyResize(
         work,
         width: frameWidth,
@@ -304,6 +343,51 @@ class ImageProcessorService {
     return img.copyRotate(image, angle: q * 90.0);
   }
 
+  /// Crop to [aspect] (w/h), then zoom in and pan within that window.
+  img.Image _cropWithZoomPan(
+    img.Image image,
+    double aspect,
+    double zoom,
+    double panX,
+    double panY,
+  ) {
+    final base = _centerCropAspect(image, aspect);
+    if (zoom <= 1.001 && panX.abs() < 0.001 && panY.abs() < 0.001) {
+      return base;
+    }
+    final w = base.width;
+    final h = base.height;
+    final cropW = (w / zoom).round().clamp(1, w);
+    final cropH = (h / zoom).round().clamp(1, h);
+    final maxX = w - cropW;
+    final maxY = h - cropH;
+    final x = ((maxX / 2) + panX * (maxX / 2)).round().clamp(0, maxX);
+    final y = ((maxY / 2) + panY * (maxY / 2)).round().clamp(0, maxY);
+    return img.copyCrop(base, x: x, y: y, width: cropW, height: cropH);
+  }
+
+  /// Letterbox [image] into the frame aspect with a white background.
+  img.Image _fitIntoFrame(img.Image image, double frameAspect) {
+    final imgAspect = image.width / image.height;
+    if ((imgAspect - frameAspect).abs() < 0.01) return image;
+
+    late int outW;
+    late int outH;
+    if (imgAspect > frameAspect) {
+      outW = image.width;
+      outH = (image.width / frameAspect).round().clamp(1, 100000);
+    } else {
+      outH = image.height;
+      outW = (image.height * frameAspect).round().clamp(1, 100000);
+    }
+    final canvas = img.Image(width: outW, height: outH);
+    img.fill(canvas, color: img.ColorRgb8(255, 255, 255));
+    final dx = ((outW - image.width) / 2).round();
+    final dy = ((outH - image.height) / 2).round();
+    img.compositeImage(canvas, image, dstX: dx, dstY: dy);
+    return canvas;
+  }
+
   img.Image _centerCropAspect(img.Image image, double aspectWoverH) {
     final w = image.width;
     final h = image.height;
@@ -355,6 +439,13 @@ class ImageProcessorService {
         return img.colorOffset(s, red: 14, green: 6, blue: -10);
       case FrameImageFilter.cool:
         return img.colorOffset(image, red: -10, green: 4, blue: 16);
+      case FrameImageFilter.contrast:
+        return img.adjustColor(image, contrast: 1.35, saturation: 1.05);
+      case FrameImageFilter.vivid:
+        return img.adjustColor(image, saturation: 1.45, contrast: 1.12);
+      case FrameImageFilter.vintage:
+        final v = img.sepia(image);
+        return img.adjustColor(v, contrast: 0.92, brightness: 0.96);
     }
   }
 
@@ -515,7 +606,16 @@ class ImageProcessorService {
   }
 }
 
-enum FrameImageFilter { none, grayscale, sepia, warm, cool }
+enum FrameImageFilter {
+  none,
+  grayscale,
+  sepia,
+  warm,
+  cool,
+  contrast,
+  vivid,
+  vintage,
+}
 
 class ProcessedFrameResult {
   ProcessedFrameResult({

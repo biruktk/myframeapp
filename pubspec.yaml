@@ -1,7 +1,7 @@
 name: myframe
 description: MyFrame Flutter mobile app (iOS + Android)
 publish_to: "none"
-version: 0.1.0+17
+version: 0.1.0+19
 
 environment:
   sdk: ">=3.11.0 <4.0.0"
@@ -38,6 +38,7 @@ dependencies:
   fluwx:
     path: third_party/fluwx
   permission_handler_apple: ^9.4.9
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:

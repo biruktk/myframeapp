@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import '../l10n/app_strings.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
+import '../services/gallery_send_flow.dart';
 import '../widgets/pick_personal_photos_dialog.dart';
 
 bool _localFileExists(String path) {
@@ -546,6 +548,14 @@ class _AlbumPhotoViewerScreenState extends State<_AlbumPhotoViewerScreen> {
         foregroundColor: Colors.white,
         title: Text('${_index + 1} / ${_paths.length}'),
         actions: [
+          IconButton(
+            tooltip: s.sendToFrame,
+            icon: const Icon(Icons.ios_share_outlined),
+            onPressed: () {
+              if (_paths.isEmpty) return;
+              unawaited(sendGalleryPhotoToFrame(context, path: _paths[_index]));
+            },
+          ),
           IconButton(
             tooltip: s.remove,
             icon: const Icon(Icons.delete_outline),

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../navigation/app_routes.dart';
 import '../services/device_store.dart';
 import '../services/frame_forget_service.dart';
-import '../services/frame_mac_util.dart';
 import '../settings/app_settings.dart';
 import 'settings_account_screen.dart';
 import 'settings_notifications_screen.dart';
@@ -18,6 +16,7 @@ import 'settings_log_screen.dart';
 import 'settings_debug_screen.dart';
 import 'settings_display_screen.dart';
 import 'settings_pairing_screen.dart';
+import 'settings_firmware_screen.dart';
 import '../widgets/connect_frame_dialog.dart';
 import 'device_management_screen.dart';
 import 'playlist_screen.dart';
@@ -71,21 +70,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
     if (go != true || !context.mounted) return;
     await AppSettingsScope.of(context).setSignedIn(value: false);
-  }
-
-  Future<void> _openFrameConfig() async {
-    final paired = _paired;
-    if (paired == null) return;
-    final mac = DeviceStore.instance.pairedFrameMac ??
-        FrameMacUtil.macFromBleName(paired.bleNamePrefix ?? '') ??
-        FrameMacUtil.normalizeSlug(paired.deviceId);
-    await AppRoutes.openFrameConfig(
-      context,
-      deviceName: paired.bleNamePrefix,
-      mac: mac,
-      bleRemoteId: paired.bleRemoteId,
-    );
-    await _load();
   }
 
   Future<void> _forgetFrame() async {
@@ -253,14 +237,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  leading: Icon(Icons.settings_input_component_outlined, color: cs.primary),
-                  title: Text(s.settingsReconfigureFrameTitle),
-                  subtitle: Text(s.settingsReconfigureFrameSub),
-                  trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
-                  onTap: () => _requireFrame(_openFrameConfig),
-                ),
-                const Divider(height: 1),
-                ListTile(
                   leading: Icon(Icons.delete_outline, color: cs.error),
                   title: Text(s.settingsForgetFrameTitle),
                   subtitle: Text(s.settingsForgetFrameSub),
@@ -278,6 +254,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.push<void>(
                 context,
                 MaterialPageRoute<void>(builder: (_) => const DeviceManagementScreen()),
+              );
+            },
+          ),
+          _SettingsRow(
+            icon: Icons.system_update_alt_outlined,
+            title: s.firmwareUpdateTitle,
+            subtitle: s.firmwareUpdateSub,
+            onTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(builder: (_) => const SettingsFirmwareScreen()),
               );
             },
           ),

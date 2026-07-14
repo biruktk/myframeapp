@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
+import '../utils/platform_share.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/api_config.dart';
@@ -142,8 +142,9 @@ class _FamilyScreenState extends State<FamilyScreen> {
     final g = FamilyGroupStore.instance;
     final inviteUrl = _inviteWebUrl(g);
     final subject = '${s.inviteFamily} · ${g.familyName}';
-    await Share.share(
-      s.familyInviteShareBody(g.familyName, g.inviteCode, inviteUrl),
+    await platformShareText(
+      context,
+      text: s.familyInviteShareBody(g.familyName, g.inviteCode, inviteUrl),
       subject: subject,
     );
   }

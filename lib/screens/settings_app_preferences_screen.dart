@@ -16,7 +16,6 @@ class SettingsAppPreferencesScreen extends StatefulWidget {
 class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScreen> {
   late ThemeMode _mode;
   late SlideshowStyle _slideshow;
-  late bool _updates;
   var _loaded = false;
 
   @override
@@ -26,13 +25,12 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
     final a = AppSettingsScope.of(context);
     _mode = a.themeMode;
     _slideshow = a.defaultSlideshowStyle;
-    _updates = a.automaticFrameFirmwareUpdates;
     _loaded = true;
   }
 
-  Future<void> _persistThemeAndUpdates() async {
+  Future<void> _persistTheme() async {
     final app = AppSettingsScope.of(context);
-    await app.setAppPreferences(mode: _mode, updates: _updates);
+    await app.setAppPreferences(mode: _mode, updates: app.automaticFrameFirmwareUpdates);
   }
 
   @override
@@ -65,7 +63,7 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
                     onChanged: (v) {
                       if (v == null) return;
                       setState(() => _mode = v);
-                      _persistThemeAndUpdates();
+                      _persistTheme();
                     },
                   ),
                 ],
@@ -112,33 +110,6 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
             ),
           ),
           const SizedBox(height: 12),
-          Text(s.prefsSectionAutomation, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
-          Card(
-            child: _PrefRow(
-              icon: Icons.system_update_outlined,
-              title: s.prefsSoftwareUpdatesFrame,
-              subtitle: s.prefsSoftwareUpdatesFrameSub,
-              trailing: Switch.adaptive(
-                value: _updates,
-                onChanged: (v) {
-                  setState(() => _updates = v);
-                  _persistThemeAndUpdates();
-                },
-              ),
-            ),
-          ),
-          if (!app.automaticFrameFirmwareUpdates) ...[
-            const SizedBox(height: 8),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                s.appPrefsOtaDeviceStoppedHint,
-                style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant, height: 1.35),
-              ),
-            ),
-          ],
-          const SizedBox(height: 4),
           ListTile(
             leading: Icon(Icons.accessibility_new_outlined, color: cs.primary),
             title: Text(s.comfortMode),
@@ -153,36 +124,6 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
           ),
         ],
       ),
-    );
-  }
-}
-
-class _PrefRow extends StatelessWidget {
-  const _PrefRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.trailing,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Widget trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      contentPadding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-      leading: CircleAvatar(
-        radius: 18,
-        backgroundColor: cs.surfaceContainerHighest,
-        child: Icon(icon, size: 20, color: cs.primary),
-      ),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: trailing,
     );
   }
 }

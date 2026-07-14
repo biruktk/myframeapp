@@ -2169,14 +2169,137 @@ class AppStrings {
     de: 'Nach Updates suchen',
     ja: '更新を確認',
   );
-  String get deviceUpdateCheckStub => _l6(
-    en: 'Firmware check runs on the frame when the OTA path is connected in the app build.',
-    zh: '正式版中将在相框 OTA 通道就绪后检查更新。',
-    es: 'La comprobación de firmware se conectará con el servicio OTA en una versión futura.',
-    fr: 'Vérification OTA dès le service connecté.',
-    de: 'Update-Prüfung, sobald OTA verbunden ist.',
-    ja: 'OTA接続後に更新確認を行います。',
+  String get firmwareUpdateTitle => _l6(
+    en: 'Frame firmware update',
+    zh: '相框固件更新',
+    es: 'Actualización de firmware',
+    fr: 'Mise à jour firmware',
+    de: 'Firmware-Update',
+    ja: 'フレームファーム更新',
   );
+  String get firmwareUpdateSub => _l6(
+    en: 'Check MyFrame servers for a new release and install it over Wi‑Fi on your paired frame.',
+    zh: '从 MyFrame 服务器检查新版本，并通过 Wi‑Fi 安装到已配对的相框。',
+    es: 'Comprueba si hay una nueva versión en MyFrame e instálala por Wi‑Fi en tu marco.',
+    fr: 'Vérifie une nouvelle version sur MyFrame et installe-la en Wi‑Fi sur votre cadre.',
+    de: 'Prüfe MyFrame auf eine neue Version und installiere sie per WLAN auf deinem Rahmen.',
+    ja: 'MyFrameサーバーで新しいファームを確認し、ペアリング済みフレームにWi‑Fiで適用します。',
+  );
+  String get firmwareCurrentVersion => _l6(
+    en: 'Installed',
+    zh: '当前版本',
+    es: 'Instalada',
+    fr: 'Installée',
+    de: 'Installiert',
+    ja: 'インストール済み',
+  );
+  String get firmwareLatestVersion => _l6(
+    en: 'Latest release',
+    zh: '最新版本',
+    es: 'Última versión',
+    fr: 'Dernière version',
+    de: 'Neueste Version',
+    ja: '最新リリース',
+  );
+  String get firmwareUpToDate => _l6(
+    en: 'Your frame is up to date.',
+    zh: '相框已是最新版本。',
+    es: 'Tu marco está actualizado.',
+    fr: 'Votre cadre est à jour.',
+    de: 'Dein Rahmen ist auf dem neuesten Stand.',
+    ja: 'フレームは最新です。',
+  );
+  String get firmwareUpdateAvailable => _l6(
+    en: 'A firmware update is available.',
+    zh: '有新的固件可用。',
+    es: 'Hay una actualización de firmware disponible.',
+    fr: 'Une mise à jour firmware est disponible.',
+    de: 'Ein Firmware-Update ist verfügbar.',
+    ja: '新しいファームウェアがあります。',
+  );
+  String get firmwareInstallUpdate => _l6(
+    en: 'Install update',
+    zh: '安装更新',
+    es: 'Instalar actualización',
+    fr: 'Installer',
+    de: 'Update installieren',
+    ja: '更新をインストール',
+  );
+  String get firmwareUpdating => _l6(
+    en: 'Update sent to the frame. It may reboot and take a few minutes.',
+    zh: '更新已发送到相框，可能会重启并需要几分钟。',
+    es: 'Actualización enviada. El marco puede reiniciarse y tardar unos minutos.',
+    fr: 'Mise à jour envoyée. Le cadre peut redémarrer.',
+    de: 'Update gesendet. Der Rahmen startet ggf. neu.',
+    ja: '更新を送信しました。再起動に数分かかる場合があります。',
+  );
+  String get firmwareUpdateFailed => _l6(
+    en: 'Firmware update failed. Keep the frame online and try again.',
+    zh: '固件更新失败。请保持相框在线后重试。',
+    es: 'La actualización falló. Mantén el marco en línea e inténtalo de nuevo.',
+    fr: 'Échec de la mise à jour. Gardez le cadre en ligne.',
+    de: 'Update fehlgeschlagen. Rahmen online lassen und erneut versuchen.',
+    ja: '更新に失敗しました。フレームをオンラインのまま再試行してください。',
+  );
+  String get firmwareSignInRequired => _l6(
+    en: 'Sign in to check and install frame firmware updates.',
+    zh: '请先登录以检查并安装相框固件更新。',
+    es: 'Inicia sesión para comprobar e instalar firmware.',
+    fr: 'Connectez-vous pour gérer le firmware.',
+    de: 'Melde dich an, um Firmware-Updates zu prüfen.',
+    ja: 'ファーム更新にはサインインが必要です。',
+  );
+  String get firmwareNoDevice => _l6(
+    en: 'Pair a frame first to manage firmware updates.',
+    zh: '请先配对相框后再管理固件更新。',
+    es: 'Empareja un marco primero.',
+    fr: 'Associez d’abord un cadre.',
+    de: 'Kopple zuerst einen Rahmen.',
+    ja: '先にフレームをペアリングしてください。',
+  );
+  String get firmwareFrameOffline => _l6(
+    en: 'Frame is offline. Connect it to Wi‑Fi before installing firmware.',
+    zh: '相框离线。安装固件前请先连接 Wi‑Fi。',
+    es: 'Marco sin conexión. Conéctalo a Wi‑Fi antes de instalar.',
+    fr: 'Cadre hors ligne. Connectez-le au Wi‑Fi.',
+    de: 'Rahmen offline. Vor dem Update mit WLAN verbinden.',
+    ja: 'フレームがオフラインです。Wi‑Fi接続後にインストールしてください。',
+  );
+  String firmwareCheckErrorMessage(String code) {
+    switch (code) {
+      case 'unauthorized_admin_token':
+      case 'route_not_found':
+        return _l6(
+          en: 'Update check is not available on the server yet. Try again after the app backend is updated.',
+          zh: '服务器暂不支持固件检查，请稍后再试。',
+          es: 'La comprobación de actualización no está disponible en el servidor.',
+          fr: 'La vérification de mise à jour n’est pas disponible sur le serveur.',
+          de: 'Update-Prüfung auf dem Server noch nicht verfügbar.',
+          ja: 'サーバーでアップデート確認がまだ利用できません。',
+        );
+      case 'unauthorized':
+      case 'auth_required':
+        return firmwareSignInRequired;
+      case 'frame_not_found':
+        return _l6(
+          en: 'This frame was not found on your account.',
+          zh: '未找到该相框。',
+          es: 'No se encontró este marco en tu cuenta.',
+          fr: 'Ce cadre est introuvable sur votre compte.',
+          de: 'Dieser Rahmen wurde in Ihrem Konto nicht gefunden.',
+          ja: 'アカウントにこのフレームが見つかりません。',
+        );
+      default:
+        return _l6(
+          en: 'Could not check for updates. Pull to refresh or try again later.',
+          zh: '无法检查更新，请稍后重试。',
+          es: 'No se pudo comprobar actualizaciones. Inténtalo más tarde.',
+          fr: 'Impossible de vérifier les mises à jour. Réessayez plus tard.',
+          de: 'Update-Prüfung fehlgeschlagen. Später erneut versuchen.',
+          ja: 'アップデートを確認できませんでした。後でもう一度お試しください。',
+        );
+    }
+  }
 
   String get createPlaylistFlowTitle => _l6(
     en: 'New playlist',
@@ -2592,6 +2715,14 @@ class AppStrings {
     fr: 'Envoyer au cadre',
     de: 'An Rahmen senden',
     ja: 'フレームへ送信',
+  );
+  String get chooseFrameToSendHint => _l6(
+    en: 'Choose which frame should receive this photo.',
+    zh: '选择要接收照片的相框。',
+    es: 'Elige qué marco recibirá esta foto.',
+    fr: 'Choisissez le cadre qui recevra cette photo.',
+    de: 'Wählen Sie den Rahmen für dieses Foto.',
+    ja: 'この写真を送るフレームを選んでください。',
   );
   String get chooseTransport => _l6(
     en: 'Choose transport',
@@ -5704,12 +5835,12 @@ class AppStrings {
         ja: 'ファームウェア更新は？',
       ),
       answer: _l6(
-        en: 'Settings → Frame settings → Device info. Enable automatic updates in Application → App preferences when available. The frame installs OTA over Wi‑Fi.',
-        zh: '设置 → 相框设置 → 设备信息。可在「应用 → 应用偏好」中开启自动更新（若可用）。相框通过 Wi‑Fi OTA 安装。',
-        es: 'Ajustes → Marco → Info del dispositivo. Activa actualizaciones automáticas en Preferencias.',
-        fr: 'Réglages → Cadre → Infos appareil. Activez les mises à jour auto dans Préférences.',
-        de: 'Einstellungen → Rahmen → Geräteinfo. Automatische Updates unter App-Einstellungen.',
-        ja: '設定→フレーム→デバイス情報。アプリ設定で自動更新。',
+        en: 'Settings → Frame firmware update (or Device info). Tap Check for updates, then Install update when a new release is available. The app contacts MyFrame servers and sends the update to your frame over Wi‑Fi.',
+        zh: '设置 → 相框固件更新（或设备信息）。点击检查更新，有新版本时点安装更新。应用会连接 MyFrame 服务器并通过 Wi‑Fi 推送到相框。',
+        es: 'Ajustes → Actualización de firmware. Pulsa Buscar actualizaciones e Instalar cuando haya una nueva versión.',
+        fr: 'Réglages → Mise à jour firmware. Vérifiez puis installez quand une version est disponible.',
+        de: 'Einstellungen → Firmware-Update. Prüfen und installieren, wenn verfügbar.',
+        ja: '設定 → フレームファーム更新。更新を確認し、利用可能ならインストール。',
       ),
     ),
     FaqItem(

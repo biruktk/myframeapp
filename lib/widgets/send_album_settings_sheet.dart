@@ -5,17 +5,19 @@ import '../models/send_overlay_options.dart';
 import '../services/send_albums_store.dart';
 import 'text_input_bottom_sheet.dart';
 
-/// Result of the Send flow bottom sheet (album + display options).
+/// Result of the Send flow bottom sheet (album only).
+/// Date / weather / text / stickers are chosen on the editor preview.
 class SendAlbumSheetResult {
   const SendAlbumSheetResult({
     required this.overlay,
-    required this.displaySeconds,
+    this.displaySeconds = 10,
     this.locationLine,
     this.addToAlbumId,
     this.newAlbumName,
   });
 
   final SendOverlayOptions overlay;
+  /// Kept for API compatibility; UI no longer exposes display time.
   final int displaySeconds;
   final String? locationLine;
   final String? addToAlbumId;
@@ -44,21 +46,9 @@ class _SendAlbumSheetBody extends StatefulWidget {
 }
 
 class _SendAlbumSheetBodyState extends State<_SendAlbumSheetBody> {
-  int _displaySeconds = 10;
-  bool _customOn = false;
-  bool _cityWeatherOn = false;
-  bool _holidayOn = false;
-  bool _showDateOn = false;
-  final _customCtrl = TextEditingController();
   String? _addToAlbumId;
   String? _addToAlbumName;
   String? _newAlbumName;
-
-  @override
-  void dispose() {
-    _customCtrl.dispose();
-    super.dispose();
-  }
 
   Future<void> _chooseExistingAlbum(AppStrings s) async {
     await SendAlbumsStore.instance.load();
@@ -106,21 +96,11 @@ class _SendAlbumSheetBodyState extends State<_SendAlbumSheetBody> {
     });
   }
 
-  void _submit(AppStrings s) {
-    final cityLine = _cityWeatherOn ? s.showCityWeatherDemo : null;
-    final overlay = SendOverlayOptions(
-      showDate: _showDateOn,
-      showLocation: _cityWeatherOn,
-      showGreeting: _holidayOn,
-      customText: _customOn ? _customCtrl.text : '',
-      greetingCustom: _holidayOn ? s.holidayGreetingLine : null,
-    );
+  void _submit() {
     Navigator.pop(
       context,
       SendAlbumSheetResult(
-        overlay: overlay,
-        displaySeconds: _displaySeconds,
-        locationLine: cityLine,
+        overlay: const SendOverlayOptions(),
         addToAlbumId: _addToAlbumId,
         newAlbumName: _newAlbumName,
       ),
@@ -141,9 +121,9 @@ class _SendAlbumSheetBodyState extends State<_SendAlbumSheetBody> {
       ),
       child: DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.72,
-        minChildSize: 0.45,
-        maxChildSize: 0.92,
+        initialChildSize: 0.42,
+        minChildSize: 0.30,
+        maxChildSize: 0.75,
         builder: (context, scroll) {
           return ListView(
             controller: scroll,
@@ -167,58 +147,11 @@ class _SendAlbumSheetBodyState extends State<_SendAlbumSheetBody> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _createAlbumDialog(s),
               ),
-              const Divider(height: 28),
-              Text(s.displaySettingsSection, style: const TextStyle(fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
-              ListTile(
-                leading: Icon(Icons.timer_outlined, color: cs.primary),
-                title: Text(s.displayTimeLabel),
-                subtitle: Text('$_displaySeconds s'),
-              ),
-              Slider(
-                min: 5,
-                max: 120,
-                divisions: 23,
-                value: _displaySeconds.toDouble(),
-                onChanged: (v) => setState(() => _displaySeconds = v.round()),
-              ),
-              SwitchListTile.adaptive(
-                value: _customOn,
-                onChanged: (v) => setState(() => _customOn = v),
-                title: Text(s.addCustomTextLabel),
-              ),
-              if (_customOn)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: TextField(
-                    controller: _customCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Enter your text…',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              SwitchListTile.adaptive(
-                value: _cityWeatherOn,
-                onChanged: (v) => setState(() => _cityWeatherOn = v),
-                title: Text(s.showCityWeatherLabel),
-                subtitle: Text(s.showCityWeatherDemo, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-              ),
-              SwitchListTile.adaptive(
-                value: _holidayOn,
-                onChanged: (v) => setState(() => _holidayOn = v),
-                title: Text(s.holidayReminderLabel),
-              ),
-              SwitchListTile.adaptive(
-                value: _showDateOn,
-                onChanged: (v) => setState(() => _showDateOn = v),
-                title: Text(s.overlayDateLabel),
-              ),
               const SizedBox(height: 12),
               Text(s.photosSecureFootnote, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () => _submit(s),
+                onPressed: _submit,
                 child: Text('${s.sendToFrameCta} (${widget.photoPaths.length})'),
               ),
             ],

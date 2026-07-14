@@ -19,8 +19,9 @@ class VpsDefaults {
   static const String mqttPass = 'framepass2026';
   static const String pairingToken = 'framepass2026';
 
-  /// Use IP (no DNS). API lives on port [apiPort] (MQTT on [mqttPort]).
-  static String get apiBase => 'http://$host:$apiPort';
+  /// Use domain through Cloudflare (same behavior as WeChat mini app).
+  /// API traffic goes through Cloudflare HTTPS → nginx → Express :3001.
+  static String get apiBase => 'https://$hostnameInk';
 
   static final Set<String> _dnsFragileHosts = {
     'myframe.ink',

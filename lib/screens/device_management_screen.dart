@@ -3,11 +3,10 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../models/pairing_nav_result.dart';
 import '../navigation/pairing_flow_nav.dart';
-import '../services/app_release_guard.dart';
-import '../services/app_release_guard.dart';
 import '../services/device_store.dart';
 import '../services/usage_metrics_store.dart';
-import '../settings/app_settings.dart';
+import '../services/app_release_guard.dart';
+import '../widgets/firmware_update_panel.dart';
 import 'device_discovery_screen.dart';
 import 'frame_profile_setup_screen.dart';
 
@@ -48,7 +47,6 @@ class _DeviceManagementScreenState extends State<DeviceManagementScreen> {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final p = DeviceStore.instance.cached;
-    final app = AppSettingsScope.of(context);
     final cs = Theme.of(context).colorScheme;
     final photoCount = _metrics?.photosSentCount ?? 0;
     final uptime = _metrics?.firstSeenAt == null ? '--' : '${DateTime.now().difference(_metrics!.firstSeenAt!).inDays}d';
@@ -158,40 +156,7 @@ class _DeviceManagementScreenState extends State<DeviceManagementScreen> {
           const SizedBox(height: 12),
           Text(s.deviceSectionFirmware, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          ListenableBuilder(
-            listenable: app,
-            builder: (context, _) {
-              return Card(
-                child: SwitchListTile.adaptive(
-                  value: app.automaticFrameFirmwareUpdates,
-                  onChanged: (v) async {
-                    await app.setAutomaticFrameFirmwareUpdates(v);
-                    if (!context.mounted) return;
-                    setState(() {});
-                  },
-                  title: Text(s.deviceAutomaticFirmwareTitle),
-                  subtitle: Text(
-                    app.automaticFrameFirmwareUpdates
-                        ? s.deviceAutomaticFirmwareSub
-                        : '${s.deviceAutomaticFirmwareSub}\n\n${s.appPrefsOtaDeviceStoppedHint}',
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(s.deviceUpdateCheckStub)),
-                );
-              },
-              icon: const Icon(Icons.system_update_outlined),
-              label: Text(s.deviceCheckUpdatesCta),
-            ),
-          ),
+          const FirmwareUpdatePanel(compact: true),
         ],
       ),
     );

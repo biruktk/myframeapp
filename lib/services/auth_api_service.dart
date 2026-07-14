@@ -205,27 +205,6 @@ class AuthApiService {
     }
   }
 
-  Future<AuthApiResult> testLogin() async {
-    final uri = _u('/api/auth/test-login');
-    try {
-      final res = await http
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-            body: '{}',
-          )
-          .timeout(_requestTimeout);
-      AppDiagLog.verbose('Test login response: ${res.statusCode} ${res.body}');
-      return _parseBody(res.statusCode, res.body);
-    } catch (e, st) {
-      AppDiagLog.verbose('test login exception: $e\n$st');
-      return _failureFromCatch(e, 'POST /api/auth/test-login', uri);
-    }
-  }
-
   static Map<String, dynamic>? _asJsonMap(dynamic raw) {
     if (raw is Map<String, dynamic>) return raw;
     if (raw is Map) {

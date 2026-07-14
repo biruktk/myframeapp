@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/device_store.dart';
-import '../settings/app_settings.dart';
+import '../widgets/firmware_update_panel.dart';
 import 'frame_profile_setup_screen.dart';
 
-/// Spec: frame row → Device ID, Orientation, Wi‑Fi SSID, firmware update toggle.
+/// Spec: frame row → Device ID, Orientation, Wi‑Fi SSID, manual firmware update.
 class FrameDetailScreen extends StatefulWidget {
   const FrameDetailScreen({super.key});
 
@@ -30,7 +30,6 @@ class _FrameDetailScreenState extends State<FrameDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final app = AppSettingsScope.of(context);
     final cs = Theme.of(context).colorScheme;
     final p = _p;
     return Scaffold(
@@ -84,22 +83,9 @@ class _FrameDetailScreenState extends State<FrameDetailScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            ListenableBuilder(
-              listenable: app,
-              builder: (context, _) {
-                return Card(
-                  child: SwitchListTile.adaptive(
-                    value: app.automaticFrameFirmwareUpdates,
-                    onChanged: (v) async {
-                      await app.setAutomaticFrameFirmwareUpdates(v);
-                      if (mounted) setState(() {});
-                    },
-                    title: Text(s.deviceAutomaticFirmwareTitle),
-                    subtitle: Text(s.deviceAutomaticFirmwareSub),
-                  ),
-                );
-              },
-            ),
+            Text(s.deviceSectionFirmware, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            const FirmwareUpdatePanel(compact: true),
           ],
         ],
       ),

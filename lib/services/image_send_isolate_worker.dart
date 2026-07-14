@@ -17,6 +17,12 @@ class ComposeUploadIsolateArgs {
     required this.filterIndex,
     required this.overlay,
     required this.locationText,
+    this.flipH = false,
+    this.flipV = false,
+    this.cropAspect = 0,
+    this.cropZoom = 1.0,
+    this.cropPanX = 0,
+    this.cropPanY = 0,
   });
 
   final Uint8List imageBytes;
@@ -27,6 +33,12 @@ class ComposeUploadIsolateArgs {
   final int filterIndex;
   final SendOverlayOptions overlay;
   final String locationText;
+  final bool flipH;
+  final bool flipV;
+  final double cropAspect;
+  final double cropZoom;
+  final double cropPanX;
+  final double cropPanY;
 }
 
 /// Preview / SD export — grade, filter, optional caption overlay.
@@ -40,6 +52,12 @@ class FrameProcessOnlyArgs {
     required this.filterIndex,
     this.overlay = const SendOverlayOptions(),
     this.locationText = '',
+    this.flipH = false,
+    this.flipV = false,
+    this.cropAspect = 0,
+    this.cropZoom = 1.0,
+    this.cropPanX = 0,
+    this.cropPanY = 0,
   });
 
   final Uint8List imageBytes;
@@ -50,6 +68,12 @@ class FrameProcessOnlyArgs {
   final int filterIndex;
   final SendOverlayOptions overlay;
   final String locationText;
+  final bool flipH;
+  final bool flipV;
+  final double cropAspect;
+  final double cropZoom;
+  final double cropPanX;
+  final double cropPanY;
 }
 
 FrameImageFilter _filterEnumAt(int index) {
@@ -59,7 +83,7 @@ FrameImageFilter _filterEnumAt(int index) {
       ? 0
       : index > last
       ? last
-      : index; // avoids num vs [] trailing-comma quirks
+      : index;
   return vals[i];
 }
 
@@ -73,6 +97,12 @@ img.Image? _buildSizedWorkImage({
   required FrameImageFilter filter,
   SendOverlayOptions overlay = const SendOverlayOptions(),
   String locationText = '',
+  bool flipH = false,
+  bool flipV = false,
+  double cropAspect = 0,
+  double cropZoom = 1.0,
+  double cropPanX = 0,
+  double cropPanY = 0,
 }) {
   final decoded = proc.decode(imageBytes);
   if (decoded == null) return null;
@@ -80,6 +110,12 @@ img.Image? _buildSizedWorkImage({
   var work = proc.buildFrameWorkImage(
     source: decoded,
     quarterTurns: quarterTurns,
+    flipH: flipH,
+    flipV: flipV,
+    cropAspect: cropAspect,
+    cropZoom: cropZoom,
+    cropPanX: cropPanX,
+    cropPanY: cropPanY,
     brightness: brightness,
     contrast: contrast,
     saturation: saturation,
@@ -106,6 +142,12 @@ ProcessedFrameResult? isolateFrameProcessOnly(FrameProcessOnlyArgs args) {
     filter: filter,
     overlay: args.overlay,
     locationText: args.locationText,
+    flipH: args.flipH,
+    flipV: args.flipV,
+    cropAspect: args.cropAspect,
+    cropZoom: args.cropZoom,
+    cropPanX: args.cropPanX,
+    cropPanY: args.cropPanY,
   );
   if (work == null) return null;
   return proc.processWorkImageForFrame(work);
@@ -114,6 +156,34 @@ ProcessedFrameResult? isolateFrameProcessOnly(FrameProcessOnlyArgs args) {
 /// Editor preview — 6‑color dither preview (same pipeline as frame `.bin`).
 Uint8List? isolateFrameEinkPreviewJpeg(FrameProcessOnlyArgs args) {
   return isolateFrameProcessOnly(args)?.einkPreviewJpeg;
+}
+
+/// Fast preview JPEG — grade + crop + resize only, no dither.
+Uint8List? isolateFastPreviewJpeg(FrameProcessOnlyArgs args) {
+  final filter = _filterEnumAt(args.filterIndex);
+  final proc = ImageProcessorService();
+  final decoded = proc.decode(args.imageBytes);
+  if (decoded == null) return null;
+
+  var work = proc.buildFrameWorkImage(
+    source: decoded,
+    quarterTurns: args.quarterTurns,
+    flipH: args.flipH,
+    flipV: args.flipV,
+    cropAspect: args.cropAspect,
+    cropZoom: args.cropZoom,
+    cropPanX: args.cropPanX,
+    cropPanY: args.cropPanY,
+    brightness: args.brightness,
+    contrast: args.contrast,
+    saturation: args.saturation,
+    filter: filter,
+  );
+  if (work == null) return null;
+  if (args.overlay.hasAnyOverlay) {
+    work = drawSendOverlayOnImage(work, args.overlay, locationText: args.locationText);
+  }
+  return proc.encodeJpg(work, quality: 85);
 }
 
 /// Wi‑Fi upload: firmware `.bin` (exact E6 palette — screenshots & photos).
@@ -130,6 +200,12 @@ Uint8List? isolateComposeUploadBin(ComposeUploadIsolateArgs args) {
     filter: filter,
     overlay: args.overlay,
     locationText: args.locationText,
+    flipH: args.flipH,
+    flipV: args.flipV,
+    cropAspect: args.cropAspect,
+    cropZoom: args.cropZoom,
+    cropPanX: args.cropPanX,
+    cropPanY: args.cropPanY,
   );
   if (work == null) return null;
 
@@ -151,6 +227,12 @@ Uint8List? isolateComposeUploadFrameJpeg(ComposeUploadIsolateArgs args) {
     filter: filter,
     overlay: args.overlay,
     locationText: args.locationText,
+    flipH: args.flipH,
+    flipV: args.flipV,
+    cropAspect: args.cropAspect,
+    cropZoom: args.cropZoom,
+    cropPanX: args.cropPanX,
+    cropPanY: args.cropPanY,
   );
   if (work == null) return null;
 
@@ -168,6 +250,12 @@ Uint8List? isolateComposeCloudJpeg(ComposeUploadIsolateArgs args) {
   var work = proc.buildCloudCopyImage(
     source: decoded,
     quarterTurns: args.quarterTurns,
+    flipH: args.flipH,
+    flipV: args.flipV,
+    cropAspect: args.cropAspect,
+    cropZoom: args.cropZoom,
+    cropPanX: args.cropPanX,
+    cropPanY: args.cropPanY,
     brightness: args.brightness,
     contrast: args.contrast,
     saturation: args.saturation,

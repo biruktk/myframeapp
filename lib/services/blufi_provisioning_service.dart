@@ -187,7 +187,6 @@ class BlufiProvisioningService {
               'mqtt_config already sent before Wi‑Fi in this session (EspBluFi order)',
             );
           }
-          await Future<void>.delayed(const Duration(milliseconds: 120));
           if (ack) {
             await _rememberBleIdentity(paired: paired, remote: remote);
           }
@@ -470,13 +469,13 @@ class BlufiProvisioningService {
       var seenStatusFrame = false;
       var handledNotifyCount = 0;
       final deadline = DateTime.now().add(const Duration(seconds: 25));
-      var nextStatusPollAt = DateTime.now().add(const Duration(seconds: 2));
+      var nextStatusPollAt = DateTime.now().add(const Duration(milliseconds: 1500));
       while (DateTime.now().isBefore(deadline)) {
-        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
         // Mirror EspBlufi behavior by asking status repeatedly until connected.
         if (DateTime.now().isAfter(nextStatusPollAt)) {
           await sendFrame(0x00, 0x05, const [], checksum: false);
-          nextStatusPollAt = DateTime.now().add(const Duration(seconds: 2));
+          nextStatusPollAt = DateTime.now().add(const Duration(milliseconds: 1500));
         }
         while (handledNotifyCount < notifyPayloads.length) {
           final payload = notifyPayloads[handledNotifyCount++];
@@ -608,7 +607,8 @@ class BlufiProvisioningService {
         const partLen = maxFrameBytes - headerBytes - fragMetaBytes;
         final end = offset + partLen;
         final part = bytes.sublist(offset, end);
-        final totalContentLen = bytes.length - offset;
+        // BluFi fragment header: total length is the full CUSTOM_DATA payload, not remaining bytes.
+        final totalContentLen = bytes.length;
         final dataLen = part.length + fragMetaBytes;
         if (totalContentLen < part.length ||
             dataLen > maxFrameBytes - headerBytes) {
@@ -686,6 +686,11 @@ class BlufiProvisioningService {
 
   /// Order: paired / IJ_ primary first, then 3837 companion.
   Future<List<BluetoothDevice>> _scanProvisionCandidates(PairedFrame p) async {
+    final rid = p.bleRemoteId?.trim();
+    if (rid != null && rid.isNotEmpty) {
+      _d('bleRemoteId=$rid known — connecting directly, skipping 30s scan');
+      return [BluetoothDevice.fromId(rid)];
+    }
     final targetId = p.bleRemoteId?.trim();
     final normTargetId = _normalizeBleId(targetId);
     final targetPrefix = (p.bleNamePrefix ?? 'IJ_').trim().toLowerCase();

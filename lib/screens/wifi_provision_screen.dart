@@ -10,7 +10,6 @@ import '../l10n/app_strings.dart';
 import '../models/pairing_nav_result.dart';
 import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
-import '../services/frame_cloud_cast_service.dart';
 import '../services/frame_recovery_service.dart';
 import '../services/wifi_credential_cache.dart';
 import 'frame_profile_setup_screen.dart';
@@ -18,7 +17,6 @@ import '../services/permission_gate.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
 import '../services/app_release_guard.dart';
-import '../settings/app_settings.dart';
 import '../widgets/debug_slog_overlay.dart';
 
 class WifiProvisionScreen extends StatefulWidget {
@@ -93,9 +91,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _seedPairedIntoCache();
       if (!mounted) return;
-      if (Platform.isAndroid) {
-        await _scanWifiNetworksThenAuto();
-      }
+      await _scanWifiNetworksThenAuto();
     });
   }
 
@@ -141,30 +137,42 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     _passCtrl.text = pass;
     if (!mounted) return;
     setState(() => _status = AppStrings.of(context).wifiSavedPasswordConnecting);
-    await Future<void>.delayed(const Duration(milliseconds: 280));
     if (mounted) await _connect();
   }
 
   Future<void> _scanWifiNetworks() async {
-    if (!Platform.isAndroid) {
-      setState(() {
-        _status = 'iOS does not expose nearby Wi‑Fi scan results to apps. Enter SSID and password manually.';
-      });
-      return;
-    }
     setState(() {
       _scanningWifi = true;
       _status = null;
     });
     try {
-      await PermissionGate.locationWhenInUse();
-      final loc = await Permission.locationWhenInUse.status;
-      if (!loc.isGranted && !loc.isLimited) {
-        await PermissionGate.enqueueLocationCoarse();
-      }
+      try {
+        if (Platform.isAndroid) {
+          await PermissionGate.locationWhenInUse();
+          final loc = await Permission.locationWhenInUse.status;
+          if (!loc.isGranted && !loc.isLimited) {
+            await PermissionGate.enqueueLocationCoarse();
+          }
+        }
+      } catch (_) {}
       final info = await _nativeBleMethod.invokeMethod<Map<dynamic, dynamic>>('getWifiInfo');
-      final wifiEnabled = info?['enabled'] == true;
       final currentSsid = normalizeWifiSsid(info?['ssid']?.toString() ?? '');
+      if (currentSsid.isNotEmpty && currentSsid != '<unknown ssid>') {
+        setState(() {
+          _ssidCtrl.text = currentSsid;
+          _selectedSsid = currentSsid;
+        });
+      }
+      if (!Platform.isAndroid) {
+        setState(() {
+          _showManualEntry = true;
+          if (currentSsid.isEmpty) {
+            _status = 'Enter the Wi‑Fi name and password manually.';
+          }
+        });
+        return;
+      }
+      final wifiEnabled = info?['enabled'] == true;
       if (!wifiEnabled) {
         if (!mounted) return;
         setState(() {
@@ -188,6 +196,9 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           secure: item['secure'] == true,
         ));
       }
+      final isCurrentInList = currentSsid.isNotEmpty &&
+          currentSsid != '<unknown ssid>' &&
+          parsed.any((n) => wifiSsidEquals(n.ssid, currentSsid));
       final savedMap = <String, bool>{};
       for (final n in parsed) {
         final pw = await _passwordForSsid(n.ssid);
@@ -199,14 +210,8 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         _savedPasswordForSsid
           ..clear()
           ..addAll(savedMap);
-        if (_selectedSsid != null && !_wifiNetworks.any((n) => wifiSsidEquals(n.ssid, _selectedSsid))) {
+        if (!isCurrentInList && _selectedSsid != null && !_wifiNetworks.any((n) => wifiSsidEquals(n.ssid, _selectedSsid))) {
           _selectedSsid = null;
-        }
-        if (currentSsid.isNotEmpty &&
-            currentSsid != '<unknown ssid>' &&
-            _wifiNetworks.any((n) => wifiSsidEquals(n.ssid, currentSsid))) {
-          _selectedSsid = currentSsid;
-          _ssidCtrl.text = currentSsid;
         }
         if (_wifiNetworks.isEmpty) {
           _status = 'No Wi-Fi networks found. You can still enter SSID manually.';
@@ -370,37 +375,11 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       ssid: _ssidCtrl.text,
       password: effectivePassword,
     );
-    final updatedPairing = await DeviceStore.instance.load();
-    if (widget.firstTimeSetup && updatedPairing != null) {
-      setState(() => _status = 'Connecting frame to server…');
-      await FrameCloudCastService.instance.waitUntilFrameReady(
-        paired: updatedPairing,
-        timeout: const Duration(seconds: 45),
-        onStatus: (line) {
-          if (mounted) {
-            setState(() => _status = AppDiagLog.userFacingStatus(
-                  line,
-                  fallback: 'Connecting frame to server…',
-                ));
-          }
-        },
-      );
-      for (var i = 0; i < 2; i++) {
-        try {
-          await FrameRecoveryService.instance.sendLoginAck(updatedPairing);
-        } catch (e) {
-          AppDiagLog.verbose('[WiFi] post-provision login_ack failed: $e');
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 900));
-      }
-    }
     if (!mounted) return;
     setState(() {
       _busy = false;
       _status = AppStrings.of(context).wifiConnectSuccess(_ssidCtrl.text.trim());
     });
-    await Future<void>.delayed(const Duration(milliseconds: 450));
-    if (!mounted) return;
 
     final profileOk = await SafeNav.push<bool>(
       context,
@@ -500,7 +479,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
-    final debugOn = AppSettingsScope.of(context).debugModeEnabled;
     final showFormFields = _showManualEntry || Platform.isIOS || _wifiNetworks.isEmpty;
 
     return DebugSlogOverlay(
@@ -715,49 +693,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                             : const Icon(Icons.wifi_tethering),
                         label: Text(_busy ? s.connectingWifi : s.connectWifiButton),
                       ),
-                    ),
-                    if (debugOn) ...[
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _busy || _recoveryBusy
-                              ? null
-                              : () => _reconfigureServer(resetLabel: true),
-                          icon: _recoveryBusy
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('🔧'),
-                          label: const Text('Reset & Reconfigure'),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _busy || _recoveryBusy ? null : _sendLoginAck,
-                          icon: const Text('📡'),
-                          label: const Text('Send login_ack'),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    TextButton(
-                      onPressed: _busy || _recoveryBusy
-                          ? null
-                          : () {
-                              if (widget.firstTimeSetup) {
-                                Navigator.of(context).pop(
-                                  const PairingNavResult(success: false),
-                                );
-                              } else {
-                                Navigator.of(context).pop(false);
-                              }
-                            },
-                      child: Text(s.skipForNow),
                     ),
                   ],
                 ),

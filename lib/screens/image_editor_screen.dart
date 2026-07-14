@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -19,7 +21,6 @@ import '../services/app_diag_log.dart';
 import '../services/app_release_guard.dart';
 import '../services/cloud_photo_upload_service.dart';
 import '../services/in_app_notification_store.dart';
-import '../widgets/ai_content_notice.dart';
 import '../widgets/debug_slog_overlay.dart';
 import '../services/frame_cloud_cast_service.dart';
 import '../services/editor_settings_cache.dart';
@@ -29,13 +30,17 @@ import '../services/sd_card_export.dart';
 import '../services/slideshow_style.dart';
 import '../services/transport_kind.dart';
 import '../services/usage_metrics_store.dart';
+import '../services/weather_service.dart';
 import '../settings/app_settings.dart';
 import '../l10n/app_strings.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../models/pairing_nav_result.dart';
 import '../models/send_overlay_options.dart';
+import '../theme/app_theme.dart';
 import 'device_discovery_screen.dart';
 import 'wifi_provision_screen.dart';
+
+const Color _kEditorRed = AppTheme.primaryRed;
 
 /// Step 1 from `ra/api`: color grade + filters before resize / E-ink (handled on Send).
 class ImageEditorScreen extends StatefulWidget {
@@ -52,6 +57,7 @@ class ImageEditorScreen extends StatefulWidget {
     this.queueTotal = 1,
     this.galleryPersistPath,
     this.isAiGenerated = false,
+    this.autoSendAfterLoad = false,
   });
 
   final Uint8List imageBytes;
@@ -74,6 +80,9 @@ class ImageEditorScreen extends StatefulWidget {
   final String? galleryPersistPath;
 
   final bool isAiGenerated;
+
+  /// When true (gallery share flow), upload starts once pairing is loaded.
+  final bool autoSendAfterLoad;
 
   @override
   State<ImageEditorScreen> createState() => _ImageEditorScreenState();
@@ -114,13 +123,38 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   bool _oGreeting = false;
   late final TextEditingController _overlayText;
 
-  SendOverlayOptions get _currentOverlay => SendOverlayOptions(
-    showDate: _oDate,
-    showLocation: _oLocation,
-    showGreeting: _oGreeting,
-    customText: _overlayText.text,
-    greetingCustom: widget.overlay.greetingCustom,
-  );
+  SendOverlayOptions get _currentOverlay {
+    const palette = [
+      0xFF000000,
+      0xFFFFFFFF,
+      0xFFFFFF00,
+      0xFFFF0000,
+      0xFF0000FF,
+      0xFF00FF00,
+    ];
+    final color = (_textColor >= 0 && _textColor < palette.length)
+        ? palette[_textColor]
+        : 0xFFFFFFFF;
+    return SendOverlayOptions(
+      showDate: _oDate,
+      showLocation: _oLocation && !_oWeather,
+      showGreeting: _oGreeting,
+      showWeather: _oWeather,
+      customText: '',
+      greetingCustom: widget.overlay.greetingCustom,
+      centerText: _overlayText.text.trim(),
+      centerTextColor: color,
+      centerTextSize: _textSize,
+      centerSticker: _selectedSticker ?? '',
+      stickerAlignX: (_stickerAlignX + 1) / 2, // -1..1 → 0..1
+      stickerAlignY: (_stickerAlignY + 1) / 2,
+      stickerSize: _stickerSize,
+      weatherText: _weatherLine,
+    );
+  }
+
+  String _weatherLine = '';
+  bool _weatherLoading = false;
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -289,50 +323,41 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   void initState() {
     super.initState();
     final cached = EditorSettingsCache.instance.last;
-    final sheetOverlay =
-        widget.overlay.hasAnyOverlay ||
-        widget.overlay.customText.trim().isNotEmpty ||
-        (widget.overlayLocationOverride?.trim().isNotEmpty ?? false);
     _transport = TransportKind.wifi;
     _slideshow = cached?.slideshow ?? widget.slideshow;
-    if (sheetOverlay) {
-      _oDate = widget.overlay.showDate;
-      _oLocation = widget.overlay.showLocation;
-      _oGreeting = widget.overlay.showGreeting;
-    } else if (cached != null) {
-      _oDate = cached.showDate;
-      _oLocation = cached.showLocation;
-      _oGreeting = cached.showGreeting;
-    } else {
-      _oDate = widget.overlay.showDate;
-      _oLocation = widget.overlay.showLocation;
-      _oGreeting = widget.overlay.showGreeting;
-    }
-    if (cached != null) {
-      _brightness = cached.brightness;
-      _contrast = cached.contrast;
-      _saturation = cached.saturation;
-      _filter = cached.filter;
-    }
-    // Each new image starts upright; grade/filter prefs are sticky across sessions.
+    // Fresh pick: plain image only — no sticky overlays / filters / grade.
+    _oDate = false;
+    _oLocation = false;
+    _oGreeting = false;
+    _oWeather = false;
+    _weatherLine = '';
+    _brightness = 0;
+    _contrast = 0;
+    _saturation = 0;
+    _filter = FrameImageFilter.none;
     _quarterTurns = 0;
-    final overlayText = widget.overlay.customText.trim().isNotEmpty
-        ? widget.overlay.customText
-        : (cached?.customText ?? '');
-    _overlayText = TextEditingController(text: overlayText);
+    _overlayText = TextEditingController();
     _overlayText.addListener(_onOverlayTextChanged);
     _decoded = _processor.decode(widget.imageBytes);
     if (_decoded != null) {
-      _schedulePreview();
+      _previewBytes = widget.imageBytes; // instant first frame
+      _warmFastPreviewCache();
     } else {
       _decodeFailed = true;
     }
-    _loadPairing();
+    _loadPairing().then((_) {
+      if (!mounted || !widget.autoSendAfterLoad || _decoded == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _uploading || _sendSucceeded) return;
+        unawaited(_send());
+      });
+    });
   }
 
   void _onOverlayTextChanged() {
     if (!mounted) return;
-    _schedulePreview();
+    setState(() {});
+    _invalidateProcessCache();
   }
 
   Future<void> _loadPairing() async {
@@ -346,7 +371,40 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   void _invalidateProcessCache() {
     _cachedProcess = null;
-    _previewGen++;
+    // Warm the E-ink Preview JPEG in the background so the button opens instantly.
+    _warmFastPreviewCache();
+  }
+
+  int _previewGen = 0;
+  Timer? _previewWarmTimer;
+
+  void _warmFastPreviewCache() {
+    _previewWarmTimer?.cancel();
+    _previewWarmTimer = Timer(const Duration(milliseconds: 220), () {
+      if (!mounted || _decoded == null) return;
+      final gen = ++_previewGen;
+      final args = _previewArgs();
+      compute(isolateFastPreviewJpeg, args).then((bytes) {
+        if (!mounted || gen != _previewGen || bytes == null) return;
+        _previewBytes = bytes;
+      });
+    });
+  }
+
+  void _schedulePreview({int delayMs = 80}) {
+    // Live preview is Flutter-widget based (instant). Isolate only for send cache.
+    _cachedProcess = null;
+  }
+
+  /// Kept for six-color / export paths that still need a baked JPEG.
+  void _renderPreview() {
+    if (_decoded == null) return;
+    final gen = ++_previewGen;
+    final args = _previewArgs();
+    compute(isolateFastPreviewJpeg, args).then((bytes) {
+      if (!mounted || gen != _previewGen || bytes == null) return;
+      setState(() => _previewBytes = bytes);
+    });
   }
 
   @override
@@ -356,65 +414,30 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       EditorSettingsSnapshot(
         transport: _transport,
         slideshow: _slideshow,
-        showDate: _oDate,
-        showLocation: _oLocation,
-        showGreeting: _oGreeting,
-        customText: _overlayText.text,
-        brightness: _brightness,
-        contrast: _contrast,
-        saturation: _saturation,
-        filter: _filter,
+        showDate: false,
+        showLocation: false,
+        showGreeting: false,
+        customText: '',
+        brightness: 0,
+        contrast: 0,
+        saturation: 0,
+        filter: FrameImageFilter.none,
       ),
     );
     _overlayText.dispose();
+    _textController.dispose();
+    _weatherTempController.dispose();
+    _previewTransform.dispose();
     _debounce?.cancel();
+    _previewWarmTimer?.cancel();
     _api.close();
     super.dispose();
-  }
-
-  int _previewGen = 0;
-
-  void _schedulePreview() {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 180), _renderPreview);
-  }
-
-  /// 6‑color e‑ink preview — matches what the frame will display (not full RGB).
-  void _renderPreview() {
-    if (_decoded == null) return;
-    final gen = ++_previewGen;
-    final args = FrameProcessOnlyArgs(
-      imageBytes: widget.imageBytes,
-      quarterTurns: _quarterTurns,
-      brightness: 1.0 + _brightness * 0.35,
-      contrast: 1.0 + _contrast * 0.45,
-      saturation: 1.0 + _saturation * 0.45,
-      filterIndex: _filter.index,
-      overlay: _currentOverlay,
-      locationText: _overlayLocationValue,
-    );
-    compute(isolateFrameEinkPreviewJpeg, args).then((bytes) {
-      if (!mounted || gen != _previewGen || bytes == null) return;
-      setState(() => _previewBytes = bytes);
-    });
   }
 
   Future<ProcessedFrameResult?> _ensureProcessed() async {
     if (_decoded == null) return null;
     if (_cachedProcess != null) return _cachedProcess;
-    final result = await compute(
-      isolateFrameProcessOnly,
-      FrameProcessOnlyArgs(
-        imageBytes: widget.imageBytes,
-        quarterTurns: _quarterTurns,
-        brightness: 1.0 + _brightness * 0.35,
-        contrast: 1.0 + _contrast * 0.45,
-        saturation: 1.0 + _saturation * 0.45,
-        filterIndex: _filter.index,
-        overlay: _currentOverlay,
-        locationText: _overlayLocationValue,
-      ),
-    );
+    final result = await compute(isolateFrameProcessOnly, _previewArgs());
     _cachedProcess = result;
     return result;
   }
@@ -503,16 +526,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       final s = AppStrings.of(context);
       final app = AppSettingsScope.of(context);
       AppDiagLog.verbose('[Editor] input bytes=${widget.imageBytes.length}');
-      final composeArgs = ComposeUploadIsolateArgs(
-        imageBytes: widget.imageBytes,
-        quarterTurns: _quarterTurns,
-        brightness: 1.0 + _brightness * 0.35,
-        contrast: 1.0 + _contrast * 0.45,
-        saturation: 1.0 + _saturation * 0.45,
-        filterIndex: _filter.index,
-        overlay: _currentOverlay,
-        locationText: _overlayLocationValue,
-      );
+      final composeArgs = _composeArgs();
       final uploadBin = await compute(isolateComposeUploadBin, composeArgs);
       if (uploadBin == null) {
         if (!mounted) return;
@@ -684,18 +698,32 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
     final primary = cs.primary;
-    final slideshowLabel = _slideshowLabel(s);
     final debugOn = AppSettingsScope.of(context).debugModeEnabled;
     if (_decodeFailed) {
       return Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        appBar: AppBar(title: Text(s.editTitle)),
+        appBar: AppBar(
+          title: Text(s.editTitle),
+          leadingWidth: 44,
+          leading: IconButton(
+            tooltip: 'Back',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: Icon(
+              Theme.of(context).platform == TargetPlatform.iOS ||
+                      Theme.of(context).platform == TargetPlatform.macOS
+                  ? CupertinoIcons.back
+                  : Icons.arrow_back,
+              size: 22,
+            ),
+          ),
+        ),
         body: Center(child: Text(s.decodeError)),
       );
     }
     final viewInsets = MediaQuery.viewInsetsOf(context);
     final keyboardOpen = viewInsets.bottom > 0;
-    final previewMaxHeight = keyboardOpen ? 160.0 : double.infinity;
 
     return DebugSlogOverlay(
       child: PopScope(
@@ -704,26 +732,49 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           resizeToAvoidBottomInset: true,
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
+            centerTitle: true,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            elevation: 0,
             title: Text(
               widget.queueTotal > 1
                   ? '${s.editTitle} (${widget.queueIndex}/${widget.queueTotal})'
                   : s.editTitle,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF0A0A0A),
+              ),
             ),
-            automaticallyImplyLeading: !_uploading,
+            automaticallyImplyLeading: false,
+            leadingWidth: 44,
             leading: _uploading
                 ? null
-                : BackButton(onPressed: () => Navigator.of(context).maybePop()),
+                : IconButton(
+                    tooltip: 'Back',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: Icon(
+                      Theme.of(context).platform == TargetPlatform.iOS ||
+                              Theme.of(context).platform == TargetPlatform.macOS
+                          ? CupertinoIcons.back
+                          : Icons.arrow_back,
+                      size: 22,
+                      color: const Color(0xFF0A0A0A),
+                    ),
+                  ),
             actions: [
               if (debugOn &&
                   (_castLogLines.isNotEmpty ||
                       (_status?.trim().isNotEmpty ?? false)))
-                IconButton(
-                  tooltip: 'Copy log',
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
                   onPressed: _copyCastDiagnostics,
-                  icon: const Icon(Icons.copy_outlined),
+                  child: const Icon(CupertinoIcons.doc_on_doc, size: 22, color: Color(0xFF0A0A0A)),
                 ),
-              IconButton(
-                tooltip: s.rotateTooltip,
+              CupertinoButton(
+                padding: const EdgeInsets.only(right: 12),
                 onPressed: _decoded == null
                     ? null
                     : () {
@@ -731,424 +782,80 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                           _quarterTurns = (_quarterTurns + 1) % 4;
                           _invalidateProcessCache();
                         });
-                        _schedulePreview();
                       },
-                icon: const Icon(Icons.rotate_right),
+                child: const Icon(CupertinoIcons.refresh, size: 22, color: Color(0xFF0A0A0A)),
               ),
             ],
           ),
           body: _decoded == null
               ? Center(child: Text(_status ?? s.noImage))
-              : SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    8,
-                    16,
-                    16 + viewInsets.bottom,
-                  ),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (widget.queueTotal > 1)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Text(
-                            s.sendQueueFrameShowsLatest(
-                              widget.queueIndex,
-                              widget.queueTotal,
-                            ),
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 13,
-                              height: 1.35,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      if (widget.isAiGenerated) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 10),
-                          child: AiContentNotice(compact: true),
-                        ),
-                      ],
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: previewMaxHeight,
-                        ),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: cs.outlineVariant),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: AspectRatio(
-                            aspectRatio: 3 / 4,
-                            child: _previewBytes == null
-                                ? const ColoredBox(color: Color(0xFFE5E7EB))
-                                : InteractiveViewer(
-                                    minScale: 1,
-                                    maxScale: 4,
-                                    panEnabled: !keyboardOpen,
-                                    boundaryMargin: const EdgeInsets.all(24),
-                                    child: Center(
-                                      child: Image.memory(
-                                        _previewBytes!,
-                                        fit: BoxFit.contain,
-                                      ),
-                                    ),
-                                  ),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          s.targetFrameHint(
-                            ImageProcessorService.frameWidth,
-                            ImageProcessorService.frameHeight,
-                          ),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: cs.onSurfaceVariant,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _editorSectionTitle(s.editorSectionLook, cs),
-                      const SizedBox(height: 4),
-                      _slider(
-                        label: s.brightness,
-                        value: _brightness,
-                        onChanged: (v) {
-                          setState(() {
-                            _brightness = v;
-                            _invalidateProcessCache();
-                          });
-                          _schedulePreview();
-                        },
-                      ),
-                      _slider(
-                        label: s.contrast,
-                        value: _contrast,
-                        onChanged: (v) {
-                          setState(() {
-                            _contrast = v;
-                            _invalidateProcessCache();
-                          });
-                          _schedulePreview();
-                        },
-                      ),
-                      _slider(
-                        label: s.saturation,
-                        value: _saturation,
-                        onChanged: (v) {
-                          setState(() {
-                            _saturation = v;
-                            _invalidateProcessCache();
-                          });
-                          _schedulePreview();
-                        },
-                      ),
-                      Text(
-                        s.filterLabel,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: FrameImageFilter.values.map((f) {
-                          final sel = _filter == f;
-                          return ChoiceChip(
-                            label: Text(_filterLabel(f, s)),
-                            selected: sel,
-                            onSelected: (_) {
-                              setState(() {
-                                _filter = f;
-                                _invalidateProcessCache();
-                              });
-                              _schedulePreview();
-                            },
-                            selectedColor: primary.withValues(alpha: 0.2),
-                            labelStyle: TextStyle(
-                              color: sel ? primary : cs.onSurface,
-                              fontWeight: sel
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 18),
-                      _editorSectionTitle(s.editorSectionSend, cs),
-                      const SizedBox(height: 6),
-                      Text(
-                        s.editorSendVpsOnlyHelp,
-                        style: TextStyle(
-                          color: cs.onSurfaceVariant,
-                          fontSize: 12,
-                          height: 1.35,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        s.slideshowStyle,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: SlideshowStyle.values.map((e) {
-                          final on = _slideshow == e;
-                          return ChoiceChip(
-                            label: Text(_slideshowChoiceLabel(e, s)),
-                            selected: on,
-                            onSelected: (_) => setState(() => _slideshow = e),
-                            selectedColor: primary.withValues(alpha: 0.2),
-                            labelStyle: TextStyle(
-                              color: on ? primary : cs.onSurface,
-                              fontWeight: on
-                                  ? FontWeight.w600
-                                  : FontWeight.w500,
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        s.overlayOptions,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        s.overlayOnPhotoHelper,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: cs.onSurfaceVariant,
-                          height: 1.3,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+              : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                      child: Row(
                         children: [
-                          for (final w in [
-                            'Love',
-                            'Family',
-                            'Congrats',
-                            'Happy Birthday',
-                            'Best wishes',
-                            'Holiday',
-                          ])
-                            ActionChip(
-                              label: Text(w),
-                              onPressed: () {
-                                final t = _overlayText.text.trim();
-                                final next = t.isEmpty ? w : '$t $w';
-                                _overlayText.text = next;
-                                _overlayText.selection =
-                                    TextSelection.collapsed(
-                                      offset: next.length,
-                                    );
-                                _schedulePreview();
-                              },
+                          CupertinoButton(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            color: _einkPreviewOn ? _kEditorRed.withValues(alpha: 0.12) : const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(10),
+                            onPressed: () {
+                              setState(() => _einkPreviewOn = true);
+                              _showFastRealPreview();
+                            },
+                            child: Text(
+                              'E-ink Preview',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: _einkPreviewOn ? _kEditorRed : const Color(0xFF374151),
+                              ),
                             ),
+                          ),
+                          const Spacer(),
+                          CupertinoButton(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                            onPressed: _clearEditorOverlays,
+                            child: const Text(
+                              'Delete',
+                              style: TextStyle(
+                                color: _kEditorRed,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _overlayText,
-                        maxLength: 40,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: s.overlayCustomTextLabel,
-                          hintText: s.overlayCustomTextHint,
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                      SwitchListTile.adaptive(
-                        value: _oGreeting,
-                        onChanged: (v) {
-                          setState(() => _oGreeting = v);
-                          _schedulePreview();
-                        },
-                        title: Text(s.overlayGreetingLabel),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      SwitchListTile.adaptive(
-                        value: _oLocation,
-                        onChanged: (v) {
-                          setState(() => _oLocation = v);
-                          _schedulePreview();
-                        },
-                        title: Text(s.overlayLocationLabel),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      SwitchListTile.adaptive(
-                        value: _oDate,
-                        onChanged: (v) {
-                          setState(() => _oDate = v);
-                          _schedulePreview();
-                        },
-                        title: Text(s.overlayDateLabel),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        _paired == null
-                            ? s.pairingLineUnpaired(
-                                s.transportLabelVps,
-                                slideshowLabel,
-                              )
-                            : s.pairingLinePaired(
-                                _paired!.listDisplayTitle(s),
-                                _paired!.resolvedApiBaseUrl ?? _paired!.apiUrl,
-                                s.transportLabelVps,
-                                slideshowLabel,
-                              ),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: cs.onSurfaceVariant,
-                          height: 1.35,
-                        ),
-                      ),
-                      if (_paired != null && !_paired!.canUploadToServer) ...[
-                        const SizedBox(height: 10),
-                        Text(
-                          s.pairingNeedsApiUrl,
-                          style: TextStyle(fontSize: 12, color: cs.error),
-                        ),
-                      ],
-                      if (debugOn &&
-                          _paired != null &&
-                          (_uploading || _castLogLines.isNotEmpty)) ...[
-                        const SizedBox(height: 10),
-                        _CastDebugTargetsPanel(paired: _paired!),
-                        if (_castLogLines.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          _CastActivityLog(
-                            lines: List<String>.from(_castLogLines),
-                            onCopy: _copyCastDiagnostics,
-                          ),
-                        ],
-                      ],
-                      if (_paired == null) ...[
-                        const SizedBox(height: 8),
-                        FilledButton.icon(
-                          onPressed: () async {
-                            final result = await Navigator.of(context)
-                                .push<PairingNavResult>(
-                                  MaterialPageRoute<PairingNavResult>(
-                                    builder: (_) =>
-                                        const DeviceDiscoveryScreen(),
-                                  ),
-                                );
-                            await _loadPairing();
-                            PairingFlowNav.onComplete(result);
-                          },
-                          icon: const Icon(Icons.bluetooth_searching),
-                          label: Text(s.scanDeviceTitle),
-                        ),
-                      ],
-                      if (_uploading &&
-                          (_castProgress != null ||
-                              _castProgressIndeterminate)) ...[
-                        const SizedBox(height: 12),
-                        LinearProgressIndicator(
-                          value: _castProgressIndeterminate
-                              ? null
-                              : _castProgress,
-                          minHeight: 4,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ],
-                      if (_status != null) ...[
-                        const SizedBox(height: 12),
-                        debugOn
-                            ? SelectableText(
-                                _status!,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: _uploading
-                                      ? cs.onSurface
-                                      : cs.onSurfaceVariant,
-                                ),
-                              )
-                            : Text(
-                                _status!,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: _uploading
-                                      ? cs.onSurface
-                                      : cs.onSurfaceVariant,
-                                ),
-                              ),
-                      ],
-                      const SizedBox(height: 24),
-                      if (_sendSucceeded) ...[
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: cs.primaryContainer,
-                            foregroundColor: cs.onPrimaryContainer,
-                            minimumSize: const Size.fromHeight(52),
-                          ),
-                          onPressed: _leaveEditorAfterSend,
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: const Text('Done — sent to frame'),
-                        ),
-                        const SizedBox(height: 10),
-                      ] else
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            backgroundColor: primary,
-                            foregroundColor: cs.onPrimary,
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 16,
-                              horizontal: 20,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final screenH = MediaQuery.sizeOf(context).height;
+                          final maxH = keyboardOpen
+                              ? math.min(120.0, screenH * 0.16)
+                              : screenH * 0.30;
+                          final height = maxH.clamp(100.0, 280.0);
+                          return Center(
+                            child: SizedBox(
+                              width: height * 3 / 4,
+                              height: height,
+                              child: _buildPreviewStage(cs, keyboardOpen),
                             ),
-                            minimumSize: const Size.fromHeight(52),
-                          ),
-                          onPressed: _uploading ? null : _send,
-                          icon: _uploading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.cloud_upload),
-                          label: Text(_uploading ? s.working : s.processUpload),
-                        ),
-                      const SizedBox(height: 10),
-                      OutlinedButton.icon(
-                        onPressed: _uploading ? null : _exportForSdCard,
-                        icon: const Icon(Icons.sd_card),
-                        label: Text(s.exportSdButton),
+                          );
+                        },
                       ),
-                    ],
-                  ),
+                    ),
+                    Expanded(
+                      child: _buildToolSection(context, s, cs, primary, keyboardOpen),
+                    ),
+                    if (!keyboardOpen) _buildBottomBar(context, s, cs, primary, debugOn),
+                  ],
                 ),
         ),
       ),
     );
-  }
-
-  String _slideshowLabel(AppStrings s) {
-    return _slideshowChoiceLabel(_slideshow, s);
   }
 
   String _slideshowChoiceLabel(SlideshowStyle e, AppStrings s) {
@@ -1160,6 +867,100 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     };
   }
 
+  // ─── Tool tab state ──────────────────────────────────────────────
+  String _activeTool = 'filters';
+  bool _einkPreviewOn = true;
+  final TransformationController _previewTransform = TransformationController();
+
+  // ─── Crop state ───────────────────────────────────────────────────
+  String _cropAspect = '3:4';
+  double _cropZoom = 100;
+  bool _flipH = false;
+  bool _flipV = false;
+  double _cropPanX = 0;
+  double _cropPanY = 0;
+
+  double get _cropAspectRatioValue {
+    switch (_cropAspect) {
+      case 'free':
+      case '3:4':
+        return 3 / 4;
+      case '1:1':
+        return 1;
+      case '4:3':
+        return 4 / 3;
+      case '16:9':
+        return 16 / 9;
+      case '9:16':
+        return 9 / 16;
+      case 'original':
+        final img = _decoded;
+        if (img == null || img.height == 0) return 3 / 4;
+        return img.width / img.height;
+      default:
+        return 3 / 4;
+    }
+  }
+
+  FrameProcessOnlyArgs _previewArgs() {
+    return FrameProcessOnlyArgs(
+      imageBytes: widget.imageBytes,
+      quarterTurns: _quarterTurns,
+      brightness: 1.0 + _brightness * 0.35,
+      contrast: 1.0 + _contrast * 0.45,
+      saturation: 1.0 + _saturation * 0.45,
+      filterIndex: _filter.index,
+      overlay: _currentOverlay,
+      locationText: _overlayLocationValue,
+      flipH: _flipH,
+      flipV: _flipV,
+      cropAspect: _cropAspectRatioValue,
+      cropZoom: (_cropZoom / 100).clamp(1.0, 3.0),
+      cropPanX: _cropPanX,
+      cropPanY: _cropPanY,
+    );
+  }
+
+  ComposeUploadIsolateArgs _composeArgs() {
+    return ComposeUploadIsolateArgs(
+      imageBytes: widget.imageBytes,
+      quarterTurns: _quarterTurns,
+      brightness: 1.0 + _brightness * 0.35,
+      contrast: 1.0 + _contrast * 0.45,
+      saturation: 1.0 + _saturation * 0.45,
+      filterIndex: _filter.index,
+      overlay: _currentOverlay,
+      locationText: _overlayLocationValue,
+      flipH: _flipH,
+      flipV: _flipV,
+      cropAspect: _cropAspectRatioValue,
+      cropZoom: (_cropZoom / 100).clamp(1.0, 3.0),
+      cropPanX: _cropPanX,
+      cropPanY: _cropPanY,
+    );
+  }
+
+  // ─── Text state ───────────────────────────────────────────────────
+  final _textController = TextEditingController();
+  double _textSize = 38;
+  int _textColor = 1; // white
+  bool _textBold = false;
+  double _textRotation = 0;
+
+  // ─── Weather state ────────────────────────────────────────────────
+  bool _oWeather = false;
+  final _weatherTempController = TextEditingController();
+
+  // ─── Sticker state ────────────────────────────────────────────────
+  String? _selectedSticker;
+  double _stickerRotation = 0;
+  double _stickerAlignX = 0.35; // slightly right of center (-1..1)
+  double _stickerAlignY = -0.15;
+  double _stickerSize = 28;
+
+  // ─── Border state ─────────────────────────────────────────────────
+  String _borderStyle = 'none';
+
   String _filterLabel(FrameImageFilter f, AppStrings s) {
     return switch (f) {
       FrameImageFilter.none => s.filterOriginal,
@@ -1167,8 +968,57 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       FrameImageFilter.sepia => s.filterSepia,
       FrameImageFilter.warm => s.filterWarm,
       FrameImageFilter.cool => s.filterCool,
+      FrameImageFilter.contrast => 'Contrast',
+      FrameImageFilter.vivid => 'Vivid',
+      FrameImageFilter.vintage => 'Vintage',
     };
   }
+
+  List<ColorFilter?> get _filterPreviewMatrices => [
+        null, // none
+        const ColorFilter.matrix(<double>[
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0.2126, 0.7152, 0.0722, 0, 0,
+          0, 0, 0, 1, 0,
+        ]),
+        const ColorFilter.matrix(<double>[
+          0.393, 0.769, 0.189, 0, 0,
+          0.349, 0.686, 0.168, 0, 0,
+          0.272, 0.534, 0.131, 0, 0,
+          0, 0, 0, 1, 0,
+        ]),
+        const ColorFilter.matrix(<double>[
+          1.1, 0.05, 0, 0, 8,
+          0.05, 1.05, 0, 0, 4,
+          0, 0, 0.9, 0, -6,
+          0, 0, 0, 1, 0,
+        ]),
+        const ColorFilter.matrix(<double>[
+          0.9, 0, 0.05, 0, -6,
+          0, 1.02, 0.05, 0, 2,
+          0.05, 0.05, 1.15, 0, 10,
+          0, 0, 0, 1, 0,
+        ]),
+        const ColorFilter.matrix(<double>[
+          1.25, 0, 0, 0, -20,
+          0, 1.25, 0, 0, -20,
+          0, 0, 1.25, 0, -20,
+          0, 0, 0, 1, 0,
+        ]),
+        const ColorFilter.matrix(<double>[
+          1.15, -0.05, -0.05, 0, 0,
+          -0.05, 1.2, -0.05, 0, 0,
+          -0.05, -0.05, 1.25, 0, 0,
+          0, 0, 0, 1, 0,
+        ]),
+        const ColorFilter.matrix(<double>[
+          0.5, 0.4, 0.1, 0, 10,
+          0.3, 0.5, 0.1, 0, 5,
+          0.2, 0.3, 0.3, 0, 0,
+          0, 0, 0, 1, 0,
+        ]),
+      ];
 
   Widget _editorSectionTitle(String title, ColorScheme cs) {
     return Row(
@@ -1197,6 +1047,285 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     );
   }
 
+  void _clearEditorOverlays() {
+    setState(() {
+      _oDate = false;
+      _oLocation = false;
+      _oGreeting = false;
+      _oWeather = false;
+      _overlayText.clear();
+      _textController.clear();
+      _selectedSticker = null;
+      _borderStyle = 'none';
+      _invalidateProcessCache();
+    });
+  }
+
+  BoxDecoration _previewDecoration(ColorScheme cs) {
+    switch (_borderStyle) {
+      case 'thinBlack':
+        return BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.black, width: 2),
+        );
+      case 'thickWhite':
+        return BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white, width: 10),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+        );
+      case 'polaroid':
+        return BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          border: const Border(
+            top: BorderSide(color: Colors.white, width: 10),
+            left: BorderSide(color: Colors.white, width: 10),
+            right: BorderSide(color: Colors.white, width: 10),
+            bottom: BorderSide(color: Colors.white, width: 28),
+          ),
+          boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)],
+        );
+      case 'film':
+        return BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.black, width: 12),
+        );
+      case 'rounded':
+        return BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(color: cs.outlineVariant),
+        );
+      case 'double':
+        return BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.black87, width: 4),
+          boxShadow: const [
+            BoxShadow(color: Colors.white, spreadRadius: 3),
+            BoxShadow(color: Colors.black26, blurRadius: 6),
+          ],
+        );
+      default:
+        return BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cs.outlineVariant),
+        );
+    }
+  }
+
+  Widget _filteredImage() {
+    final idx = _filter.index.clamp(0, _filterPreviewMatrices.length - 1);
+    final matrix = _filterPreviewMatrices[idx];
+    final b = 1.0 + _brightness * 0.35;
+    final c = 1.0 + _contrast * 0.45;
+    final t = (1.0 - c) * 128.0;
+    final grade = ColorFilter.matrix(<double>[
+      c, 0, 0, 0, t + (b - 1) * 40,
+      0, c, 0, 0, t + (b - 1) * 40,
+      0, 0, c, 0, t + (b - 1) * 40,
+      0, 0, 0, 1, 0,
+    ]);
+    Widget img = Image.memory(
+      widget.imageBytes,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.low,
+    );
+    img = ColorFiltered(colorFilter: grade, child: img);
+    if (matrix != null) {
+      img = ColorFiltered(colorFilter: matrix, child: img);
+    }
+    return img;
+  }
+
+  Widget _buildLiveOverlayStack() {
+    const palette = [
+      Colors.black,
+      Colors.white,
+      Colors.yellow,
+      Colors.red,
+      Colors.blue,
+      Colors.green,
+    ];
+    final textColor = (_textColor >= 0 && _textColor < palette.length)
+        ? palette[_textColor]
+        : Colors.white;
+    final now = DateTime.now();
+    final dateStr =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        // Match baked arial24 on ~800px frame work image (~3% of width).
+        final barFont = (w * 0.032).clamp(9.0, 13.0);
+        final stickerPx = (w * 0.085 * (_stickerSize / 28)).clamp(14.0, 48.0);
+        final barLines = <Widget>[];
+        if (_oWeather && _weatherLine.trim().isNotEmpty) {
+          barLines.add(
+            Text(
+              _weatherLine,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: barFont,
+                height: 1.15,
+              ),
+            ),
+          );
+        }
+        if (_oDate) {
+          barLines.add(
+            Text(
+              dateStr,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: barFont,
+                height: 1.15,
+              ),
+            ),
+          );
+        }
+        final draft = _overlayText.text.trim();
+        if (draft.isNotEmpty) {
+          // Bar text matches E-ink bake (fixed arial24) — ignore large UI size slider.
+          barLines.add(
+            Text(
+              draft,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: textColor,
+                fontWeight: _textBold ? FontWeight.w800 : FontWeight.w600,
+                fontSize: barFont,
+                height: 1.15,
+              ),
+            ),
+          );
+        }
+
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_selectedSticker != null)
+              Align(
+                alignment: Alignment(_stickerAlignX, _stickerAlignY),
+                child: Transform.rotate(
+                  angle: _stickerRotation * math.pi / 180,
+                  child: _selectedSticker == '♥'
+                      ? Icon(
+                          Icons.favorite,
+                          color: const Color(0xFFE5252A),
+                          size: stickerPx,
+                        )
+                      : Text(
+                          _selectedSticker!,
+                          style: TextStyle(fontSize: stickerPx, height: 1),
+                        ),
+                ),
+              ),
+            if (barLines.isNotEmpty)
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: double.infinity,
+                  color: Colors.black.withValues(alpha: 120 / 255),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: (w * 0.025).clamp(6.0, 12.0),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var i = 0; i < barLines.length; i++)
+                        Padding(
+                          padding: EdgeInsets.only(top: i == 0 ? 0 : 2),
+                          child: barLines[i],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPreviewStage(ColorScheme cs, bool keyboardOpen) {
+    final zoom = (_cropZoom / 100).clamp(1.0, 3.0);
+    final aspect = _cropAspectRatioValue;
+    return Container(
+      decoration: _previewDecoration(cs),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const ColoredBox(color: Colors.white),
+          Center(
+            child: AspectRatio(
+              aspectRatio: aspect,
+              child: ClipRect(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    GestureDetector(
+                      onPanUpdate: keyboardOpen
+                          ? null
+                          : (d) {
+                              if (_activeTool == 'crop') {
+                                setState(() {
+                                  _cropPanX = (_cropPanX + d.delta.dx / 90).clamp(-1.0, 1.0);
+                                  _cropPanY = (_cropPanY + d.delta.dy / 90).clamp(-1.0, 1.0);
+                                });
+                                _invalidateProcessCache();
+                              } else if (_activeTool == 'stickers' && _selectedSticker != null) {
+                                setState(() {
+                                  _stickerAlignX = (_stickerAlignX + d.delta.dx / 120).clamp(-0.85, 0.85);
+                                  _stickerAlignY = (_stickerAlignY + d.delta.dy / 120).clamp(-0.85, 0.85);
+                                });
+                                _invalidateProcessCache();
+                              }
+                            },
+                      child: Transform(
+                        alignment: Alignment.center,
+                        transform: () {
+                          final m = Matrix4.identity();
+                          m.translateByDouble(_cropPanX * 40.0, _cropPanY * 40.0, 0, 1);
+                          m.rotateZ(_quarterTurns * math.pi / 2);
+                          m.scaleByDouble(
+                            _flipH ? -zoom : zoom,
+                            _flipV ? -zoom : zoom,
+                            1,
+                            1,
+                          );
+                          return m;
+                        }(),
+                        child: _filteredImage(),
+                      ),
+                    ),
+                    // On the photo bounds so weather/date/text match E-ink Preview.
+                    IgnorePointer(child: _buildLiveOverlayStack()),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _slider({
     required String label,
     required double value,
@@ -1219,6 +1348,992 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           onChanged: onChanged,
         ),
       ],
+    );
+  }
+
+  Widget _buildToolSection(
+    BuildContext context,
+    AppStrings s,
+    ColorScheme cs,
+    Color primary,
+    bool keyboardOpen,
+  ) {
+    return Column(
+      children: [
+        // Horizontal tool tabs
+        SizedBox(
+          height: 44,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              _toolTab(s.filterLabel, 'filters', Icons.tune, cs),
+              _toolTab('Crop', 'crop', Icons.crop, cs),
+              _toolTab('Weather', 'weather', Icons.wb_sunny_outlined, cs),
+              _toolTab('Date', 'date', Icons.date_range, cs),
+              _toolTab('Text', 'text', Icons.text_fields, cs),
+              _toolTab('Sticker', 'stickers', Icons.emoji_emotions_outlined, cs),
+              _toolTab('Border', 'border', Icons.border_style, cs),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        // Active tool panel
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: _buildActiveToolPanel(s, cs, primary),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _toolTab(String label, String tool, IconData icon, ColorScheme cs) {
+    final active = _activeTool == tool;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: InkWell(
+        onTap: () => setState(() => _activeTool = tool),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: active ? _kEditorRed : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 15, color: active ? Colors.white : const Color(0xFF4B5563)),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: active ? Colors.white : const Color(0xFF111827),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActiveToolPanel(AppStrings s, ColorScheme cs, Color primary) {
+    switch (_activeTool) {
+      case 'crop':
+        return _buildCropPanel(s, cs, primary);
+      case 'weather':
+        return _buildWeatherPanel(s, cs);
+      case 'date':
+        return _buildDatePanel(s, cs);
+      case 'text':
+        return _buildTextPanel(s, cs, primary);
+      case 'stickers':
+        return _buildStickerPanel(s, cs);
+      case 'border':
+        return _buildBorderPanel(s, cs);
+      default:
+        return _buildFilterPanel(s, cs, primary);
+    }
+  }
+
+  Widget _buildFilterPanel(AppStrings s, ColorScheme cs, Color primary) {
+    final matrices = _filterPreviewMatrices;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 108,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: FrameImageFilter.values.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final f = FrameImageFilter.values[index];
+              final sel = _filter == f;
+              final matrix = matrices[index];
+              Widget thumb = Image.memory(
+                widget.imageBytes,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                filterQuality: FilterQuality.low,
+              );
+              if (matrix != null) {
+                thumb = ColorFiltered(colorFilter: matrix, child: thumb);
+              }
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _filter = f;
+                    _invalidateProcessCache();
+                  });
+                },
+                child: SizedBox(
+                  width: 76,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: sel ? _kEditorRed : cs.outlineVariant,
+                              width: sel ? 2.5 : 1,
+                            ),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: thumb,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _filterLabel(f, s),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: sel ? _kEditorRed : cs.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        _slider(
+          label: s.brightness,
+          value: _brightness,
+          onChanged: (v) {
+            setState(() {
+              _brightness = v;
+              _invalidateProcessCache();
+            });
+          },
+        ),
+        _slider(
+          label: s.contrast,
+          value: _contrast,
+          onChanged: (v) {
+            setState(() {
+              _contrast = v;
+              _invalidateProcessCache();
+            });
+          },
+        ),
+        _slider(
+          label: s.saturation,
+          value: _saturation,
+          onChanged: (v) {
+            setState(() {
+              _saturation = v;
+              _invalidateProcessCache();
+            });
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCropPanel(AppStrings s, ColorScheme cs, Color primary) {
+    final aspects = ['Free', 'Original', '1:1', '3:4', '4:3', '16:9', '9:16'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: aspects.map((a) {
+              final key = a.toLowerCase();
+              final sel = _cropAspect == key;
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Material(
+                  color: sel ? _kEditorRed : const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        _cropAspect = key;
+                        _cropPanX = 0;
+                        _cropPanY = 0;
+                        _invalidateProcessCache();
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      child: Text(
+                        a,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: sel ? Colors.white : const Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _iconAction(Icons.rotate_left, 'Left 90', () {
+                setState(() {
+                  _quarterTurns = (_quarterTurns + 3) % 4;
+                  _invalidateProcessCache();
+                });
+              }),
+              _iconAction(Icons.rotate_right, 'Right 90', () {
+                setState(() {
+                  _quarterTurns = (_quarterTurns + 1) % 4;
+                  _invalidateProcessCache();
+                });
+              }),
+              _iconAction(Icons.flip, 'Flip H', () {
+                setState(() {
+                  _flipH = !_flipH;
+                  _invalidateProcessCache();
+                });
+              }),
+              _iconAction(Icons.swap_vert, 'Flip V', () {
+                setState(() {
+                  _flipV = !_flipV;
+                  _invalidateProcessCache();
+                });
+              }),
+              _iconAction(Icons.restart_alt, 'Reset', _resetCropState),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Text('Zoom', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            Expanded(
+              child: Slider(
+                value: _cropZoom,
+                min: 100,
+                max: 300,
+                activeColor: _kEditorRed,
+                onChanged: (v) {
+                  setState(() => _cropZoom = v);
+                  _invalidateProcessCache();
+                },
+                onChangeEnd: (_) => _invalidateProcessCache(),
+              ),
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                '${_cropZoom.toInt()}%',
+                textAlign: TextAlign.end,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ),
+          ],
+        ),
+        Text(
+          'Drag the photo to reposition. Frame stays 3:4.',
+          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeatherPanel(AppStrings s, ColorScheme cs) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile.adaptive(
+          value: _oWeather,
+          onChanged: (v) => _onWeatherToggled(v),
+          title: const Text('Show weather'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          activeTrackColor: _kEditorRed,
+        ),
+        if (_weatherLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(minHeight: 2, color: _kEditorRed),
+          ),
+        if (_weatherLine.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              _weatherLine,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+          ),
+        TextFormField(
+          controller: _weatherTempController,
+          decoration: const InputDecoration(
+            labelText: 'Override temperature (optional)',
+            isDense: true,
+          ),
+          keyboardType: TextInputType.number,
+          onChanged: (v) {
+            if (!_oWeather) return;
+            final t = v.trim();
+            if (t.isNotEmpty) {
+              setState(() {
+                _weatherLine = '☀ $t°C';
+                _invalidateProcessCache();
+              });
+            } else {
+              unawaited(_loadRealWeather());
+            }
+          },
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Turns on location permission to load live weather for your device.',
+          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _onWeatherToggled(bool enabled) async {
+    if (!enabled) {
+      setState(() {
+        _oWeather = false;
+        _weatherLoading = false;
+        _invalidateProcessCache();
+      });
+      return;
+    }
+
+    setState(() {
+      _oWeather = true;
+      _weatherLoading = true;
+    });
+
+    final ok = await WeatherService.instance.ensureLocationPermission();
+    if (!mounted) return;
+    if (!ok) {
+      setState(() {
+        _oWeather = false;
+        _weatherLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Location permission is needed for live weather.'),
+        ),
+      );
+      return;
+    }
+
+    await _loadRealWeather();
+  }
+
+  Future<void> _loadRealWeather() async {
+    setState(() => _weatherLoading = true);
+    final snap = await WeatherService.instance.fetchCurrent(force: true);
+    if (!mounted) return;
+    if (snap == null) {
+      setState(() {
+        _weatherLoading = false;
+        _weatherLine = _weatherTempController.text.trim().isEmpty
+            ? '☀ --°C'
+            : '☀ ${_weatherTempController.text.trim()}°C';
+        _invalidateProcessCache();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          behavior: SnackBarBehavior.floating,
+          content: Text('Could not load weather. Check location and try again.'),
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _weatherLoading = false;
+      _weatherLine = snap.line;
+      _weatherTempController.text = '${snap.tempC}';
+      _invalidateProcessCache();
+    });
+  }
+
+  Widget _buildDatePanel(AppStrings s, ColorScheme cs) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile.adaptive(
+          value: _oDate,
+          onChanged: (v) {
+            setState(() {
+              _oDate = v;
+              _invalidateProcessCache();
+            });
+          },
+          title: const Text('Show date/time'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          activeTrackColor: _kEditorRed,
+        ),
+        Text(
+          'When on, the current date and time are added at the bottom of the frame.',
+          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTextPanel(AppStrings s, ColorScheme cs, Color primary) {
+    const palette = [
+      Colors.black,
+      Colors.white,
+      Colors.yellow,
+      Colors.red,
+      Colors.blue,
+      Colors.green,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _textController,
+                maxLength: 240,
+                minLines: 1,
+                maxLines: 3,
+                style: const TextStyle(fontSize: 15),
+                decoration: const InputDecoration(
+                  hintText: 'Happy BirthDay',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: _kEditorRed,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
+              onPressed: () {
+                final draft = _textController.text.trim();
+                if (draft.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      behavior: SnackBarBehavior.floating,
+                      content: Text('Type something first'),
+                    ),
+                  );
+                  return;
+                }
+                setState(() {
+                  _overlayText.text = draft;
+                  _textController.text = draft;
+                  _invalidateProcessCache();
+                });
+              },
+              child: const Text('Add Text', style: TextStyle(fontSize: 13)),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            Text('Size ${_textSize.toInt()}px', style: const TextStyle(fontSize: 12)),
+            Expanded(
+              child: Slider(
+                value: _textSize,
+                min: 12,
+                max: 120,
+                activeColor: _kEditorRed,
+                onChanged: (v) {
+                  setState(() => _textSize = v);
+                  _invalidateProcessCache();
+                },
+                onChangeEnd: (_) => _invalidateProcessCache(),
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            ...List.generate(6, (i) {
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _textColor = i);
+                  _invalidateProcessCache();
+                },
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: palette[i],
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: _textColor == i ? _kEditorRed : const Color(0xFFDADDE5),
+                      width: _textColor == i ? 2.5 : 1,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            ChoiceChip(
+              label: const Text('Bold'),
+              selected: _textBold,
+              onSelected: (v) => setState(() => _textBold = v),
+              selectedColor: _kEditorRed,
+              labelStyle: TextStyle(color: _textBold ? Colors.white : cs.onSurface),
+              showCheckmark: false,
+            ),
+            const SizedBox(width: 8),
+            _iconAction(Icons.rotate_left, '', () => setState(() => _textRotation -= 15)),
+            _iconAction(Icons.rotate_right, '', () => setState(() => _textRotation += 15)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Drag text on the photo to move it.',
+          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStickerPanel(AppStrings s, ColorScheme cs) {
+    const stickers = ['♥', '★', '→', '◖', '●', '▲', '✚', '☀'];
+    const labels = ['Heart', 'Star', 'Arrow', 'Bubble', 'Circle', 'Triangle', 'Holiday', 'Sun'];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: List.generate(8, (i) {
+            final selected = _selectedSticker == stickers[i];
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedSticker = stickers[i];
+                  // Default slightly right of center.
+                  if (_stickerAlignX.abs() < 0.05 && _stickerAlignY.abs() < 0.05) {
+                    _stickerAlignX = 0.35;
+                    _stickerAlignY = -0.15;
+                  }
+                  _invalidateProcessCache();
+                });
+              },
+              child: Container(
+                width: 72,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                  border: selected ? Border.all(color: _kEditorRed, width: 2) : null,
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    stickers[i] == '♥'
+                        ? const Icon(Icons.favorite, color: Color(0xFFE5252A), size: 22)
+                        : Text(stickers[i], style: const TextStyle(fontSize: 20)),
+                    Text(labels[i], style: const TextStyle(fontSize: 9)),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            const Text('Size', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            Expanded(
+              child: Slider(
+                value: _stickerSize,
+                min: 16,
+                max: 64,
+                activeColor: _kEditorRed,
+                onChanged: (v) {
+                  setState(() => _stickerSize = v);
+                  _invalidateProcessCache();
+                },
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            _iconAction(Icons.rotate_left, '', () {
+              setState(() => _stickerRotation -= 15);
+              _invalidateProcessCache();
+            }),
+            _iconAction(Icons.rotate_right, '', () {
+              setState(() => _stickerRotation += 15);
+              _invalidateProcessCache();
+            }),
+            _iconAction(Icons.restart_alt, 'Reset', () {
+              setState(() {
+                _stickerAlignX = 0.35;
+                _stickerAlignY = -0.15;
+                _stickerRotation = 0;
+                _stickerSize = 28;
+                _invalidateProcessCache();
+              });
+            }),
+          ],
+        ),
+        Text(
+          'Drag on the photo to move the sticker.',
+          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBorderPanel(AppStrings s, ColorScheme cs) {
+    const borders = ['None', 'Thin black', 'Thick white', 'Polaroid', 'Film strip', 'Rounded', 'Double'];
+    const keys = ['none', 'thinBlack', 'thickWhite', 'polaroid', 'film', 'rounded', 'double'];
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: List.generate(7, (i) {
+        final selected = _borderStyle == keys[i];
+        return GestureDetector(
+          onTap: () => setState(() => _borderStyle = keys[i]),
+          child: Container(
+            width: 88,
+            height: 44,
+            decoration: BoxDecoration(
+              color: selected ? _kEditorRed : cs.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Text(
+                borders[i],
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? Colors.white : cs.onSurface,
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _iconAction(IconData icon, String label, VoidCallback onTap) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18),
+              if (label.isNotEmpty) ...[
+                const SizedBox(width: 2),
+                Text(label, style: const TextStyle(fontSize: 11)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Show six-color e-ink preview in a fullscreen dialog.
+  Future<void> _preview() async {
+    if (_decoded == null) return;
+    final bytes = await compute(isolateFrameEinkPreviewJpeg, _previewArgs());
+    if (!mounted || bytes == null) return;
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black87,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.memory(bytes, fit: BoxFit.contain),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
+              child: Text(
+                'Preview uses black, white, yellow, red, blue, and green only.',
+                style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Close', style: TextStyle(color: Colors.white)),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _resetCropState() {
+    setState(() {
+      _cropAspect = '3:4';
+      _cropZoom = 100;
+      _flipH = false;
+      _flipV = false;
+      _cropPanX = 0;
+      _cropPanY = 0;
+      _quarterTurns = 0;
+      _previewTransform.value = Matrix4.identity();
+      _invalidateProcessCache();
+    });
+  }
+
+  Widget _buildBottomBar(
+    BuildContext context,
+    AppStrings s,
+    ColorScheme cs,
+    Color primary,
+    bool debugOn,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        border: Border(top: BorderSide(color: cs.outlineVariant)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_uploading) ...[
+                if (_castProgressIndeterminate || _castProgress != null)
+                  LinearProgressIndicator(
+                    value: _castProgressIndeterminate ? null : _castProgress,
+                    minHeight: 3,
+                    color: _kEditorRed,
+                  ),
+                if (_status != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 6),
+                    child: Text(
+                      _status!,
+                      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ] else if (_paired != null && !_paired!.canUploadToServer)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    s.pairingNeedsApiUrl,
+                    style: TextStyle(fontSize: 11, color: cs.error),
+                  ),
+                ),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: SizedBox(
+                      height: 54,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _kEditorRed,
+                          side: const BorderSide(color: _kEditorRed),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: _uploading ? null : _showFastRealPreview,
+                        child: const Text(
+                          'E-ink Preview',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 6,
+                    child: SizedBox(
+                      height: 54,
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _kEditorRed,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        onPressed: _uploading ? null : _send,
+                        child: _uploading
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'Send',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Opens immediately (uses warm cache when ready); refreshes bake in background.
+  void _showFastRealPreview() {
+    final args = _previewArgs();
+    final cached = _previewBytes;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => _FastEinkPreviewDialog(
+        initialBytes: cached,
+        fallbackBytes: widget.imageBytes,
+        load: () => compute(isolateFastPreviewJpeg, args),
+      ),
+    );
+  }
+}
+
+class _FastEinkPreviewDialog extends StatefulWidget {
+  const _FastEinkPreviewDialog({
+    required this.initialBytes,
+    required this.fallbackBytes,
+    required this.load,
+  });
+
+  final Uint8List? initialBytes;
+  final Uint8List fallbackBytes;
+  final Future<Uint8List?> Function() load;
+
+  @override
+  State<_FastEinkPreviewDialog> createState() => _FastEinkPreviewDialogState();
+}
+
+class _FastEinkPreviewDialogState extends State<_FastEinkPreviewDialog> {
+  Uint8List? _bytes;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bytes = widget.initialBytes;
+    if (_bytes == null) {
+      _loading = true;
+    }
+    unawaited(_refresh());
+  }
+
+  Future<void> _refresh() async {
+    final next = await widget.load();
+    if (!mounted) return;
+    if (next == null) {
+      setState(() {
+        _bytes ??= widget.fallbackBytes;
+        _loading = false;
+      });
+      return;
+    }
+    setState(() {
+      _bytes = next;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: _bytes != null
+                  ? Image.memory(_bytes!, fit: BoxFit.contain)
+                  : const SizedBox(
+                      height: 220,
+                      child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+                    ),
+            ),
+          ),
+          if (_loading && _bytes != null)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 4),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: Text(
+              'Preview of your edited photo.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 }

@@ -683,20 +683,6 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     if (r is AuthApiFailure) _showAuthMessage(_failureMessage(r, s));
   }
 
-  Future<void> _quickTestEnter() async {
-    if (_busy) return;
-    final s = AppStrings.of(context);
-    setState(() => _busy = true);
-    final reg = await _auth.testLogin();
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (reg is AuthApiSuccess) {
-      await _finishAuthSession(reg);
-      return;
-    }
-    if (reg is AuthApiFailure) _showAuthMessage(_failureMessage(reg, s));
-  }
-
   Future<void> _onAppleTap() async {
     if (_busy) return;
     final s = AppStrings.of(context);
@@ -1191,35 +1177,6 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w800,
                                         fontSize: 16,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  height: 48,
-                                  child: OutlinedButton.icon(
-                                    onPressed: _busy ? null : _quickTestEnter,
-                                    icon: _busy
-                                        ? SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              color: cs.primary,
-                                            ),
-                                          )
-                                        : Icon(
-                                            Icons.science_outlined,
-                                            size: 18,
-                                            color: cs.primary,
-                                          ),
-                                    label: Text(
-                                      _busy
-                                          ? s.authBusyLabel
-                                          : s.authQuickTestButton,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ),

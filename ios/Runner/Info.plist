@@ -73,7 +73,7 @@
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Used to configure your InkJoy frame over Bluetooth.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>MyFrame uses location permission during setup so iPhone can complete nearby frame discovery and Wi-Fi provisioning.</string>
+	<string>MyFrame uses your location to show local weather on photos and to discover nearby frames during setup.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>MyFrame needs local network access to find and configure your frame on Wi-Fi.</string>
 	<key>UIBackgroundModes</key>

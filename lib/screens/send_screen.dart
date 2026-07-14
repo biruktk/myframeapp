@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:share_plus/share_plus.dart';
+import '../utils/platform_share.dart';
 
 import '../l10n/app_strings.dart';
 import '../settings/app_settings.dart';
@@ -22,6 +22,7 @@ import '../services/device_store.dart';
 import '../services/frame_guest_invite_service.dart';
 import '../services/frame_recovery_service.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
+import '../widgets/frame_picker_sheet.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
@@ -166,8 +167,9 @@ class _SendScreenState extends State<SendScreen> {
 
     final frameName = paired.frameName?.trim();
     final label = frameName != null && frameName.isNotEmpty ? frameName : 'my frame';
-    await Share.share(
-      'Send a photo to $label — open this link, pick a photo, and it goes to the frame:\n${invite.inviteUrl}',
+    await platformShareText(
+      context,
+      text: 'Send a photo to $label — open this link, pick a photo, and it goes to the frame:\n${invite.inviteUrl}',
       subject: 'Upload a photo to $label',
     );
     AppDiagLog.log('[ShareLink] shared ${invite.inviteUrl}');
@@ -383,6 +385,14 @@ class _SendScreenState extends State<SendScreen> {
       return;
     }
     if (!context.mounted) return;
+
+    await DeviceStore.instance.load();
+    final frames = DeviceStore.instance.pairedFrames;
+    if (frames.length > 1) {
+      final picked = await showFramePickerSheet(context, frames: frames);
+      if (picked == null || !context.mounted) return;
+      await DeviceStore.instance.setActiveFrameDeviceId(picked.deviceId);
+    }
 
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
     // Copy out of image_picker /tmp first, then read durable copies (iOS-safe).

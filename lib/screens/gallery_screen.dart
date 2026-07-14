@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/gallery_send_flow.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/user_gallery_cloud_service.dart';
@@ -146,6 +147,7 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
               await PersonalGalleryStore.instance.removeAt(i);
               await _reload();
             },
+            onSendToFrame: (path) => sendGalleryPhotoToFrame(context, path: path),
           ),
           _AlbumsGrid(
             albums: albums,
@@ -303,11 +305,25 @@ class _PersonalGrid extends StatelessWidget {
     required this.paths,
     required this.onAdd,
     required this.onRemove,
+    required this.onSendToFrame,
   });
 
   final List<String> paths;
   final VoidCallback onAdd;
   final void Function(int index) onRemove;
+  final Future<void> Function(String path) onSendToFrame;
+
+  Future<void> _openViewer(BuildContext context, int initialIndex) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (ctx) => _PersonalPhotoViewerScreen(
+          paths: paths,
+          initialIndex: initialIndex,
+          onSendToFrame: onSendToFrame,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -346,39 +362,128 @@ class _PersonalGrid extends StatelessWidget {
                       color: cs.surface,
                       borderRadius: BorderRadius.circular(10),
                       clipBehavior: Clip.antiAlias,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.file(
-                            File(path),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => ColoredBox(
-                              color: cs.surfaceContainerHighest,
-                              child: Icon(Icons.broken_image_outlined, color: cs.error),
-                            ),
-                          ),
-                          Positioned(
-                            top: 4,
-                            right: 4,
-                            child: InkWell(
-                              onTap: () => onRemove(i),
-                              child: Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: Colors.black54,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.close, color: Colors.white, size: 16),
+                      child: InkWell(
+                        onTap: () => _openViewer(context, i),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Image.file(
+                              File(path),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => ColoredBox(
+                                color: cs.surfaceContainerHighest,
+                                child: Icon(Icons.broken_image_outlined, color: cs.error),
                               ),
                             ),
-                          ),
-                        ],
+                            Positioned(
+                              top: 4,
+                              right: 4,
+                              child: InkWell(
+                                onTap: () => onRemove(i),
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.close, color: Colors.white, size: 16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _PersonalPhotoViewerScreen extends StatefulWidget {
+  const _PersonalPhotoViewerScreen({
+    required this.paths,
+    required this.initialIndex,
+    required this.onSendToFrame,
+  });
+
+  final List<String> paths;
+  final int initialIndex;
+  final Future<void> Function(String path) onSendToFrame;
+
+  @override
+  State<_PersonalPhotoViewerScreen> createState() => _PersonalPhotoViewerScreenState();
+}
+
+class _PersonalPhotoViewerScreenState extends State<_PersonalPhotoViewerScreen> {
+  late PageController _pageController;
+  late int _index;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = widget.initialIndex.clamp(0, widget.paths.isEmpty ? 0 : widget.paths.length - 1);
+    _pageController = PageController(initialPage: _index);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCurrent() async {
+    if (widget.paths.isEmpty) return;
+    final path = widget.paths[_index];
+    await widget.onSendToFrame(path);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final paths = widget.paths;
+    if (paths.isEmpty) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+        body: const SizedBox.shrink(),
+      );
+    }
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text('${_index + 1} / ${paths.length}'),
+        actions: [
+          IconButton(
+            tooltip: s.sendToFrame,
+            icon: const Icon(Icons.ios_share_outlined),
+            onPressed: _sendCurrent,
+          ),
+        ],
+      ),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: paths.length,
+        onPageChanged: (i) => setState(() => _index = i),
+        itemBuilder: (context, i) {
+          final p = paths[i];
+          final ok = File(p).existsSync();
+          return Center(
+            child: ok
+                ? InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4,
+                    child: Image.file(File(p), fit: BoxFit.contain),
+                  )
+                : Icon(Icons.broken_image_outlined, color: cs.outline, size: 48),
+          );
+        },
+      ),
     );
   }
 }
