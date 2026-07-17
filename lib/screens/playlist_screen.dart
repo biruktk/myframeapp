@@ -138,9 +138,6 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       10 => '10 min',
       30 => '30 min',
       60 => '1 h',
-      240 => '4 h',
-      480 => '8 h',
-      1440 => '24 h',
       _ => '$minutes min',
     };
   }

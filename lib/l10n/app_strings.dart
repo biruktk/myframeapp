@@ -5882,4 +5882,418 @@ class AppStrings {
       ),
     ),
   ];
+
+  // ============================================================================
+  // Upload Progress Messages (for frame_cloud_cast_service.dart)
+  // ============================================================================
+
+  String get uploadPreparingPhoto => _l6(
+        en: 'Preparing photo…',
+        zh: '准备照片中…',
+        es: 'Preparando foto…',
+        fr: 'Préparation de la photo…',
+        de: 'Foto wird vorbereitet…',
+        ja: '写真を準備中…',
+      );
+
+  String get uploadConnectingFrame => _l6(
+        en: 'Connecting to your frame…',
+        zh: '正在连接相框…',
+        es: 'Conectando a tu marco…',
+        fr: 'Connexion à votre cadre…',
+        de: 'Verbindung zum Rahmen…',
+        ja: 'フレームに接続中…',
+      );
+
+  String get uploadWakingFrame => _l6(
+        en: 'Waking frame MQTT session…',
+        zh: '唤醒相框 MQTT 会话…',
+        es: 'Despertando sesión MQTT…',
+        fr: 'Réveil de la session MQTT…',
+        de: 'MQTT-Sitzung wird aufgeweckt…',
+        ja: 'MQTT セッションを起動中…',
+      );
+
+  String get uploadWakingFrameVia => _l6(
+        en: 'Waking frame via MQTT…',
+        zh: '通过 MQTT 唤醒相框…',
+        es: 'Despertando marco vía MQTT…',
+        fr: 'Réveil via MQTT…',
+        de: 'Aufwecken über MQTT…',
+        ja: 'MQTT 経由で起動中…',
+      );
+
+  String get uploadWakingConnection => _l6(
+        en: 'Waking frame connection…',
+        zh: '唤醒相框连接…',
+        es: 'Despertando conexión…',
+        fr: 'Réveil de la connexion…',
+        de: 'Verbindung wird aufgeweckt…',
+        ja: '接続を起動中…',
+      );
+
+  String get uploadPhotoUploading => _l6(
+        en: 'Uploading photo to server…',
+        zh: '上传照片到服务器…',
+        es: 'Subiendo foto al servidor…',
+        fr: 'Téléchargement vers le serveur…',
+        de: 'Foto wird hochgeladen…',
+        ja: 'サーバーにアップロード中…',
+      );
+
+  String get uploadPhotoOnline => _l6(
+        en: 'Uploading photo (frame is online)…',
+        zh: '上传照片（相框在线）…',
+        es: 'Subiendo foto (marco en línea)…',
+        fr: 'Téléchargement (cadre en ligne)…',
+        de: 'Upload (Rahmen ist online)…',
+        ja: 'アップロード中（フレームはオンライン）…',
+      );
+
+  String get uploadRetrying => _l6(
+        en: 'Retrying upload (alternate frame ID)…',
+        zh: '重试上传（备用相框 ID）…',
+        es: 'Reintentando (ID alternativo)…',
+        fr: 'Nouvelle tentative (ID alternatif)…',
+        de: 'Wiederholung (alternative ID)…',
+        ja: '再試行中（代替 ID）…',
+      );
+
+  String get uploadFrameNotConfirmed => _l6(
+        en: 'Frame did not confirm MQTT — waking via HTTP and retrying…',
+        zh: '相框未确认 MQTT — 通过 HTTP 唤醒并重试…',
+        es: 'Marco no confirmó MQTT — despertando vía HTTP…',
+        fr: 'Cadre non confirmé — réveil HTTP…',
+        de: 'Rahmen nicht bestätigt — HTTP-Aufweckung…',
+        ja: 'フレームが MQTT を確認しませんでした — HTTP 経由で再試行…',
+      );
+
+  String get uploadFrameOffline => _l6(
+        en: 'Frame offline — waking via HTTP and retrying…',
+        zh: '相框离线 — 通过 HTTP 唤醒并重试…',
+        es: 'Marco sin conexión — despertando vía HTTP…',
+        fr: 'Cadre hors ligne — réveil HTTP…',
+        de: 'Rahmen offline — HTTP-Aufweckung…',
+        ja: 'フレームがオフライン — HTTP 経由で再試行…',
+      );
+
+  String get uploadSendingAgain => _l6(
+        en: 'Sending photo again…',
+        zh: '再次发送照片…',
+        es: 'Enviando foto nuevamente…',
+        fr: 'Renvoi de la photo…',
+        de: 'Foto wird erneut gesendet…',
+        ja: '写真を再送信中…',
+      );
+
+  String get uploadWaitingFrame => _l6(
+        en: 'Photo sent · waiting for frame to display…',
+        zh: '照片已发送 · 等待相框显示…',
+        es: 'Foto enviada · esperando visualización…',
+        fr: 'Photo envoyée · attente affichage…',
+        de: 'Foto gesendet · warte auf Anzeige…',
+        ja: '写真を送信しました · 表示待ち…',
+      );
+
+  String uploadWaitingSeconds(int seconds) => _l6(
+        en: 'Frame is receiving your photo… (${seconds}s)',
+        zh: '相框正在接收照片… (${seconds}秒)',
+        es: 'Marco recibiendo foto… (${seconds}s)',
+        fr: 'Cadre reçoit la photo… (${seconds}s)',
+        de: 'Rahmen empfängt Foto… (${seconds}s)',
+        ja: 'フレームが写真を受信中… (${seconds}秒)',
+      );
+
+  String uploadUpdatingDisplay(int seconds) => _l6(
+        en: 'Updating frame display… (${seconds}s)',
+        zh: '更新相框显示… (${seconds}秒)',
+        es: 'Actualizando marco… (${seconds}s)',
+        fr: 'Mise à jour du cadre… (${seconds}s)',
+        de: 'Rahmen wird aktualisiert… (${seconds}s)',
+        ja: 'フレームを更新中… (${seconds}秒)',
+      );
+
+  String uploadEinkRefreshing(int seconds) => _l6(
+        en: 'E‑ink is still refreshing — please wait… (${seconds}s)',
+        zh: '电子墨水屏仍在刷新 — 请稍候… (${seconds}秒)',
+        es: 'E-ink refrescando — espere… (${seconds}s)',
+        fr: 'E-ink actualise — patientez… (${seconds}s)',
+        de: 'E-Ink aktualisiert — bitte warten… (${seconds}s)',
+        ja: 'E-ink 更新中 — お待ちください… (${seconds}秒)',
+      );
+
+  String get uploadFrameDownloadStalled => _l6(
+        en: 'Frame download stalled — resending…',
+        zh: '相框下载停滞 — 重新发送…',
+        es: 'Descarga detenida — reenviando…',
+        fr: 'Téléchargement bloqué — renvoi…',
+        de: 'Download gestoppt — erneut senden…',
+        ja: 'ダウンロードが停止 — 再送信中…',
+      );
+
+  String get uploadDownloadFailed => _l6(
+        en: 'Download failed — retrying…',
+        zh: '下载失败 — 重试中…',
+        es: 'Descarga falló — reintentando…',
+        fr: 'Échec téléchargement — nouvelle tentative…',
+        de: 'Download fehlgeschlagen — Wiederholung…',
+        ja: 'ダウンロード失敗 — 再試行中…',
+      );
+
+  String get uploadFrameDownloadComplete => _l6(
+        en: 'Frame downloaded photo — refreshing display…',
+        zh: '相框已下载照片 — 刷新显示…',
+        es: 'Foto descargada — refrescando…',
+        fr: 'Photo téléchargée — rafraîchissement…',
+        de: 'Foto heruntergeladen — Aktualisierung…',
+        ja: '写真をダウンロード完了 — 表示を更新中…',
+      );
+
+  String get uploadEinkNote => _l6(
+        en: 'E‑ink display may take up to a minute to refresh.',
+        zh: '电子墨水屏刷新可能需要一分钟。',
+        es: 'E-ink puede tardar hasta un minuto.',
+        fr: 'E-ink peut prendre jusqu\'à une minute.',
+        de: 'E-Ink kann bis zu einer Minute dauern.',
+        ja: 'E-ink ディスプレイの更新には最大 1 分かかる場合があります。',
+      );
+
+  String get uploadStillRefreshing => _l6(
+        en: 'Still updating the frame (e‑ink can take up to a minute)…',
+        zh: '仍在更新相框（电子墨水可能需要一分钟）…',
+        es: 'Actualizando marco (e-ink hasta un minuto)…',
+        fr: 'Mise à jour en cours (e-ink jusqu\'à une minute)…',
+        de: 'Aktualisierung läuft (E-Ink bis zu einer Minute)…',
+        ja: 'フレームを更新中（E-ink は最大 1 分かかります）…',
+      );
+
+  // Error messages
+  String get uploadErrorNoFrameId => _l6(
+        en: 'No frame display ID saved. Scan the pairing QR on the frame once, then try again.',
+        zh: '未保存相框显示 ID。请扫描相框上的配对二维码，然后重试。',
+        es: 'ID de marco no guardado. Escanee el código QR de emparejamiento.',
+        fr: 'ID d\'affichage non enregistré. Scannez le QR d\'appairage.',
+        de: 'Keine Display-ID gespeichert. QR-Code scannen und erneut versuchen.',
+        ja: 'フレーム表示 ID が保存されていません。ペアリング QR コードをスキャンしてください。',
+      );
+
+  String get uploadErrorMissingFrameId => _l6(
+        en: 'Pairing is missing the frame display ID. Scan the frame QR once, then try again.',
+        zh: '配对缺少相框显示 ID。请扫描相框二维码，然后重试。',
+        es: 'Falta ID de marco. Escanee el código QR.',
+        fr: 'ID manquant. Scannez le QR.',
+        de: 'ID fehlt. QR-Code scannen.',
+        ja: 'フレーム ID がありません。QR コードをスキャンしてください。',
+      );
+
+  // ============================================================================
+  // Other Missing UI Strings
+  // ============================================================================
+
+  String get logCopied => _l6(
+        en: 'Log copied',
+        zh: '日志已复制',
+        es: 'Registro copiado',
+        fr: 'Journal copié',
+        de: 'Protokoll kopiert',
+        ja: 'ログをコピーしました',
+      );
+
+  String get copyAction => _l6(
+        en: 'Copy',
+        zh: '复制',
+        es: 'Copiar',
+        fr: 'Copier',
+        de: 'Kopieren',
+        ja: 'コピー',
+      );
+
+  String get clearAction => _l6(
+        en: 'Clear',
+        zh: '清除',
+        es: 'Borrar',
+        fr: 'Effacer',
+        de: 'Löschen',
+        ja: 'クリア',
+      );
+
+  String get closeAction => _l6(
+        en: 'Close',
+        zh: '关闭',
+        es: 'Cerrar',
+        fr: 'Fermer',
+        de: 'Schließen',
+        ja: '閉じる',
+      );
+
+  String get tryAgainAction => _l6(
+        en: 'Try again',
+        zh: '重试',
+        es: 'Intentar de nuevo',
+        fr: 'Réessayer',
+        de: 'Erneut versuchen',
+        ja: '再試行',
+      );
+
+  String get retryAction => _l6(
+        en: 'Retry',
+        zh: '重试',
+        es: 'Reintentar',
+        fr: 'Réessayer',
+        de: 'Wiederholen',
+        ja: 'リトライ',
+      );
+
+  String get continueAction => _l6(
+        en: 'Continue',
+        zh: '继续',
+        es: 'Continuar',
+        fr: 'Continuer',
+        de: 'Fortfahren',
+        ja: '続ける',
+      );
+
+  String get addTextButton => _l6(
+        en: 'Add Text',
+        zh: '添加文字',
+        es: 'Añadir texto',
+        fr: 'Ajouter du texte',
+        de: 'Text hinzufügen',
+        ja: 'テキストを追加',
+      );
+
+  String get zoomLabel => _l6(
+        en: 'Zoom',
+        zh: '缩放',
+        es: 'Zoom',
+        fr: 'Zoom',
+        de: 'Zoom',
+        ja: 'ズーム',
+      );
+
+  String get sizeLabel => _l6(
+        en: 'Size',
+        zh: '大小',
+        es: 'Tamaño',
+        fr: 'Taille',
+        de: 'Größe',
+        ja: 'サイズ',
+      );
+
+  String textSizePixels(int size) => _l6(
+        en: 'Size ${size}px',
+        zh: '大小 ${size}px',
+        es: 'Tamaño ${size}px',
+        fr: 'Taille ${size}px',
+        de: 'Größe ${size}px',
+        ja: 'サイズ ${size}px',
+      );
+
+  String get boldLabel => _l6(
+        en: 'Bold',
+        zh: '粗体',
+        es: 'Negrita',
+        fr: 'Gras',
+        de: 'Fett',
+        ja: '太字',
+      );
+
+  String get showWeatherLabel => _l6(
+        en: 'Show weather',
+        zh: '显示天气',
+        es: 'Mostrar clima',
+        fr: 'Afficher météo',
+        de: 'Wetter anzeigen',
+        ja: '天気を表示',
+      );
+
+  String get showDateTimeLabel => _l6(
+        en: 'Show date/time',
+        zh: '显示日期/时间',
+        es: 'Mostrar fecha/hora',
+        fr: 'Afficher date/heure',
+        de: 'Datum/Uhrzeit anzeigen',
+        ja: '日付/時刻を表示',
+      );
+
+  String get locationPermissionNeeded => _l6(
+        en: 'Location permission is needed for live weather.',
+        zh: '需要位置权限才能显示实时天气。',
+        es: 'Se necesita permiso de ubicación para el clima.',
+        fr: 'Permission de localisation nécessaire pour la météo.',
+        de: 'Standortberechtigung für Wetter erforderlich.',
+        ja: 'リアルタイム天気には位置情報の許可が必要です。',
+      );
+
+  String get weatherLoadFailed => _l6(
+        en: 'Could not load weather. Check location and try again.',
+        zh: '无法加载天气。请检查位置并重试。',
+        es: 'No se pudo cargar el clima. Verifique la ubicación.',
+        fr: 'Échec du chargement de la météo. Vérifiez la localisation.',
+        de: 'Wetter konnte nicht geladen werden. Standort prüfen.',
+        ja: '天気を読み込めませんでした。位置情報を確認してください。',
+      );
+
+  String get typeSomethingFirst => _l6(
+        en: 'Type something first',
+        zh: '请先输入内容',
+        es: 'Escribe algo primero',
+        fr: 'Écrivez quelque chose d\'abord',
+        de: 'Geben Sie zuerst etwas ein',
+        ja: '最初に何か入力してください',
+      );
+
+  String get frameNotConnected => _l6(
+        en: 'Frame is not connected. Connect your frame now.',
+        zh: '相框未连接。请立即连接相框。',
+        es: 'Marco no conectado. Conéctelo ahora.',
+        fr: 'Cadre non connecté. Connectez-le maintenant.',
+        de: 'Rahmen nicht verbunden. Jetzt verbinden.',
+        ja: 'フレームが接続されていません。今すぐ接続してください。',
+      );
+
+  String get preparingUploadLink => _l6(
+        en: 'Preparing upload link…',
+        zh: '准备上传链接…',
+        es: 'Preparando enlace de carga…',
+        fr: 'Préparation du lien de téléchargement…',
+        de: 'Upload-Link wird vorbereitet…',
+        ja: 'アップロードリンクを準備中…',
+      );
+
+  String get uploadLinkFailed => _l6(
+        en: 'Could not create upload link. Try again.',
+        zh: '无法创建上传链接。请重试。',
+        es: 'No se pudo crear el enlace. Inténtelo de nuevo.',
+        fr: 'Impossible de créer le lien. Réessayez.',
+        de: 'Link konnte nicht erstellt werden. Erneut versuchen.',
+        ja: 'アップロードリンクを作成できませんでした。再試行してください。',
+      );
+
+  String get photosPermissionNeeded => _l6(
+        en: 'Allow Photos/Videos permission to pick images.',
+        zh: '允许照片/视频权限以选择图片。',
+        es: 'Permita acceso a fotos/videos para elegir imágenes.',
+        fr: 'Autorisez l\'accès aux photos/vidéos pour choisir des images.',
+        de: 'Erlauben Sie Zugriff auf Fotos/Videos, um Bilder auszuwählen.',
+        ja: '画像を選択するには写真/ビデオの許可を許可してください。',
+      );
+
+  String get duplicatePhotosError => _l6(
+        en: 'Playlist has duplicate photos — pick different images for each slot.',
+        zh: '播放列表包含重复照片 — 为每个位置选择不同的图片。',
+        es: 'La lista tiene fotos duplicadas — elija imágenes diferentes.',
+        fr: 'Liste contient des photos en double — choisissez des images différentes.',
+        de: 'Playlist enthält doppelte Fotos — wählen Sie verschiedene Bilder.',
+        ja: 'プレイリストに重複した写真があります — 各スロットに異なる画像を選択してください。',
+      );
+
+  String get saveFrameProfileFailed => _l6(
+        en: 'Could not save frame profile. Try again.',
+        zh: '无法保存相框配置。请重试。',
+        es: 'No se pudo guardar el perfil del marco. Inténtelo de nuevo.',
+        fr: 'Impossible d\'enregistrer le profil du cadre. Réessayez.',
+        de: 'Rahmenprofil konnte nicht gespeichert werden. Erneut versuchen.',
+        ja: 'フレームプロファイルを保存できませんでした。再試行してください。',
+      );
 }

@@ -11,23 +11,31 @@ class SlideshowRemoteApi {
   final String _origin;
 
   /// POST `/api/frames/:mac/slideshow` — [macSlug] hex without separators or encoded path segment.
+  /// Sends Bearer token if available, else falls back to x-pairing-token.
   Future<void> publish({
-    required String bearerToken,
+    String? bearerToken,
+    String? pairingToken,
     required String macSlug,
     required List<String> imageIds,
     required int intervalMinutes,
   }) async {
-    final t = bearerToken.trim();
-    if (t.isEmpty || imageIds.isEmpty) return;
+    if (imageIds.isEmpty) return;
     final encoded = Uri.encodeComponent(macSlug);
     final uri = Uri.parse('$_origin/api/frames/$encoded/slideshow');
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final bt = bearerToken?.trim() ?? '';
+    if (bt.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $bt';
+    } else {
+      final pt = pairingToken?.trim() ?? '';
+      if (pt.isNotEmpty) headers['x-pairing-token'] = pt;
+    }
     final res = await http.post(
       uri,
-      headers: {
-        'Authorization': 'Bearer $t',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
+      headers: headers,
       body: jsonEncode({'imageIds': imageIds, 'intervalMinutes': intervalMinutes}),
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {

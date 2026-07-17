@@ -41,7 +41,7 @@ class SlideshowBatchScreen extends StatefulWidget {
 }
 
 class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
-  static const _intervals = [5, 10, 30];
+  static const _intervals = [5, 10, 30, 60];
   int _intervalMinutes = 10;
   var _busy = false;
   final _api = FrameApiClient();
@@ -54,6 +54,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
       5 => '5 min',
       10 => '10 min',
       30 => '30 min',
+      60 => '1 h',
       _ => '$m min',
     };
   }
@@ -119,6 +120,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
     }
     final total = sourcePaths.length;
     final token = AppSettingsScope.of(context).authToken.trim();
+    final pairingToken = pFrame.resolvedPairingToken;
 
     try {
       for (var i = 0; i < total; i++) {
@@ -169,7 +171,9 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           ids.add(id);
         }
         if (i + 1 < total) {
-          await Future<void>.delayed(const Duration(seconds: 2));
+          // Increased delay to ensure frame has time to process and display each photo
+          // E-ink refresh can take up to 60 seconds, wait 5s between uploads
+          await Future<void>.delayed(const Duration(seconds: 5));
         }
       }
 
@@ -193,31 +197,39 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           imageIds: ids,
           intervalMinutes: _intervalMinutes,
         );
-        if (token.isNotEmpty) {
-          try {
-            await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
-              bearerToken: token,
-              macSlug: frameBleMacSlug(pFrame),
-              imageIds: ids,
-              intervalMinutes: _intervalMinutes,
+        try {
+          await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+            bearerToken: token.isNotEmpty ? token : null,
+            pairingToken: pairingToken,
+            macSlug: frameBleMacSlug(pFrame),
+            imageIds: ids,
+            intervalMinutes: _intervalMinutes,
+          );
+        } on SlideshowPublishException catch (e) {
+          AppDiagLog.verbose(
+            '[Slideshow] VPS publish failed ${e.statusCode}: ${e.body}',
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Playlist saved locally but server sync failed (${e.statusCode}). The frame may not auto-advance.',
+                ),
+              ),
             );
-          } on SlideshowPublishException catch (e) {
-            AppDiagLog.verbose(
-              '[Slideshow] VPS publish failed ${e.statusCode}: ${e.body}',
+          }
+        } catch (e) {
+          AppDiagLog.verbose('[Slideshow] VPS publish: $e');
+        }
+        final albumId = widget.albumId?.trim();
+        if (albumId != null && albumId.isNotEmpty) {
+          try {
+            await UserPlaylistRemoteApi(bearerToken: token).updatePlaylistPhotos(
+              playlistId: albumId,
+              photoIds: ids,
             );
           } catch (e) {
-            AppDiagLog.verbose('[Slideshow] VPS publish: $e');
-          }
-          final albumId = widget.albumId?.trim();
-          if (albumId != null && albumId.isNotEmpty) {
-            try {
-              await UserPlaylistRemoteApi(bearerToken: token).updatePlaylistPhotos(
-                playlistId: albumId,
-                photoIds: ids,
-              );
-            } catch (e) {
-              AppDiagLog.verbose('[Slideshow] playlist sync: $e');
-            }
+            AppDiagLog.verbose('[Slideshow] playlist sync: $e');
           }
         }
       }
