@@ -22,12 +22,17 @@ import '../services/app_release_guard.dart';
 import '../services/cloud_photo_upload_service.dart';
 import '../services/in_app_notification_store.dart';
 import '../widgets/debug_slog_overlay.dart';
+import '../widgets/shell_navigation.dart';
 import '../services/frame_cloud_cast_service.dart';
 import '../services/editor_settings_cache.dart';
 import '../services/image_processor_service.dart';
 import '../services/image_send_isolate_worker.dart';
 import '../services/sd_card_export.dart';
 import '../services/slideshow_style.dart';
+import '../services/slideshow_playlist_store.dart';
+import '../services/slideshow_remote_api.dart';
+import '../services/frame_ble_mac_slug.dart';
+import '../services/user_playlist_remote_api.dart';
 import '../services/transport_kind.dart';
 import '../services/usage_metrics_store.dart';
 import '../services/weather_service.dart';
@@ -41,6 +46,32 @@ import 'device_discovery_screen.dart';
 import 'wifi_provision_screen.dart';
 
 const Color _kEditorRed = AppTheme.primaryRed;
+
+class _PerImageState {
+  img.Image? decoded;
+  final Uint8List originalBytes;
+  int quarterTurns = 0;
+  double brightness = 0, contrast = 0, saturation = 0;
+  FrameImageFilter filter = FrameImageFilter.none;
+  bool oDate = false, oLocation = false, oGreeting = false, oWeather = false;
+  String overlayText = '';
+  int textColor = 1;
+  double textSize = 38;
+  String? selectedSticker;
+  double stickerAlignX = 0.35, stickerAlignY = -0.15, stickerSize = 28;
+  String cropAspect = '3:4';
+  double cropZoom = 100;
+  bool flipH = false, flipV = false;
+  double cropPanX = 0, cropPanY = 0;
+  String borderStyle = 'none';
+  String weatherLine = '';
+  bool textBold = false;
+  double textRotation = 0;
+  double stickerRotation = 0;
+  String text = '';
+
+  _PerImageState({required this.originalBytes, this.decoded});
+}
 
 /// Step 1 from `ra/api`: color grade + filters before resize / E-ink (handled on Send).
 class ImageEditorScreen extends StatefulWidget {
@@ -58,6 +89,10 @@ class ImageEditorScreen extends StatefulWidget {
     this.galleryPersistPath,
     this.isAiGenerated = false,
     this.autoSendAfterLoad = false,
+    this.playlistImages,
+    this.playlistPaths,
+    this.playlistTitle,
+    this.albumId,
   });
 
   final Uint8List imageBytes;
@@ -83,6 +118,11 @@ class ImageEditorScreen extends StatefulWidget {
 
   /// When true (gallery share flow), upload starts once pairing is loaded.
   final bool autoSendAfterLoad;
+
+  final List<Uint8List>? playlistImages;
+  final List<String>? playlistPaths;
+  final String? playlistTitle;
+  final String? albumId;
 
   @override
   State<ImageEditorScreen> createState() => _ImageEditorScreenState();
@@ -116,6 +156,19 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   late SlideshowStyle _slideshow;
 
   AppStrings? _strings;
+
+  bool get _isPlaylist => widget.playlistImages != null && widget.playlistImages!.length > 1;
+  List<_PerImageState>? _perStates;
+  int _playlistIndex = 0;
+  int _playlistIntervalMinutes = 10;
+  final PageController _pageController = PageController();
+
+  Uint8List get _currentBytes {
+    if (_isPlaylist && _perStates != null && _playlistIndex < _perStates!.length) {
+      return _perStates![_playlistIndex].originalBytes;
+    }
+    return widget.imageBytes;
+  }
 
   /// Photo caption / overlay: top→bottom on image is custom, greeting, location, date (send sheet + `ra/ui` mock).
   bool _oDate = false;
@@ -198,11 +251,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     if (text.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
+    final s = AppStrings.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         behavior: SnackBarBehavior.floating,
-        content: Text('Log copied'),
-        duration: Duration(seconds: 2),
+        content: Text(s.logCopied),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -217,12 +271,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     }
   }
 
-  String _userFacingCastStatus(CastProgress p) {
+  String _userFacingCastStatus(CastProgress p, AppStrings s) {
     return AppDiagLog.userFacingStatus(
       p.message,
       fallback: p.phase == CastPhase.failed
-          ? 'Could not send the photo. Try again.'
-          : 'Sending to frame…',
+          ? s.couldNotSendPhoto
+          : s.sendingToFrame,
     );
   }
 
@@ -253,6 +307,17 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           persistPath: widget.galleryPersistPath,
         ),
       );
+    }
+
+    // Brief pause so user reads the success message, then go Home
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    if (widget.queueIndex >= widget.queueTotal || _isPlaylist) {
+      _leaveEditorAfterSend();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ShellNavigation.goToTab(0);
+      });
     }
   }
 
@@ -325,25 +390,39 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     final cached = EditorSettingsCache.instance.last;
     _transport = TransportKind.wifi;
     _slideshow = cached?.slideshow ?? widget.slideshow;
-    // Fresh pick: plain image only — no sticky overlays / filters / grade.
-    _oDate = false;
-    _oLocation = false;
-    _oGreeting = false;
-    _oWeather = false;
-    _weatherLine = '';
-    _brightness = 0;
-    _contrast = 0;
-    _saturation = 0;
-    _filter = FrameImageFilter.none;
-    _quarterTurns = 0;
     _overlayText = TextEditingController();
     _overlayText.addListener(_onOverlayTextChanged);
-    _decoded = _processor.decode(widget.imageBytes);
-    if (_decoded != null) {
-      _previewBytes = widget.imageBytes; // instant first frame
-      _warmFastPreviewCache();
+
+    if (_isPlaylist) {
+      _perStates = [];
+      for (final bytes in widget.playlistImages!) {
+        final decoded = _processor.decode(bytes);
+        _perStates!.add(_PerImageState(originalBytes: bytes, decoded: decoded));
+      }
+      if (_perStates!.isNotEmpty) {
+        _restorePerState(0);
+      } else {
+        _decodeFailed = true;
+      }
     } else {
-      _decodeFailed = true;
+      // Fresh pick: plain image only — no sticky overlays / filters / grade.
+      _oDate = false;
+      _oLocation = false;
+      _oGreeting = false;
+      _oWeather = false;
+      _weatherLine = '';
+      _brightness = 0;
+      _contrast = 0;
+      _saturation = 0;
+      _filter = FrameImageFilter.none;
+      _quarterTurns = 0;
+      _decoded = _processor.decode(widget.imageBytes);
+      if (_decoded != null) {
+        _previewBytes = widget.imageBytes; // instant first frame
+        _warmFastPreviewCache();
+      } else {
+        _decodeFailed = true;
+      }
     }
     _loadPairing().then((_) {
       if (!mounted || !widget.autoSendAfterLoad || _decoded == null) return;
@@ -366,6 +445,87 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     setState(() {
       _paired = DeviceStore.instance.cached;
       _transport = TransportKind.wifi;
+    });
+  }
+
+  void _saveCurrentPerState() {
+    if (_perStates == null || _playlistIndex >= _perStates!.length) return;
+    final s = _perStates![_playlistIndex];
+    s.decoded = _decoded;
+    s.quarterTurns = _quarterTurns;
+    s.brightness = _brightness;
+    s.contrast = _contrast;
+    s.saturation = _saturation;
+    s.filter = _filter;
+    s.oDate = _oDate;
+    s.oLocation = _oLocation;
+    s.oGreeting = _oGreeting;
+    s.oWeather = _oWeather;
+    s.overlayText = _overlayText.text;
+    s.textColor = _textColor;
+    s.textSize = _textSize;
+    s.selectedSticker = _selectedSticker;
+    s.stickerAlignX = _stickerAlignX;
+    s.stickerAlignY = _stickerAlignY;
+    s.stickerSize = _stickerSize;
+    s.cropAspect = _cropAspect;
+    s.cropZoom = _cropZoom;
+    s.flipH = _flipH;
+    s.flipV = _flipV;
+    s.cropPanX = _cropPanX;
+    s.cropPanY = _cropPanY;
+    s.borderStyle = _borderStyle;
+    s.weatherLine = _weatherLine;
+    s.textBold = _textBold;
+    s.textRotation = _textRotation;
+    s.stickerRotation = _stickerRotation;
+    s.text = _textController.text;
+  }
+
+  void _restorePerState(int index) {
+    if (_perStates == null || index >= _perStates!.length) return;
+    final s = _perStates![index];
+    _decoded = s.decoded;
+    _quarterTurns = s.quarterTurns;
+    _brightness = s.brightness;
+    _contrast = s.contrast;
+    _saturation = s.saturation;
+    _filter = s.filter;
+    _oDate = s.oDate;
+    _oLocation = s.oLocation;
+    _oGreeting = s.oGreeting;
+    _oWeather = s.oWeather;
+    _weatherLine = s.weatherLine;
+    _textColor = s.textColor;
+    _textSize = s.textSize;
+    _selectedSticker = s.selectedSticker;
+    _stickerAlignX = s.stickerAlignX;
+    _stickerAlignY = s.stickerAlignY;
+    _stickerSize = s.stickerSize;
+    _cropAspect = s.cropAspect;
+    _cropZoom = s.cropZoom;
+    _flipH = s.flipH;
+    _flipV = s.flipV;
+    _cropPanX = s.cropPanX;
+    _cropPanY = s.cropPanY;
+    _borderStyle = s.borderStyle;
+    _textBold = s.textBold;
+    _textRotation = s.textRotation;
+    _stickerRotation = s.stickerRotation;
+    _overlayText.text = s.overlayText;
+    _textController.text = s.text;
+    if (_decoded != null) {
+      _previewBytes = s.originalBytes;
+    }
+    _invalidateProcessCache();
+  }
+
+  void _onPageChanged(int index) {
+    if (!_isPlaylist || _perStates == null) return;
+    _saveCurrentPerState();
+    setState(() {
+      _playlistIndex = index;
+      _restorePerState(index);
     });
   }
 
@@ -431,6 +591,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     _debounce?.cancel();
     _previewWarmTimer?.cancel();
     _api.close();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -451,10 +612,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = AppDiagLog.userFacingStatus(
-          e.toString(),
-          fallback: 'Could not send the photo. Try again.',
-        );
+        _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.';
       });
     }
   }
@@ -525,31 +683,132 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       if (!mounted) return;
       final s = AppStrings.of(context);
       final app = AppSettingsScope.of(context);
+      final authToken = app.authToken;
+      final pairingToken = activePaired.resolvedPairingToken;
+
+      if (_isPlaylist && _perStates != null) {
+        final allIds = <String>[];
+        final total = _perStates!.length;
+        for (var i = 0; i < total; i++) {
+          if (!mounted) break;
+          _saveCurrentPerState();
+          _restorePerState(i);
+          setState(() {
+            _playlistIndex = i;
+            _status = '${s.slideshowSendingProgress(i + 1, total)}';
+          });
+          await SchedulerBinding.instance.endOfFrame;
+          if (!mounted) break;
+
+          final composeArgs = _composeArgsForIndex(i);
+          final uploadBin = await compute(isolateComposeUploadBin, composeArgs);
+          if (uploadBin == null) continue;
+
+          final ts = DateTime.now().millisecondsSinceEpoch;
+          final httpName = 'slideshow_$ts.bin';
+          final isFirstUpload = i == 0;
+          final cast = await FrameCloudCastService.instance.castPhoto(
+            api: _api,
+            paired: activePaired,
+            jpegBytes: uploadBin,
+            filename: httpName,
+            slideshowStyle: _slideshow.apiValue,
+            displaySeconds: widget.displaySeconds,
+            strings: s,
+            userAuthToken: authToken,
+            syncSlideshowAfterSuccess: false,
+            skipPlay: !isFirstUpload,
+            onProgress: (_) {},
+          );
+          if (!cast.ok) {
+            AppDiagLog.verbose('[Playlist] cast failed photo ${i + 1}: ${cast.message}');
+            continue;
+          }
+          final id = cast.slideshowImageId?.trim();
+          if (id != null && id.isNotEmpty && !allIds.contains(id)) {
+            allIds.add(id);
+          }
+          if (i + 1 < total) {
+            await Future<void>.delayed(const Duration(seconds: 5));
+          }
+        }
+
+        if (allIds.isEmpty) {
+          if (mounted) {
+            setState(() => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.');
+          }
+          return;
+        }
+
+        await SlideshowPlaylistStore.instance.save(
+          paired: activePaired,
+          imageIds: allIds,
+          intervalMinutes: _playlistIntervalMinutes,
+        );
+
+        try {
+          await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+            bearerToken: authToken,
+            pairingToken: pairingToken,
+            macSlug: frameBleMacSlug(activePaired),
+            imageIds: allIds,
+            intervalMinutes: _playlistIntervalMinutes,
+            skipPlay: true,
+          );
+        } on SlideshowPublishException catch (e) {
+          AppDiagLog.verbose('[Playlist] VPS publish failed ${e.statusCode}: ${e.body}');
+        } catch (e) {
+          AppDiagLog.verbose('[Playlist] VPS publish: $e');
+        }
+
+        final albumId = widget.albumId?.trim();
+        if (albumId != null && albumId.isNotEmpty) {
+          try {
+            await UserPlaylistRemoteApi(bearerToken: authToken).updatePlaylistPhotos(
+              playlistId: albumId,
+              photoIds: allIds,
+            );
+          } catch (e) {
+            AppDiagLog.verbose('[Playlist] cloud sync: $e');
+          }
+        }
+
+        if (mounted) {
+          await _finishSuccessfulSend(
+            s.slideshowBatchDone(allIds.length),
+            sentJpeg: _previewBytes,
+          );
+        }
+        return;
+      }
+
       AppDiagLog.verbose('[Editor] input bytes=${widget.imageBytes.length}');
-      final composeArgs = _composeArgs();
-      final uploadBin = await compute(isolateComposeUploadBin, composeArgs);
-      if (uploadBin == null) {
+      final previewArgs = _previewArgs();
+      var uploadJpeg = _previewBytes;
+      if (uploadJpeg == null || uploadJpeg.isEmpty) {
+        uploadJpeg = await compute(isolateFastPreviewJpeg, previewArgs);
+      }
+      if (uploadJpeg == null || uploadJpeg.isEmpty) {
         if (!mounted) return;
         setState(() => _status = s.processingFailed);
         return;
       }
-      AppDiagLog.verbose('[Editor] upload bin bytes=${uploadBin.length}');
+      AppDiagLog.verbose('[Editor] upload jpeg bytes=${uploadJpeg.length}');
 
       final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
-      final httpName = 'photo_$ts.bin';
+      final httpName = 'photo_$ts.jpg';
 
-      final authToken = app.authToken;
       unawaited(
         _saveCloudCopyIfConfigured(
           app: app,
-          composeArgs: composeArgs,
+          composeArgs: _composeArgs(),
           filename: 'photo_$ts.jpg',
         ),
       );
       final cast = await FrameCloudCastService.instance.castPhoto(
         api: _api,
         paired: activePaired,
-        jpegBytes: uploadBin,
+        jpegBytes: uploadJpeg,
         filename: httpName,
         slideshowStyle: _slideshow.apiValue,
         displaySeconds: widget.displaySeconds,
@@ -560,7 +819,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           if (!mounted) return;
           setState(() {
             _appendCastLog(p);
-            _status = _userFacingCastStatus(p);
+            _status = _userFacingCastStatus(p, s);
             if (p.phase == CastPhase.success) {
               _castProgress = 1;
               _castProgressIndeterminate = false;
@@ -590,48 +849,23 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       });
     } on FrameApiException catch (e) {
       if (!mounted) return;
-      var line = AppStrings.of(context).apiError(e);
-      try {
-        final j = jsonDecode(e.body);
-        if (j is Map<String, dynamic> && j['error'] == 'myfm_encode_failed') {
-          final hint = j['hint'] as String?;
-          final msg = j['message'] as String?;
-          if (hint != null && hint.isNotEmpty) {
-            line = msg != null && msg.isNotEmpty ? '$hint\n($msg)' : hint;
-          }
-        }
-      } catch (_) {
-        /* ignore */
-      }
-      setState(() => _status = line);
+      AppDiagLog.verbose('[Editor] FrameApiException: $e');
+      setState(() => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.');
     } on SocketException catch (e) {
       if (!mounted) return;
-      final s = AppStrings.of(context);
-      final msg = e.message.toLowerCase();
-      if (msg.contains('failed host lookup') ||
-          msg.contains('no address associated with hostname')) {
-        final host = Uri.tryParse(ApiConfig.baseUrl)?.host ?? ApiConfig.baseUrl;
-        setState(() {
-          _status =
-              'Cannot resolve $host. Check DNS/network, or set API_BASE to a reachable URL.';
-        });
-      } else {
-        setState(
-          () => _status = AppDiagLog.userFacingStatus(
-            '${s.sendOfflineNoNetworkForWifi} ($e)',
-            fallback: s.sendOfflineNoNetworkForWifi,
-          ),
-        );
-      }
+      AppDiagLog.verbose('[Editor] SocketException: $e');
+      setState(
+        () => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.',
+      );
     } on TimeoutException catch (e) {
-      if (mounted) setState(() => _status = AppStrings.of(context).apiError(e));
+      if (!mounted) return;
+      AppDiagLog.verbose('[Editor] TimeoutException: $e');
+      setState(() => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.');
     } catch (e) {
       if (mounted) {
+        AppDiagLog.verbose('[Editor] send error: $e');
         setState(
-          () => _status = AppDiagLog.userFacingStatus(
-            '$e',
-            fallback: 'Could not send the photo. Try again.',
-          ),
+          () => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.',
         );
       }
     } finally {
@@ -727,7 +961,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
     return DebugSlogOverlay(
       child: PopScope(
-        canPop: !_uploading,
+        canPop: true,
         child: Scaffold(
           resizeToAvoidBottomInset: true,
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -737,9 +971,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             surfaceTintColor: Colors.transparent,
             elevation: 0,
             title: Text(
-              widget.queueTotal > 1
-                  ? '${s.editTitle} (${widget.queueIndex}/${widget.queueTotal})'
-                  : s.editTitle,
+              _isPlaylist
+                  ? '${s.editTitle} (${_playlistIndex + 1}/${_perStates?.length ?? 1})'
+                  : widget.queueTotal > 1
+                      ? '${s.editTitle} (${widget.queueIndex}/${widget.queueTotal})'
+                      : s.editTitle,
               style: const TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
@@ -748,22 +984,20 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             ),
             automaticallyImplyLeading: false,
             leadingWidth: 44,
-            leading: _uploading
-                ? null
-                : IconButton(
-                    tooltip: 'Back',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: Icon(
-                      Theme.of(context).platform == TargetPlatform.iOS ||
-                              Theme.of(context).platform == TargetPlatform.macOS
-                          ? CupertinoIcons.back
-                          : Icons.arrow_back,
-                      size: 22,
-                      color: const Color(0xFF0A0A0A),
-                    ),
-                  ),
+            leading: IconButton(
+              tooltip: 'Back',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: Icon(
+                Theme.of(context).platform == TargetPlatform.iOS ||
+                        Theme.of(context).platform == TargetPlatform.macOS
+                    ? CupertinoIcons.back
+                    : Icons.arrow_back,
+                size: 22,
+                color: const Color(0xFF0A0A0A),
+              ),
+            ),
             actions: [
               if (debugOn &&
                   (_castLogLines.isNotEmpty ||
@@ -804,7 +1038,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                               _showFastRealPreview();
                             },
                             child: Text(
-                              'E-ink Preview',
+                              s.einkPreviewLabel,
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -816,8 +1050,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                           CupertinoButton(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                             onPressed: _clearEditorOverlays,
-                            child: const Text(
-                              'Delete',
+                            child: Text(
+                              s.deleteAction,
                               style: TextStyle(
                                 color: _kEditorRed,
                                 fontWeight: FontWeight.w600,
@@ -828,25 +1062,63 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                         ],
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final screenH = MediaQuery.sizeOf(context).height;
-                          final maxH = keyboardOpen
-                              ? math.min(120.0, screenH * 0.16)
-                              : screenH * 0.30;
-                          final height = maxH.clamp(100.0, 280.0);
-                          return Center(
-                            child: SizedBox(
-                              width: height * 3 / 4,
-                              height: height,
-                              child: _buildPreviewStage(cs, keyboardOpen),
+                    if (_isPlaylist && _perStates != null && _perStates!.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              height: 120,
+                              child: PageView.builder(
+                                controller: _pageController,
+                                onPageChanged: _onPageChanged,
+                                itemCount: _perStates!.length,
+                                itemBuilder: (context, index) {
+                                  return _buildPreviewStage(cs, keyboardOpen);
+                                },
+                              ),
                             ),
-                          );
-                        },
+                            const SizedBox(height: 6),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: List.generate(_perStates!.length, (i) {
+                                return Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: i == _playlistIndex
+                                        ? _kEditorRed
+                                        : Colors.grey.shade300,
+                                  ),
+                                );
+                              }),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final screenH = MediaQuery.sizeOf(context).height;
+                            final maxH = keyboardOpen
+                                ? math.min(120.0, screenH * 0.16)
+                                : screenH * 0.30;
+                            final height = maxH.clamp(100.0, 280.0);
+                            return Center(
+                              child: SizedBox(
+                                width: height * 3 / 4,
+                                height: height,
+                                child: _buildPreviewStage(cs, keyboardOpen),
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
                     Expanded(
                       child: _buildToolSection(context, s, cs, primary, keyboardOpen),
                     ),
@@ -904,7 +1176,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   FrameProcessOnlyArgs _previewArgs() {
     return FrameProcessOnlyArgs(
-      imageBytes: widget.imageBytes,
+      imageBytes: _currentBytes,
       quarterTurns: _quarterTurns,
       brightness: 1.0 + _brightness * 0.35,
       contrast: 1.0 + _contrast * 0.45,
@@ -937,6 +1209,45 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       cropZoom: (_cropZoom / 100).clamp(1.0, 3.0),
       cropPanX: _cropPanX,
       cropPanY: _cropPanY,
+    );
+  }
+
+  ComposeUploadIsolateArgs _composeArgsForIndex(int index) {
+    if (_perStates == null || index >= _perStates!.length) return _composeArgs();
+    final s = _perStates![index];
+    final ovr = SendOverlayOptions(
+      showDate: s.oDate,
+      showLocation: s.oLocation && !s.oWeather,
+      showGreeting: s.oGreeting,
+      showWeather: s.oWeather,
+      customText: '',
+      greetingCustom: widget.overlay.greetingCustom,
+      centerText: s.overlayText,
+      centerTextColor: const [0xFF000000, 0xFFFFFFFF, 0xFFFFFF00, 0xFFFF0000, 0xFF0000FF, 0xFF00FF00][s.textColor.clamp(0, 5)],
+      centerTextSize: s.textSize,
+      centerSticker: s.selectedSticker ?? '',
+      stickerAlignX: (s.stickerAlignX + 1) / 2,
+      stickerAlignY: (s.stickerAlignY + 1) / 2,
+      stickerSize: s.stickerSize,
+      weatherText: s.weatherLine,
+    );
+    final paired = _paired;
+    final locationTxt = paired?.frameName?.trim() ?? _strings?.frameDefaultDisplayName ?? '';
+    return ComposeUploadIsolateArgs(
+      imageBytes: s.originalBytes,
+      quarterTurns: s.quarterTurns,
+      brightness: 1.0 + s.brightness * 0.35,
+      contrast: 1.0 + s.contrast * 0.45,
+      saturation: 1.0 + s.saturation * 0.45,
+      filterIndex: s.filter.index,
+      overlay: ovr,
+      locationText: locationTxt,
+      flipH: s.flipH,
+      flipV: s.flipV,
+      cropAspect: _cropAspectRatioValue,
+      cropZoom: (s.cropZoom / 100).clamp(1.0, 3.0),
+      cropPanX: s.cropPanX,
+      cropPanY: s.cropPanY,
     );
   }
 
@@ -1061,6 +1372,21 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     });
   }
 
+  void _clearText() {
+    setState(() {
+      _overlayText.clear();
+      _textController.clear();
+      _invalidateProcessCache();
+    });
+  }
+
+  void _clearStickers() {
+    setState(() {
+      _selectedSticker = null;
+      _invalidateProcessCache();
+    });
+  }
+
   BoxDecoration _previewDecoration(ColorScheme cs) {
     switch (_borderStyle) {
       case 'thinBlack':
@@ -1132,7 +1458,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       0, 0, 0, 1, 0,
     ]);
     Widget img = Image.memory(
-      widget.imageBytes,
+      _currentBytes,
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
@@ -1368,12 +1694,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             children: [
               _toolTab(s.filterLabel, 'filters', Icons.tune, cs),
-              _toolTab('Crop', 'crop', Icons.crop, cs),
-              _toolTab('Weather', 'weather', Icons.wb_sunny_outlined, cs),
-              _toolTab('Date', 'date', Icons.date_range, cs),
-              _toolTab('Text', 'text', Icons.text_fields, cs),
-              _toolTab('Sticker', 'stickers', Icons.emoji_emotions_outlined, cs),
-              _toolTab('Border', 'border', Icons.border_style, cs),
+              _toolTab(s.cropLabel, 'crop', Icons.crop, cs),
+              _toolTab(s.weatherLabel, 'weather', Icons.wb_sunny_outlined, cs),
+              _toolTab(s.dateLabel, 'date', Icons.date_range, cs),
+              _toolTab(s.textLabel, 'text', Icons.text_fields, cs),
+              _toolTab(s.stickerLabel, 'stickers', Icons.emoji_emotions_outlined, cs),
+              _toolTab(s.borderLabel, 'border', Icons.border_style, cs),
             ],
           ),
         ),
@@ -1457,7 +1783,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               final sel = _filter == f;
               final matrix = matrices[index];
               Widget thumb = Image.memory(
-                widget.imageBytes,
+                _currentBytes,
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 filterQuality: FilterQuality.low,
@@ -1543,7 +1869,15 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 
   Widget _buildCropPanel(AppStrings s, ColorScheme cs, Color primary) {
-    final aspects = ['Free', 'Original', '1:1', '3:4', '4:3', '16:9', '9:16'];
+    final aspects = [
+      (key: 'free', label: s.cropFree),
+      (key: 'original', label: s.cropOriginal),
+      (key: '1:1', label: '1:1'),
+      (key: '3:4', label: '3:4'),
+      (key: '4:3', label: '4:3'),
+      (key: '16:9', label: '16:9'),
+      (key: '9:16', label: '9:16'),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1552,7 +1886,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: aspects.map((a) {
-              final key = a.toLowerCase();
+              final key = a.key;
               final sel = _cropAspect == key;
               return Padding(
                 padding: const EdgeInsets.only(right: 6),
@@ -1572,7 +1906,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       child: Text(
-                        a,
+                        a.label,
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -1591,38 +1925,38 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              _iconAction(Icons.rotate_left, 'Left 90', () {
+              _iconAction(Icons.rotate_left, s.cropLeft90, () {
                 setState(() {
                   _quarterTurns = (_quarterTurns + 3) % 4;
                   _invalidateProcessCache();
                 });
               }),
-              _iconAction(Icons.rotate_right, 'Right 90', () {
+              _iconAction(Icons.rotate_right, s.cropRight90, () {
                 setState(() {
                   _quarterTurns = (_quarterTurns + 1) % 4;
                   _invalidateProcessCache();
                 });
               }),
-              _iconAction(Icons.flip, 'Flip H', () {
+              _iconAction(Icons.flip, s.cropFlipH, () {
                 setState(() {
                   _flipH = !_flipH;
                   _invalidateProcessCache();
                 });
               }),
-              _iconAction(Icons.swap_vert, 'Flip V', () {
+              _iconAction(Icons.swap_vert, s.cropFlipV, () {
                 setState(() {
                   _flipV = !_flipV;
                   _invalidateProcessCache();
                 });
               }),
-              _iconAction(Icons.restart_alt, 'Reset', _resetCropState),
+              _iconAction(Icons.restart_alt, s.cropReset, _resetCropState),
             ],
           ),
         ),
         const SizedBox(height: 4),
         Row(
           children: [
-            const Text('Zoom', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            Text(s.zoomLabel, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             Expanded(
               child: Slider(
                 value: _cropZoom,
@@ -1647,7 +1981,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           ],
         ),
         Text(
-          'Drag the photo to reposition. Frame stays 3:4.',
+          s.cropDragHint,
           style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
         ),
       ],
@@ -1661,7 +1995,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         SwitchListTile.adaptive(
           value: _oWeather,
           onChanged: (v) => _onWeatherToggled(v),
-          title: const Text('Show weather'),
+          title: Text(s.showWeatherLabel),
           contentPadding: EdgeInsets.zero,
           dense: true,
           activeTrackColor: _kEditorRed,
@@ -1681,8 +2015,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           ),
         TextFormField(
           controller: _weatherTempController,
-          decoration: const InputDecoration(
-            labelText: 'Override temperature (optional)',
+          decoration: InputDecoration(
+            labelText: s.weatherOverrideTemp,
             isDense: true,
           ),
           keyboardType: TextInputType.number,
@@ -1701,7 +2035,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          'Turns on location permission to load live weather for your device.',
+          s.weatherPermissionHint,
           style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
         ),
       ],
@@ -1709,6 +2043,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 
   Future<void> _onWeatherToggled(bool enabled) async {
+    final s = AppStrings.of(context);
     if (!enabled) {
       setState(() {
         _oWeather = false;
@@ -1731,9 +2066,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         _weatherLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text('Location permission is needed for live weather.'),
+          content: Text(s.locationPermissionNeeded),
         ),
       );
       return;
@@ -1743,6 +2078,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 
   Future<void> _loadRealWeather() async {
+    final s = AppStrings.of(context);
     setState(() => _weatherLoading = true);
     final snap = await WeatherService.instance.fetchCurrent(force: true);
     if (!mounted) return;
@@ -1755,9 +2091,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         _invalidateProcessCache();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           behavior: SnackBarBehavior.floating,
-          content: Text('Could not load weather. Check location and try again.'),
+          content: Text(s.weatherLoadFailed),
         ),
       );
       return;
@@ -1782,13 +2118,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               _invalidateProcessCache();
             });
           },
-          title: const Text('Show date/time'),
+          title: Text(s.showDateTimeLabel),
           contentPadding: EdgeInsets.zero,
           dense: true,
           activeTrackColor: _kEditorRed,
         ),
         Text(
-          'When on, the current date and time are added at the bottom of the frame.',
+          s.dateTimeHint,
           style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
         ),
       ],
@@ -1817,11 +2153,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                 minLines: 1,
                 maxLines: 3,
                 style: const TextStyle(fontSize: 15),
-                decoration: const InputDecoration(
-                  hintText: 'Happy BirthDay',
+                decoration: InputDecoration(
+                  hintText: s.textHint,
                   isDense: true,
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  border: const OutlineInputBorder(),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 ),
               ),
             ),
@@ -1835,9 +2171,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                 final draft = _textController.text.trim();
                 if (draft.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
+                    SnackBar(
                       behavior: SnackBarBehavior.floating,
-                      content: Text('Type something first'),
+                      content: Text(s.typeSomethingFirst),
                     ),
                   );
                   return;
@@ -1848,13 +2184,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                   _invalidateProcessCache();
                 });
               },
-              child: const Text('Add Text', style: TextStyle(fontSize: 13)),
+              child: Text(s.addTextButton, style: const TextStyle(fontSize: 13)),
             ),
           ],
         ),
         Row(
           children: [
-            Text('Size ${_textSize.toInt()}px', style: const TextStyle(fontSize: 12)),
+            Text(s.textSizePixels(_textSize.toInt()), style: const TextStyle(fontSize: 12)),
             Expanded(
               child: Slider(
                 value: _textSize,
@@ -1893,13 +2229,32 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                 ),
               );
             }),
+            const Spacer(),
+            GestureDetector(
+              onTap: _clearText,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  s.clearAction,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _kEditorRed,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
         Row(
           children: [
             ChoiceChip(
-              label: const Text('Bold'),
+              label: Text(s.boldLabel),
               selected: _textBold,
               onSelected: (v) => setState(() => _textBold = v),
               selectedColor: _kEditorRed,
@@ -1913,7 +2268,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Drag text on the photo to move it.',
+          s.textDragHint,
           style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
         ),
       ],
@@ -1922,7 +2277,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   Widget _buildStickerPanel(AppStrings s, ColorScheme cs) {
     const stickers = ['♥', '★', '→', '◖', '●', '▲', '✚', '☀'];
-    const labels = ['Heart', 'Star', 'Arrow', 'Bubble', 'Circle', 'Triangle', 'Holiday', 'Sun'];
+    final labels = [s.stickerHeart, s.stickerStar, s.stickerArrow, s.stickerBubble, s.stickerCircle, s.stickerTriangle, s.stickerHoliday, s.stickerSun];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1967,7 +2322,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         const SizedBox(height: 8),
         Row(
           children: [
-            const Text('Size', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            Text(s.sizeLabel, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             Expanded(
               child: Slider(
                 value: _stickerSize,
@@ -1984,6 +2339,25 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         ),
         Row(
           children: [
+            GestureDetector(
+              onTap: _clearStickers,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  s.borderNone,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _kEditorRed,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
             _iconAction(Icons.rotate_left, '', () {
               setState(() => _stickerRotation -= 15);
               _invalidateProcessCache();
@@ -1992,7 +2366,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               setState(() => _stickerRotation += 15);
               _invalidateProcessCache();
             }),
-            _iconAction(Icons.restart_alt, 'Reset', () {
+            _iconAction(Icons.restart_alt, s.cropReset, () {
               setState(() {
                 _stickerAlignX = 0.35;
                 _stickerAlignY = -0.15;
@@ -2004,7 +2378,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           ],
         ),
         Text(
-          'Drag on the photo to move the sticker.',
+          s.stickerDragHint,
           style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
         ),
       ],
@@ -2012,7 +2386,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 
   Widget _buildBorderPanel(AppStrings s, ColorScheme cs) {
-    const borders = ['None', 'Thin black', 'Thick white', 'Polaroid', 'Film strip', 'Rounded', 'Double'];
+    final borders = [s.borderNone, s.borderThinBlack, s.borderThickWhite, s.borderPolaroid, s.borderFilmStrip, s.borderRounded, s.borderDouble];
     const keys = ['none', 'thinBlack', 'thickWhite', 'polaroid', 'film', 'rounded', 'double'];
     return Wrap(
       spacing: 8,
@@ -2166,6 +2540,40 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                     style: TextStyle(fontSize: 11, color: cs.error),
                   ),
                 ),
+              if (_isPlaylist && !_uploading) ...[
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Interval: ', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                      const SizedBox(width: 4),
+                      ...[5, 10, 30, 60].map((m) {
+                        final sel = _playlistIntervalMinutes == m;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          child: ChoiceChip(
+                            label: Text(
+                              m < 60 ? '${m}m' : '1h',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: sel ? Colors.white : cs.onSurface,
+                              ),
+                            ),
+                            selected: sel,
+                            selectedColor: _kEditorRed,
+                            visualDensity: VisualDensity.compact,
+                            onSelected: (v) {
+                              if (v) setState(() => _playlistIntervalMinutes = m);
+                            },
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ],
               Row(
                 children: [
                   Expanded(
@@ -2181,8 +2589,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                           ),
                         ),
                         onPressed: _uploading ? null : _showFastRealPreview,
-                        child: const Text(
-                          'E-ink Preview',
+                        child: Text(
+                          s.einkPreviewLabel,
                           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                         ),
                       ),
@@ -2211,9 +2619,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                                   color: Colors.white,
                                 ),
                               )
-                            : const Text(
-                                'Send',
-                                style: TextStyle(
+                            : Text(
+                                _isPlaylist
+                                    ? s.sendPlaylistLabel(_perStates?.length ?? 0)
+                                    : s.sendLabel,
+                                style: const TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0.2,

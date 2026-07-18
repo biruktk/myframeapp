@@ -85,34 +85,32 @@ class FrameCloudCastService {
     /// When false (playlist batch), caller publishes slideshow after all casts complete.
     bool syncSlideshowAfterSuccess = false,
     int? displaySeconds,
+    bool skipPlay = false,
   }) async {
     void report(CastProgress p) => onProgress?.call(p);
 
     final deviceId = uploadDeviceId(paired);
     if (deviceId.trim().isEmpty) {
       report(
-        const CastProgress(
+        CastProgress(
           phase: CastPhase.failed,
-          message:
-              'No frame display ID saved. Scan the pairing QR on the frame once, then try again.',
+          message: strings.uploadErrorNoFrameId,
         ),
       );
-      return FrameCloudCastResult.failed(
-        'No frame display ID saved. Scan the pairing QR on the frame once, then try again.',
-      );
+      return FrameCloudCastResult.failed(strings.uploadErrorNoFrameId);
     }
     if (!paired.canUploadToServer) {
       final msg = paired.resolvedFrameTargetCandidates.isEmpty
-          ? 'Pairing is missing the frame display ID. Scan the frame QR once, then try again.'
+          ? strings.uploadErrorMissingFrameId
           : strings.pairingNeedsApiUrl;
       report(CastProgress(phase: CastPhase.failed, message: msg));
       return FrameCloudCastResult.failed(msg);
     }
 
     report(
-      const CastProgress(
+      CastProgress(
         phase: CastPhase.preparing,
-        message: 'Preparing photo…',
+        message: strings.uploadPreparingPhoto,
         progress: 0.05,
         showIndeterminate: true,
       ),
@@ -125,9 +123,9 @@ class FrameCloudCastService {
     }
 
     report(
-      const CastProgress(
+      CastProgress(
         phase: CastPhase.connectingFrame,
-        message: 'Connecting to your frame…',
+        message: strings.uploadConnectingFrame,
         progress: 0.12,
         showIndeterminate: true,
       ),
@@ -135,9 +133,9 @@ class FrameCloudCastService {
     await BleFrameDeviceTransport.instance.releaseSession();
 
     report(
-      const CastProgress(
+      CastProgress(
         phase: CastPhase.wakingFrame,
-        message: 'Waking frame MQTT session…',
+        message: strings.uploadWakingFrame,
         progress: 0.15,
         showIndeterminate: true,
       ),
@@ -149,37 +147,28 @@ class FrameCloudCastService {
     }
 
     try {
-      if (paired.bleRemoteId?.trim().isNotEmpty == true) {
-        final preflight = await _frameStatus(api, paired, deviceId);
-        if (preflight.mqttConnected != true) {
-          report(
-            const CastProgress(
-              phase: CastPhase.connectingFrame,
-              message:
-                  'Frame not on MQTT yet — refreshing Wi‑Fi and server settings over Bluetooth…',
-              progress: 0.18,
-              showIndeterminate: true,
-            ),
-          );
-          try {
-            await FrameRecoveryService.instance.reconfigureServer(paired);
-          } catch (e) {
-            AppDiagLog.verbose('[Cast] preflight reconfigure: $e');
-          }
-          await waitUntilFrameReady(
-            paired: paired,
-            timeout: const Duration(seconds: 45),
-            onStatus: (line) => report(
-              CastProgress(
-                phase: CastPhase.connectingFrame,
-                message: line,
-                progress: 0.2,
-                showIndeterminate: true,
-              ),
-            ),
-          );
-        }
+      // After WiFi pairing, frame stops advertising BLE. Use HTTP wake only.
+      // Never attempt BLE reconfigure during send flow (matches mini app behavior).
+      await _sendLoginAckBrief(paired);
+      
+      // Check if frame is online, if not, wait briefly for MQTT wake
+      final preflight = await _frameStatus(api, paired, deviceId);
+      if (preflight.mqttConnected != true && preflight.online != true) {
+        report(
+          CastProgress(
+            phase: CastPhase.wakingFrame,
+            message: strings.uploadWakingFrameVia,
+            progress: 0.18,
+            showIndeterminate: true,
+          ),
+        );
+        // Send multiple login-ack attempts (matches mini app prepareForCloudUpload)
         await _sendLoginAckBrief(paired);
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        await _sendLoginAckBrief(paired);
+        
+        // Wait briefly for frame to come online
+        await Future<void>.delayed(const Duration(seconds: 2));
       }
     } catch (e) {
       AppDiagLog.verbose('[Cast] preflight status: $e');
@@ -209,9 +198,9 @@ class FrameCloudCastService {
 
       if (!frameOnline) {
         report(
-          const CastProgress(
+          CastProgress(
             phase: CastPhase.wakingFrame,
-            message: 'Waking frame connection…',
+            message: strings.uploadWakingConnection,
             progress: 0.18,
             showIndeterminate: true,
           ),
@@ -227,10 +216,10 @@ class FrameCloudCastService {
         CastProgress(
           phase: CastPhase.uploading,
           message: targets.length > 1 && ti > 0
-              ? 'Retrying upload (alternate frame ID)…'
+              ? strings.uploadRetrying
               : frameOnline
-                  ? 'Uploading photo (frame is online)…'
-                  : 'Uploading photo to server…',
+                  ? strings.uploadPhotoOnline
+                  : strings.uploadPhotoUploading,
           progress: 0.32,
           showIndeterminate: true,
         ),
@@ -248,6 +237,7 @@ class FrameCloudCastService {
           transport: TransportKind.wifi.apiValue,
           pairingToken: paired.resolvedPairingToken,
           userAuthToken: userAuthToken,
+          skipPlay: skipPlay,
         );
         lastRes = res;
 
@@ -256,46 +246,62 @@ class FrameCloudCastService {
           'mode=${res.deliveryMode}',
         );
 
-        final outcome = await _waitUntilFrameShows(
-          api: api,
-          paired: paired,
-          deviceId: tryId,
-          res: res,
-          strings: strings,
-          uploadStartedMs: uploadStartedMs,
-          baselineLastUploadMs: baselineMs,
-          report: report,
-          primaryWait: _primaryWait,
-          extendedWait: frameOnline ? _extendedWait : Duration.zero,
-        );
-
-        if (outcome != null) {
-          final hash = _shortHash(res);
-          final successMsg = strings.uploadSuccessLine(
-            res.receivedBytes ?? 0,
-            hash,
+        if (!skipPlay) {
+          final outcome = await _waitUntilFrameShows(
+            api: api,
+            paired: paired,
+            deviceId: tryId,
+            res: res,
+            strings: strings,
+            uploadStartedMs: uploadStartedMs,
+            baselineLastUploadMs: baselineMs,
+            report: report,
+            primaryWait: _primaryWait,
+            extendedWait: frameOnline ? _extendedWait : Duration.zero,
           );
-          final userMsg = AppDiagLog.isDebugEnabled
-              ? '$successMsg${_verboseExtras(strings, res)}'
-              : 'Photo sent — updating frame (e‑ink may take up to a minute).';
+          if (outcome == null) {
+            // skipPlay was false but wait timed out — fall through to retry block
+          } else {
+            final hash = _shortHash(res);
+            final successMsg = strings.uploadSuccessLine(
+              res.receivedBytes ?? 0,
+              hash,
+            );
+            final userMsg = AppDiagLog.isDebugEnabled
+                ? '$successMsg${_verboseExtras(strings, res)}'
+                : 'Photo sent to frame!';
+            report(
+              CastProgress(
+                phase: CastPhase.success,
+                message: userMsg,
+                progress: 1,
+              ),
+            );
+            if (syncSlideshowAfterSuccess) {
+              unawaited(
+                _syncSlideshowAfterSingleCast(
+                  paired: paired,
+                  res: res,
+                  userAuthToken: userAuthToken,
+                ),
+              );
+            }
+            return FrameCloudCastResult.success(
+              userMsg,
+              slideshowImageId: res.vpsSlideshowImageId,
+            );
+          }
+        } else {
+          // skipPlay: upload only — no MQTT play, no wait. Slideshow publish triggers play later.
           report(
             CastProgress(
               phase: CastPhase.success,
-              message: userMsg,
+              message: 'Uploaded (playlist)',
               progress: 1,
             ),
           );
-          if (syncSlideshowAfterSuccess) {
-            unawaited(
-              _syncSlideshowAfterSingleCast(
-                paired: paired,
-                res: res,
-                userAuthToken: userAuthToken,
-              ),
-            );
-          }
           return FrameCloudCastResult.success(
-            userMsg,
+            'Uploaded (playlist)',
             slideshowImageId: res.vpsSlideshowImageId,
           );
         }
@@ -318,21 +324,18 @@ class FrameCloudCastService {
     final mqttUnconfirmed = (res.deliveryMode == 'mqtt_published_unconfirmed' ||
             res.deliveredToFrame != true) &&
         res.deliveryMode != 'mqtt_published';
-    if (mqttUnconfirmed && paired.bleRemoteId?.trim().isNotEmpty == true) {
+    if (mqttUnconfirmed) {
       report(
-        const CastProgress(
+        CastProgress(
           phase: CastPhase.retrying,
-          message:
-              'Frame did not confirm MQTT — re-sending server config over Bluetooth…',
+          message: strings.uploadFrameNotConfirmed,
           progress: 0.42,
           showIndeterminate: true,
         ),
       );
-      try {
-        await FrameRecoveryService.instance.reconfigureServer(paired);
-      } catch (e) {
-        AppDiagLog.verbose('[Cast] BLE reconfigure (unconfirmed): $e');
-      }
+      // Use HTTP republish instead of BLE (frame stops advertising after WiFi pairing)
+      await _sendLoginAckBrief(paired);
+      await Future<void>.delayed(const Duration(milliseconds: 400));
       await _sendLoginAckBrief(paired);
       try {
         final retryMs = DateTime.now().millisecondsSinceEpoch;
@@ -351,6 +354,7 @@ class FrameCloudCastService {
           transport: TransportKind.wifi.apiValue,
           pairingToken: paired.resolvedPairingToken,
           userAuthToken: userAuthToken,
+          skipPlay: skipPlay,
         );
         final outcome3 = await _waitUntilFrameShows(
           api: api,
@@ -398,29 +402,26 @@ class FrameCloudCastService {
         mqttUp = st.mqttConnected == true || st.online == true;
       } catch (_) {}
 
-      if (!mqttUp &&
-          Platform.isIOS &&
-          paired.bleRemoteId?.trim().isNotEmpty == true) {
+      if (!mqttUp) {
         report(
-          const CastProgress(
+          CastProgress(
             phase: CastPhase.retrying,
-            message:
-                'Frame offline on MQTT. Sending Wi‑Fi settings over Bluetooth — stay near the frame…',
+            message: strings.uploadFrameOffline,
             progress: 0.4,
             showIndeterminate: true,
           ),
         );
-        try {
-          await FrameRecoveryService.instance.reconfigureServer(paired);
-        } catch (e) {
-          AppDiagLog.verbose('[Cast] BLE reconfigure: $e');
-        }
+        // Use HTTP wake only (BLE not available after WiFi pairing)
+        await _sendLoginAckBrief(paired);
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        await _sendLoginAckBrief(paired);
+        await Future<void>.delayed(const Duration(milliseconds: 600));
         await _sendLoginAckBrief(paired);
 
         report(
-          const CastProgress(
+          CastProgress(
             phase: CastPhase.uploading,
-            message: 'Sending photo again…',
+            message: strings.uploadSendingAgain,
             progress: 0.5,
             showIndeterminate: true,
           ),
@@ -440,6 +441,7 @@ class FrameCloudCastService {
           transport: TransportKind.wifi.apiValue,
           pairingToken: paired.resolvedPairingToken,
           userAuthToken: userAuthToken,
+          skipPlay: skipPlay,
         );
         final outcome2 = await _waitUntilFrameShows(
           api: api,
@@ -527,6 +529,7 @@ class FrameCloudCastService {
     required Duration extendedWait,
   }) async {
     final checksum = res.checksumSha256;
+    final imageUrl = res.imageUrl ?? '';
 
     if (res.deliveryMode == 'frame_push_failed' ||
         res.deliveryMode == 'mqtt_publish_failed' ||
@@ -557,6 +560,9 @@ class FrameCloudCastService {
     final started = DateTime.now();
     var lastLoginAck = DateTime.now();
     var extendedStarted = false;
+    var republishCount = 0;
+    var lastStuckOnDownload = 0;
+    var consecutiveDownloadStuck = 0;
 
     while (true) {
       if (mqttUnconfirmed &&
@@ -582,8 +588,7 @@ class FrameCloudCastService {
         report(
           CastProgress(
             phase: CastPhase.waitingOnFrame,
-            message:
-                'Still updating the frame (e‑ink can take up to a minute)…',
+            message: strings.uploadStillRefreshing,
             progress: 0.55,
             waitSeconds: elapsed.inSeconds,
             showIndeterminate: true,
@@ -598,7 +603,7 @@ class FrameCloudCastService {
       report(
         CastProgress(
           phase: CastPhase.waitingOnFrame,
-          message: _waitMessage(waitSec, extendedStarted),
+          message: _waitMessage(waitSec, extendedStarted, strings),
           progress: progress,
           waitSeconds: waitSec,
         ),
@@ -608,6 +613,69 @@ class FrameCloudCastService {
           DateTime.now().difference(lastLoginAck) >= const Duration(seconds: 18)) {
         lastLoginAck = DateTime.now();
         await _sendLoginAckBrief(paired);
+      }
+
+      // Check frame status for download codes
+      try {
+        final st = await _frameStatus(api, paired, deviceId);
+        
+        // Check if stuck on download (code 106) for too long
+        if (st.isDownloadInProgress) {
+          consecutiveDownloadStuck++;
+          if (consecutiveDownloadStuck > 45 && republishCount < 2 && imageUrl.isNotEmpty) {
+            // Stuck downloading for 90+ seconds (45 * 2s poll interval)
+            AppDiagLog.verbose('[Cast] Frame stuck on code 106, republishing (attempt ${republishCount + 1})');
+            report(
+              CastProgress(
+                phase: CastPhase.retrying,
+                message: strings.uploadFrameDownloadStalled,
+                progress: 0.5,
+                showIndeterminate: true,
+              ),
+            );
+            try {
+              await FrameRecoveryService.instance.republishPlayWithWake(paired, imageUrl);
+              republishCount++;
+              consecutiveDownloadStuck = 0;
+              await Future<void>.delayed(const Duration(seconds: 2));
+            } catch (e) {
+              AppDiagLog.verbose('[Cast] Republish failed: $e');
+            }
+          }
+        } else if (st.isDownloadFailed && republishCount < 2 && imageUrl.isNotEmpty) {
+          // Download failed (code 104) — try republish once
+          AppDiagLog.verbose('[Cast] Frame download failed (code 104), republishing');
+          report(
+            CastProgress(
+              phase: CastPhase.retrying,
+              message: strings.uploadDownloadFailed,
+              progress: 0.5,
+              showIndeterminate: true,
+            ),
+          );
+          try {
+            await FrameRecoveryService.instance.republishPlayWithWake(paired, imageUrl);
+            republishCount++;
+            await Future<void>.delayed(const Duration(seconds: 2));
+          } catch (e) {
+            AppDiagLog.verbose('[Cast] Republish failed: $e');
+          }
+        } else if (st.isDownloadComplete) {
+          // Code 107 — download complete, waiting for display
+          consecutiveDownloadStuck = 0;
+          report(
+            CastProgress(
+              phase: CastPhase.waitingOnFrame,
+              message: strings.uploadFrameDownloadComplete,
+              progress: 0.7,
+              waitSeconds: waitSec,
+            ),
+          );
+        } else {
+          consecutiveDownloadStuck = 0;
+        }
+      } catch (e) {
+        AppDiagLog.verbose('[Cast] Status check error: $e');
       }
 
       final delivery = await api.getDeliveryStatus(
@@ -677,17 +745,17 @@ class FrameCloudCastService {
     }
   }
 
-  static String _waitMessage(int seconds, bool extended) {
+  String _waitMessage(int seconds, bool extended, AppStrings strings) {
     if (seconds < 8) {
-      return 'Photo sent · waiting for frame to display…';
+      return strings.uploadWaitingFrame;
     }
     if (seconds < 25) {
-      return 'Frame is receiving your photo… (${seconds}s)';
+      return strings.uploadWaitingSeconds(seconds);
     }
     if (!extended) {
-      return 'Updating frame display… (${seconds}s)';
+      return strings.uploadUpdatingDisplay(seconds);
     }
-    return 'E‑ink is still refreshing — please wait… (${seconds}s)';
+    return strings.uploadEinkRefreshing(seconds);
   }
 
   static String _shortHash(PhotoUploadResponse res) {

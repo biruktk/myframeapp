@@ -110,6 +110,7 @@ class _SendScreenState extends State<SendScreen> {
       app_os.AppSettings.openAppSettings(type: app_os.AppSettingsType.settings);
 
   Future<void> _shareGuestUploadLink(BuildContext context) async {
+    final s = AppStrings.of(context);
     await DeviceStore.instance.load();
     final paired = DeviceStore.instance.cached;
     if (paired == null) {
@@ -119,9 +120,9 @@ class _SendScreenState extends State<SendScreen> {
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: const Text('Frame is not connected. Connect your frame now.'),
+          content: Text(s.frameNotConnected),
           action: SnackBarAction(
-            label: 'Connect',
+            label: s.connectLabel,
             onPressed: () async {
               final result = await Navigator.of(context).push<PairingNavResult>(
                 MaterialPageRoute<PairingNavResult>(
@@ -138,9 +139,9 @@ class _SendScreenState extends State<SendScreen> {
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Preparing upload link…'),
-        duration: Duration(seconds: 20),
+      SnackBar(
+        content: Text(s.preparingUploadLink),
+        duration: const Duration(seconds: 20),
       ),
     );
 
@@ -241,7 +242,7 @@ class _SendScreenState extends State<SendScreen> {
     final Uint8List imageBytes = bytes;
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
 
-    await Navigator.push<bool>(
+    final sent = await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(
         builder: (_) => ImageEditorScreen(
@@ -250,6 +251,11 @@ class _SendScreenState extends State<SendScreen> {
         ),
       ),
     );
+    if (sent == true && context.mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ShellNavigation.goToTab(0);
+      });
+    }
   }
 
   /// Photo library: [pickMultiImage] with single-image fallback, then the editor for each selection in order.
@@ -349,6 +355,10 @@ class _SendScreenState extends State<SendScreen> {
         ),
       );
       if (sent == true) {
+        if (!context.mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ShellNavigation.goToTab(0);
+        });
         return;
       }
     }
@@ -470,26 +480,34 @@ class _SendScreenState extends State<SendScreen> {
           ),
         ),
       );
-      if (sent == true && i + 1 < fileBytes.length) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            duration: const Duration(seconds: 5),
-            content: Text(
-              AppStrings.of(context).sendQueueWaitForFrame(i + 1, fileBytes.length),
+      if (sent == true) {
+        if (i + 1 < fileBytes.length) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              duration: const Duration(seconds: 5),
+              content: Text(
+                AppStrings.of(context).sendQueueWaitForFrame(i + 1, fileBytes.length),
+              ),
             ),
-          ),
-        );
-        await DeviceStore.instance.load();
-        final paired = DeviceStore.instance.cached;
-        if (paired != null) {
-          try {
-            await FrameRecoveryService.instance.sendLoginAck(paired);
-          } catch (_) {}
+          );
+          await DeviceStore.instance.load();
+          final paired = DeviceStore.instance.cached;
+          if (paired != null) {
+            try {
+              await FrameRecoveryService.instance.sendLoginAck(paired);
+            } catch (_) {}
+          }
+          await Future<void>.delayed(const Duration(seconds: 120));
+        } else {
+          if (!context.mounted) return;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            ShellNavigation.goToTab(0);
+          });
+          return;
         }
-        await Future<void>.delayed(const Duration(seconds: 8));
       }
     }
   }
@@ -604,7 +622,7 @@ class _SendScreenState extends State<SendScreen> {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     final slideshow = app.defaultSlideshowStyle;
-    await Navigator.push<bool>(
+    final sent = await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(
         builder: (_) => ImageEditorScreen(
@@ -614,6 +632,11 @@ class _SendScreenState extends State<SendScreen> {
         ),
       ),
     );
+    if (sent == true && context.mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ShellNavigation.goToTab(0);
+      });
+    }
   }
 
   @override

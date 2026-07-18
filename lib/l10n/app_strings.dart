@@ -702,6 +702,14 @@ class AppStrings {
     de: 'Teilen',
     ja: '共有',
   );
+  String get galleryRecentlySentTab => _l6(
+    en: 'Sent',
+    zh: '已发送',
+    es: 'Enviadas',
+    fr: 'Envoyées',
+    de: 'Gesendet',
+    ja: '送信済み',
+  );
   String get galleryPersonalTab => _l6(
     en: 'Personal',
     zh: '个人',
@@ -727,12 +735,12 @@ class AppStrings {
     ja: '写真を追加',
   );
   String get galleryEmptyHint => _l6(
-    en: 'Your personal library — no social feed. Add shots from your phone to curate this grid.',
-    zh: '个人图库，无社交信息流。从手机添加照片以填充网格。',
-    es: 'Tu galería personal, sin red social.',
-    fr: 'Bibliothèque personnelle, sans fil social.',
-    de: 'Persönliche Mediathek ohne Social Feed.',
-    ja: '個人用ライブラリ（SNS なし）。',
+    en: 'No pictures yet. Send photos from your phone to your frame — they will appear here automatically.',
+    zh: '还没有照片。将手机中的照片发送到相框后会自动显示在这里。',
+    es: 'Aún no hay fotos. Envía fotos desde tu teléfono a tu marco.',
+    fr: 'Pas encore de photos. Envoyez des photos depuis votre téléphone vers votre cadre.',
+    de: 'Noch keine Bilder. Sende Fotos von deinem Telefon an deinen Rahmen.',
+    ja: 'まだ写真がありません。スマホからフレームに写真を送信するとここに表示されます。',
   );
   String get frameDetailTitle => _l6(
     en: 'Frame detail',
@@ -776,12 +784,20 @@ class AppStrings {
     ja: '新規アルバム',
   );
   String get galleryAlbumsEmptyHint => _l6(
-    en: 'Group photos for sending to your frame. Tap the button to create an album (you can add photos from Personal or when you Send).',
-    zh: '将照片分组以便发送到相框。点按钮新建相册（可在「个人」或发送流程中添加照片）。',
-    es: 'Agrupa fotos para enviarlas al marco. Pulsa el botón para crear un álbum.',
-    fr: 'Regroupez des photos pour le cadre. Touchez le bouton pour créer un album.',
-    de: 'Fotos für den Rahmen gruppieren. Tippe auf die Schaltfläche, um ein Album anzulegen.',
-    ja: 'フレーム送信用に写真をまとめます。ボタンでアルバムを作成（個人タブや送信時に写真を追加できます）。',
+    en: 'Organise your pictures into albums and send them straight to your frame. Create your first album to get started.',
+    zh: '将照片整理成相册并直接发送到相框。创建第一个相册开始使用。',
+    es: 'Organiza tus fotos en álbumes y envíalas directamente a tu marco. Crea tu primer álbum.',
+    fr: 'Organisez vos photos en albums et envoyez-les directement à votre cadre. Créez votre premier album.',
+    de: 'Ordne deine Bilder in Alben und sende sie direkt an deinen Rahmen. Erstelle dein erstes Album.',
+    ja: '写真をアルバムに整理してフレームに送信しましょう。最初のアルバムを作成してください。',
+  );
+  String get galleryRecentlySentEmptyHint => _l6(
+    en: 'Pictures you send to your frame are saved here. Send your first photo to see it appear on this tab.',
+    zh: '发送到相框的照片会保存在这里。发送第一张照片后即可在此查看。',
+    es: 'Las fotos que envías a tu marco se guardan aquí. Envía tu primera foto.',
+    fr: 'Les photos envoyées à votre cadre sont sauvegardées ici. Envoyez votre première photo.',
+    de: 'An deinen Rahmen gesendete Bilder werden hier gespeichert. Sende dein erstes Foto.',
+    ja: 'フレームに送信した写真はここに保存されます。最初の写真を送信してください。',
   );
   String get addToAlbumNoAlbumsYet => _l6(
     en: 'No albums yet — use “Create New Album” in this sheet or in Gallery ▸ Albums.',
@@ -5987,7 +6003,7 @@ class AppStrings {
       );
 
   String get uploadWaitingFrame => _l6(
-        en: 'Photo sent · waiting for frame to display…',
+        en: 'Waiting for frame to refresh…',
         zh: '照片已发送 · 等待相框显示…',
         es: 'Foto enviada · esperando visualización…',
         fr: 'Photo envoyée · attente affichage…',
@@ -5996,7 +6012,7 @@ class AppStrings {
       );
 
   String uploadWaitingSeconds(int seconds) => _l6(
-        en: 'Frame is receiving your photo… (${seconds}s)',
+        en: 'Waiting for frame to refresh… (${seconds}s)',
         zh: '相框正在接收照片… (${seconds}秒)',
         es: 'Marco recibiendo foto… (${seconds}s)',
         fr: 'Cadre reçoit la photo… (${seconds}s)',
@@ -6005,7 +6021,7 @@ class AppStrings {
       );
 
   String uploadUpdatingDisplay(int seconds) => _l6(
-        en: 'Updating frame display… (${seconds}s)',
+        en: 'Waiting for frame to refresh… (${seconds}s)',
         zh: '更新相框显示… (${seconds}秒)',
         es: 'Actualizando marco… (${seconds}s)',
         fr: 'Mise à jour du cadre… (${seconds}s)',
@@ -6014,7 +6030,7 @@ class AppStrings {
       );
 
   String uploadEinkRefreshing(int seconds) => _l6(
-        en: 'E‑ink is still refreshing — please wait… (${seconds}s)',
+        en: 'Waiting for frame to refresh… (${seconds}s)',
         zh: '电子墨水屏仍在刷新 — 请稍候… (${seconds}秒)',
         es: 'E-ink refrescando — espere… (${seconds}s)',
         fr: 'E-ink actualise — patientez… (${seconds}s)',
@@ -6041,7 +6057,7 @@ class AppStrings {
       );
 
   String get uploadFrameDownloadComplete => _l6(
-        en: 'Frame downloaded photo — refreshing display…',
+        en: 'Waiting for frame to refresh…',
         zh: '相框已下载照片 — 刷新显示…',
         es: 'Foto descargada — refrescando…',
         fr: 'Photo téléchargée — rafraîchissement…',
@@ -6059,7 +6075,7 @@ class AppStrings {
       );
 
   String get uploadStillRefreshing => _l6(
-        en: 'Still updating the frame (e‑ink can take up to a minute)…',
+        en: 'Waiting for frame to refresh…',
         zh: '仍在更新相框（电子墨水可能需要一分钟）…',
         es: 'Actualizando marco (e-ink hasta un minuto)…',
         fr: 'Mise à jour en cours (e-ink jusqu\'à une minute)…',
@@ -6295,5 +6311,416 @@ class AppStrings {
         fr: 'Impossible d\'enregistrer le profil du cadre. Réessayez.',
         de: 'Rahmenprofil konnte nicht gespeichert werden. Erneut versuchen.',
         ja: 'フレームプロファイルを保存できませんでした。再試行してください。',
+      );
+
+  // ── Editor tool tab labels ──
+  String get cropLabel => _l6(
+        en: 'Crop', zh: '裁剪', es: 'Recortar', fr: 'Recadrer', de: 'Zuschneiden', ja: 'トリミング',
+      );
+  String get weatherLabel => _l6(
+        en: 'Weather', zh: '天气', es: 'Clima', fr: 'Météo', de: 'Wetter', ja: '天気',
+      );
+  String get dateLabel => _l6(
+        en: 'Date', zh: '日期', es: 'Fecha', fr: 'Date', de: 'Datum', ja: '日付',
+      );
+  String get textLabel => _l6(
+        en: 'Text', zh: '文字', es: 'Texto', fr: 'Texte', de: 'Text', ja: 'テキスト',
+      );
+  String get stickerLabel => _l6(
+        en: 'Sticker', zh: '贴纸', es: 'Pegatina', fr: 'Autocollant', de: 'Sticker', ja: 'ステッカー',
+      );
+  String get borderLabel => _l6(
+        en: 'Border', zh: '边框', es: 'Borde', fr: 'Bordure', de: 'Rahmen', ja: '枠線',
+      );
+
+  // ── Editor UI labels ──
+  String get einkPreviewLabel => _l6(
+        en: 'E-ink Preview', zh: '电子墨水预览', es: 'Vista previa E-ink', fr: 'Aperçu E-ink',
+        de: 'E-Ink Vorschau', ja: 'E-inkプレビュー',
+      );
+  String get deleteAction => _l6(
+        en: 'Delete', zh: '删除', es: 'Eliminar', fr: 'Supprimer', de: 'Löschen', ja: '削除',
+      );
+  String get sendLabel => _l6(
+        en: 'Send', zh: '发送', es: 'Enviar', fr: 'Envoyer', de: 'Senden', ja: '送信',
+      );
+  String sendPlaylistLabel(int count) => _l6(
+        en: 'Send Playlist ($count)', zh: '发送播放列表 ($count)', es: 'Enviar lista ($count)',
+        fr: 'Envoyer la liste ($count)', de: 'Playlist senden ($count)', ja: 'プレイリストを送信 ($count)',
+      );
+
+  // ── Crop panel ──
+  String get cropFree => _l6(
+        en: 'Free', zh: '自由', es: 'Libre', fr: 'Libre', de: 'Frei', ja: '自由',
+      );
+  String get cropOriginal => _l6(
+        en: 'Original', zh: '原始', es: 'Original', fr: 'Original', de: 'Original', ja: 'オリジナル',
+      );
+  String get cropLeft90 => _l6(
+        en: 'Left 90', zh: '左转90°', es: 'Izquierda 90', fr: 'Gauche 90', de: 'Links 90', ja: '左90°',
+      );
+  String get cropRight90 => _l6(
+        en: 'Right 90', zh: '右转90°', es: 'Derecha 90', fr: 'Droite 90', de: 'Rechts 90', ja: '右90°',
+      );
+  String get cropFlipH => _l6(
+        en: 'Flip H', zh: '水平翻转', es: 'Voltear H', fr: 'Retourner H', de: 'Horizontal spiegeln', ja: '左右反転',
+      );
+  String get cropFlipV => _l6(
+        en: 'Flip V', zh: '垂直翻转', es: 'Voltear V', fr: 'Retourner V', de: 'Vertikal spiegeln', ja: '上下反転',
+      );
+  String get cropReset => _l6(
+        en: 'Reset', zh: '重置', es: 'Restablecer', fr: 'Réinitialiser', de: 'Zurücksetzen', ja: 'リセット',
+      );
+  String get cropDragHint => _l6(
+        en: 'Drag the photo to reposition. Frame stays 3:4.',
+        zh: '拖动照片调整位置。相框保持 3:4。',
+        es: 'Arrastre la foto para reposicionarla. El marco permanece 3:4.',
+        fr: 'Faites glisser la photo pour la repositionner. Le cadre reste en 3:4.',
+        de: 'Ziehen Sie das Foto, um es neu zu positionieren. Rahmen bleibt 3:4.',
+        ja: '写真をドラッグして位置を調整。フレームは 3:4 のまま。',
+      );
+
+  // ── Weather panel ──
+  String get weatherOverrideTemp => _l6(
+        en: 'Override temperature (optional)',
+        zh: '覆盖温度（可选）',
+        es: 'Anular temperatura (opcional)',
+        fr: 'Température personnalisée (optionnel)',
+        de: 'Temperatur überschreiben (optional)',
+        ja: '気温を上書き（オプション）',
+      );
+  String get weatherPermissionHint => _l6(
+        en: 'Turns on location permission to load live weather for your device.',
+        zh: '开启位置权限以加载设备的实时天气。',
+        es: 'Active el permiso de ubicación para cargar el clima en vivo.',
+        fr: 'Activez l\'autorisation de localisation pour charger la météo.',
+        de: 'Standortberechtigung aktivieren, um Live-Wetter zu laden.',
+        ja: '位置情報の許可をオンにしてデバイスの天気を表示します。',
+      );
+
+  // ── Date panel ──
+  String get dateTimeHint => _l6(
+        en: 'When on, the current date and time are added at the bottom of the frame.',
+        zh: '开启后，当前日期和时间将显示在相框底部。',
+        es: 'Cuando está activado, la fecha y hora actuales se añaden al pie del marco.',
+        fr: 'Une fois activé, la date et l\'heure actuelles sont ajoutées en bas du cadre.',
+        de: 'Wenn aktiviert, werden Datum und Uhrzeit am unteren Rand des Rahmens angezeigt.',
+        ja: 'オンにすると、現在の日時がフレームの下部に追加されます。',
+      );
+
+  // ── Text panel ──
+  String get textHint => _l6(
+        en: 'Happy BirthDay',
+        zh: '生日快乐',
+        es: 'Feliz cumpleaños',
+        fr: 'Bon anniversaire',
+        de: 'Alles Gute zum Geburtstag',
+        ja: 'お誕生日おめでとう',
+      );
+  String get textDragHint => _l6(
+        en: 'Drag text on the photo to move it.',
+        zh: '拖动照片上的文字以移动位置。',
+        es: 'Arrastre el texto sobre la foto para moverlo.',
+        fr: 'Faites glisser le texte sur la photo pour le déplacer.',
+        de: 'Ziehen Sie den Text auf dem Foto, um ihn zu verschieben.',
+        ja: '写真上のテキストをドラッグして移動します。',
+      );
+
+  // ── Sticker panel ──
+  String get stickerHeart => _l6(
+        en: 'Heart', zh: '心形', es: 'Corazón', fr: 'Cœur', de: 'Herz', ja: 'ハート',
+      );
+  String get stickerStar => _l6(
+        en: 'Star', zh: '星星', es: 'Estrella', fr: 'Étoile', de: 'Stern', ja: '星',
+      );
+  String get stickerArrow => _l6(
+        en: 'Arrow', zh: '箭头', es: 'Flecha', fr: 'Flèche', de: 'Pfeil', ja: '矢印',
+      );
+  String get stickerBubble => _l6(
+        en: 'Bubble', zh: '气泡', es: 'Burbuja', fr: 'Bulle', de: 'Blase', ja: 'バブル',
+      );
+  String get stickerCircle => _l6(
+        en: 'Circle', zh: '圆形', es: 'Círculo', fr: 'Cercle', de: 'Kreis', ja: '円',
+      );
+  String get stickerTriangle => _l6(
+        en: 'Triangle', zh: '三角形', es: 'Triángulo', fr: 'Triangle', de: 'Dreieck', ja: '三角形',
+      );
+  String get stickerHoliday => _l6(
+        en: 'Holiday', zh: '节日', es: 'Festivo', fr: 'Fête', de: 'Feiertag', ja: '祝日',
+      );
+  String get stickerSun => _l6(
+        en: 'Sun', zh: '太阳', es: 'Sol', fr: 'Soleil', de: 'Sonne', ja: '太陽',
+      );
+  String get stickerDragHint => _l6(
+        en: 'Drag on the photo to move the sticker.',
+        zh: '在照片上拖动以移动贴纸。',
+        es: 'Arrastre sobre la foto para mover la pegatina.',
+        fr: 'Faites glisser sur la photo pour déplacer l\'autocollant.',
+        de: 'Auf dem Foto ziehen, um den Sticker zu verschieben.',
+        ja: '写真上でドラッグしてステッカーを移動します。',
+      );
+
+  // ── Border options ──
+  String get borderNone => _l6(
+        en: 'None', zh: '无', es: 'Ninguno', fr: 'Aucun', de: 'Kein', ja: 'なし',
+      );
+  String get borderThinBlack => _l6(
+        en: 'Thin black', zh: '细黑', es: 'Negro fino', fr: 'Noir fin', de: 'Dünn schwarz', ja: '細い黒',
+      );
+  String get borderThickWhite => _l6(
+        en: 'Thick white', zh: '粗白', es: 'Blanco grueso', fr: 'Blanc épais', de: 'Dick weiß', ja: '太い白',
+      );
+  String get borderPolaroid => _l6(
+        en: 'Polaroid', zh: '宝丽来', es: 'Polaroid', fr: 'Polaroid', de: 'Polaroid', ja: 'ポラロイド',
+      );
+  String get borderFilmStrip => _l6(
+        en: 'Film strip', zh: '胶片', es: 'Tira de película', fr: 'Pellicule', de: 'Filmstreifen', ja: 'フィルム',
+      );
+  String get borderRounded => _l6(
+        en: 'Rounded', zh: '圆角', es: 'Redondeado', fr: 'Arrondi', de: 'Abgerundet', ja: '角丸',
+      );
+  String get borderDouble => _l6(
+        en: 'Double', zh: '双线', es: 'Doble', fr: 'Double', de: 'Doppelt', ja: '二重線',
+      );
+
+  // ── General UI ──
+  String get sendingToFrame => _l6(
+        en: 'Sending to frame…',
+        zh: '发送到相框…',
+        es: 'Enviando al marco…',
+        fr: 'Envoi au cadre…',
+        de: 'Sende an Rahmen…',
+        ja: 'フレームに送信中…',
+      );
+  String get couldNotSendPhoto => _l6(
+        en: 'Could not send the photo. Try again.',
+        zh: '无法发送照片。请重试。',
+        es: 'No se pudo enviar la foto. Inténtelo de nuevo.',
+        fr: 'Impossible d\'envoyer la photo. Réessayez.',
+        de: 'Foto konnte nicht gesendet werden. Erneut versuchen.',
+        ja: '写真を送信できませんでした。再試行してください。',
+      );
+  String get bluetoothOff => _l6(
+        en: 'Bluetooth is off. Turn it on to scan.',
+        zh: '蓝牙已关闭。请开启蓝牙以扫描。',
+        es: 'Bluetooth está apagado. Enciéndalo para escanear.',
+        fr: 'Bluetooth désactivé. Activez-le pour scanner.',
+        de: 'Bluetooth ist aus. Einschalten, um zu scannen.',
+        ja: 'Bluetoothがオフです。スキャンするにはオンにしてください。',
+      );
+  String get bluetoothOffTitle => _l6(
+        en: 'Bluetooth Off',
+        zh: '蓝牙已关闭',
+        es: 'Bluetooth apagado',
+        fr: 'Bluetooth désactivé',
+        de: 'Bluetooth aus',
+        ja: 'Bluetoothオフ',
+      );
+  String get idleLabel => _l6(
+        en: 'Idle', zh: '空闲', es: 'Inactivo', fr: 'Inactif', de: 'Leerlauf', ja: '待機中',
+      );
+  String get scanningLabel => _l6(
+        en: 'Scanning…', zh: '正在扫描…', es: 'Escaneando…', fr: 'Scan…', de: 'Scannen…', ja: 'スキャン中…',
+      );
+  String get receivingDataLabel => _l6(
+        en: 'Receiving Data', zh: '接收数据中', es: 'Recibiendo datos', fr: 'Réception de données',
+        de: 'Daten empfangen', ja: 'データ受信中',
+      );
+  String get connectedLabel => _l6(
+        en: 'Connected', zh: '已连接', es: 'Conectado', fr: 'Connecté', de: 'Verbunden', ja: '接続済み',
+      );
+  String get bluetoothPermissionRequired => _l6(
+        en: 'Bluetooth access required on iPhone',
+        zh: 'iPhone 需要蓝牙权限',
+        es: 'Se requiere acceso Bluetooth en iPhone',
+        fr: 'Accès Bluetooth requis sur iPhone',
+        de: 'Bluetooth-Zugriff auf iPhone erforderlich',
+        ja: 'iPhoneでBluetoothアクセスが必要です',
+      );
+  String get bluetoothPermissionBody => _l6(
+        en: 'iPhone needs Bluetooth permission so MyFrame can discover nearby frames. Open iPhone Settings, allow Bluetooth for MyFrame, then restart the scan.',
+        zh: 'iPhone 需要蓝牙权限，以便 MyFrame 可以发现附近的相框。打开 iPhone 设置，允许 MyFrame 使用蓝牙，然后重新开始扫描。',
+        es: 'El iPhone necesita permiso de Bluetooth para que MyFrame pueda descubrir marcos cercanos.',
+        fr: 'L\'iPhone a besoin de l\'autorisation Bluetooth pour que MyFrame puisse découvrir les cadres à proximité.',
+        de: 'Das iPhone benötigt die Bluetooth-Berechtigung, damit MyFrame nahegelegene Rahmen erkennen kann.',
+        ja: 'MyFrameが近くのフレームを検出できるようにするには、iPhoneのBluetooth許可が必要です。',
+      );
+  String get openIphoneSettings => _l6(
+        en: 'Open iPhone Settings',
+        zh: '打开 iPhone 设置',
+        es: 'Abrir ajustes del iPhone',
+        fr: 'Ouvrir réglages iPhone',
+        de: 'iPhone-Einstellungen öffnen',
+        ja: 'iPhoneの設定を開く',
+      );
+  // ── WiFi Provision Screen ──
+  String get wifiProvisionPhoneHint => _l6(
+        en: 'Your phone\'s Wi‑Fi will be used for the initial connection.',
+        zh: '您手机的 Wi‑Fi 将用于初始连接。',
+        es: 'El Wi‑Fi de tu teléfono se usará para la conexión inicial.',
+        fr: 'Le Wi‑Fi de votre téléphone sera utilisé pour la connexion initiale.',
+        de: 'Das WLAN Ihres Telefons wird für die Erstverbindung verwendet.',
+        ja: '初期接続にはお使いの電話のWi‑Fiが使用されます。',
+      );
+  String get wifiCurrentNetwork => _l6(
+        en: 'Current',
+        zh: '当前',
+        es: 'Actual',
+        fr: 'Actuel',
+        de: 'Aktuell',
+        ja: '現在',
+      );
+  String get wifiUseNetwork => _l6(
+        en: 'Use',
+        zh: '使用',
+        es: 'Usar',
+        fr: 'Utiliser',
+        de: 'Verwenden',
+        ja: '使用',
+      );
+  String get wifiPasswordRequiredLabel => _l6(
+        en: 'Password required',
+        zh: '需要密码',
+        es: 'Contraseña requerida',
+        fr: 'Mot de passe requis',
+        de: 'Passwort erforderlich',
+        ja: 'パスワードが必要',
+      );
+  String get wifiOpenNetworkLabel => _l6(
+        en: 'Open network',
+        zh: '开放网络',
+        es: 'Red abierta',
+        fr: 'Réseau ouvert',
+        de: 'Offenes Netz',
+        ja: 'オープンネットワーク',
+      );
+  String get wifiShowPassword => _l6(
+        en: 'Show',
+        zh: '显示',
+        es: 'Mostrar',
+        fr: 'Afficher',
+        de: 'Anzeigen',
+        ja: '表示',
+      );
+  String get wifiHidePassword => _l6(
+        en: 'Hide',
+        zh: '隐藏',
+        es: 'Ocultar',
+        fr: 'Masquer',
+        de: 'Verstecken',
+        ja: '非表示',
+      );
+  String get wifiRequiredForNetwork => _l6(
+        en: 'Required for this network',
+        zh: '该网络需要密码',
+        es: 'Requerida para esta red',
+        fr: 'Requis pour ce réseau',
+        de: 'Für dieses Netz erforderlich',
+        ja: 'このネットワークには必須',
+      );
+  String get wifiLeaveBlankHint => _l6(
+        en: 'Leave blank for open networks.',
+        zh: '开放网络可留空。',
+        es: 'Déjalo en blanco para redes abiertas.',
+        fr: 'Laissez vide pour les réseaux ouverts.',
+        de: 'Bei offenen Netzen leer lassen.',
+        ja: 'オープンネットワークの場合は空白のままにしてください。',
+      );
+  String get wifiConnectingSavedPassword => _l6(
+        en: 'Connecting with saved password…',
+        zh: '正在使用保存的密码连接…',
+        es: 'Conectando con contraseña guardada…',
+        fr: 'Connexion avec mot de passe enregistré…',
+        de: 'Verbindung mit gespeichertem Passwort…',
+        ja: '保存済みパスワードで接続中…',
+      );
+  String get wifiRequiresPasswordError => _l6(
+        en: 'This network requires a password.',
+        zh: '该网络需要密码。',
+        es: 'Esta red requiere una contraseña.',
+        fr: 'Ce réseau nécessite un mot de passe.',
+        de: 'Dieses Netz erfordert ein Passwort.',
+        ja: 'このネットワークにはパスワードが必要です。',
+      );
+  String get wifiConnectionFailed => _l6(
+        en: 'Connection failed. Try again.',
+        zh: '连接失败。请重试。',
+        es: 'Conexión fallida. Inténtelo de nuevo.',
+        fr: 'Échec de connexion. Réessayez.',
+        de: 'Verbindung fehlgeschlagen. Erneut versuchen.',
+        ja: '接続に失敗しました。再試行してください。',
+      );
+  String get wifiConnectFrameFailed => _l6(
+        en: 'Could not connect the frame to Wi‑Fi. Try again.',
+        zh: '无法将相框连接到 Wi‑Fi。请重试。',
+        es: 'No se pudo conectar el marco al Wi‑Fi. Inténtelo de nuevo.',
+        fr: 'Impossible de connecter le cadre au Wi‑Fi. Réessayez.',
+        de: 'Rahmen konnte nicht mit WLAN verbunden werden. Erneut versuchen.',
+        ja: 'フレームをWi‑Fiに接続できませんでした。再試行してください。',
+      );
+  String get wifiConnectedTo => _l6(
+        en: 'Connected to',
+        zh: '已连接至',
+        es: 'Conectado a',
+        fr: 'Connecté à',
+        de: 'Verbunden mit',
+        ja: '接続完了',
+      );
+  String get wifiConnectedLabel => _l6(
+        en: 'Connected',
+        zh: '已连接',
+        es: 'Conectado',
+        fr: 'Connecté',
+        de: 'Verbunden',
+        ja: '接続済み',
+      );
+  String get wifiConnectNowLabel => _l6(
+        en: 'Connect now',
+        zh: '立即连接',
+        es: 'Conectar ahora',
+        fr: 'Connecter maintenant',
+        de: 'Jetzt verbinden',
+        ja: '今すぐ接続',
+      );
+  String get statusLabel => _l6(
+        en: 'Status',
+        zh: '状态',
+        es: 'Estado',
+        fr: 'Statut',
+        de: 'Status',
+        ja: 'ステータス',
+      );
+  String get unknownLabel => _l6(
+        en: 'Unknown',
+        zh: '未知',
+        es: 'Desconocido',
+        fr: 'Inconnu',
+        de: 'Unbekannt',
+        ja: '不明',
+      );
+
+  String get frameOfflineLabel => _l6(
+        en: 'Frame offline',
+        zh: '相框离线',
+        es: 'Marco sin conexión',
+        fr: 'Cadre hors ligne',
+        de: 'Rahmen offline',
+        ja: 'フレームオフライン',
+      );
+  String get frameOfflineReconnectTitle => _l6(
+        en: 'Frame offline',
+        zh: '相框离线',
+        es: 'Marco sin conexión',
+        fr: 'Cadre hors ligne',
+        de: 'Rahmen offline',
+        ja: 'フレームオフライン',
+      );
+  String get frameOfflineReconnectBody => _l6(
+        en: 'Please make sure your phone is connected to WiFi, or remove the device and reconnect it again.',
+        zh: '请确保手机已连接 WiFi，或删除设备后重新连接。',
+        es: 'Asegúrate de que el teléfono esté conectado al WiFi, o elimina el dispositivo y vuelve a conectarlo.',
+        fr: 'Assurez-vous que le téléphone est connecté au WiFi, ou supprimez l\'appareil et reconnectez-le.',
+        de: 'Stellen Sie sicher, dass das Telefon mit WLAN verbunden ist, oder entfernen Sie das Gerät und verbinden Sie es erneut.',
+        ja: '電話がWiFiに接続されていることを確認するか、デバイスを削除して再接続してください。',
       );
 }

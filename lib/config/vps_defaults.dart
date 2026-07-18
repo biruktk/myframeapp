@@ -2,14 +2,14 @@
 class VpsDefaults {
   VpsDefaults._();
 
-  static const String host = '128.241.231.234';
+  static const String host = 'myframe.ink';
   static const int apiPort = 3001;
 
   /// Marketing hostname (same VPS when DNS works — often flaky on cellular).
   static const String hostnameInk = 'myframe.ink';
 
-  /// Public HTTPS API (nginx → Express :3001). Used for frame status polls after BLE setup.
-  static String get publicApiBase => 'https://$hostnameInk';
+  /// HTTP API via direct IP (avoids DNS flakiness + Cloudflare HTTPS for frame compatibility).
+  static String get publicApiBase => 'http://$host:$apiPort';
 
   /// Alternate base if DNS resolves (`http://myframe.ink:3001`).
   /// Prefer [apiBase] (raw IP) for reliability (see pairing coercion).
@@ -19,9 +19,8 @@ class VpsDefaults {
   static const String mqttPass = 'framepass2026';
   static const String pairingToken = 'framepass2026';
 
-  /// Use domain through Cloudflare (same behavior as WeChat mini app).
-  /// API traffic goes through Cloudflare HTTPS → nginx → Express :3001.
-  static String get apiBase => 'https://$hostnameInk';
+  /// Use direct IP + HTTP for all API calls. Frames also get HTTP+IP for .bin downloads.
+  static String get apiBase => 'http://$host:$apiPort';
 
   static final Set<String> _dnsFragileHosts = {
     'myframe.ink',
