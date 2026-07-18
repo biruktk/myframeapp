@@ -52,10 +52,11 @@ export function frameSlideshowRouter(): Router {
       return;
     }
 
-    const body = req.body as { imageIds?: unknown; intervalMinutes?: unknown };
+    const body = req.body as { imageIds?: unknown; intervalMinutes?: unknown; skipPlay?: unknown };
     const rawIds = body.imageIds;
     const ids = Array.isArray(rawIds) ? rawIds.map((x) => String(x ?? "").trim()).filter((x) => x.length > 0) : [];
     const intervalMinutes = Number(body.intervalMinutes);
+    const skipPlay = body.skipPlay === true;
 
     const allowedIntervals = new Set([60, 240, 480, 1440]);
     if (!allowedIntervals.has(intervalMinutes)) {
@@ -96,7 +97,7 @@ export function frameSlideshowRouter(): Router {
     const firstId = ids[0]!;
     const imageUrl = resolvePlaybackUrl(deviceId, firstId, publicBase);
 
-    if (mqttMac && imageUrl && isMqttConnected()) {
+    if (!skipPlay && mqttMac && imageUrl && isMqttConnected()) {
       try {
         let publicHost = "";
         try {
@@ -124,6 +125,7 @@ export function frameSlideshowRouter(): Router {
       delivered_to_frame: deliveredToFrame,
       delivery_mode: deliveryMode,
       first_image_url: imageUrl,
+      skipped_play: skipPlay,
     });
   });
 

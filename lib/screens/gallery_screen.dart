@@ -51,6 +51,24 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     if (mounted) setState(() {});
   }
 
+  Future<void> _confirmDeleteAlbum(SendAlbumEntry album) async {
+    final s = AppStrings.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(s.deleteAction),
+        content: Text('${s.albumRemoveFromAlbumTitle}\n"${album.name}" (${album.paths.length} photos)'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.deleteAction)),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await SendAlbumsStore.instance.deleteAlbum(album.id);
+    await _reload();
+  }
+
   Future<void> _showCreateAlbumDialog() async {
     final s = AppStrings.of(context);
     final name = await TextInputBottomSheet.show(
@@ -156,6 +174,7 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
             colorScheme: cs,
             onCreateAlbum: _showCreateAlbumDialog,
             onAlbumTap: _openAlbumDetail,
+            onDeleteAlbum: _confirmDeleteAlbum,
             previewFor: _firstPreviewPath,
           ),
         ],
@@ -172,6 +191,7 @@ class _AlbumsGrid extends StatelessWidget {
     required this.colorScheme,
     required this.onCreateAlbum,
     required this.onAlbumTap,
+    required this.onDeleteAlbum,
     required this.previewFor,
   });
 
@@ -181,6 +201,7 @@ class _AlbumsGrid extends StatelessWidget {
   final ColorScheme colorScheme;
   final VoidCallback onCreateAlbum;
   final void Function(SendAlbumEntry album) onAlbumTap;
+  final void Function(SendAlbumEntry album) onDeleteAlbum;
   final String? Function(SendAlbumEntry) previewFor;
 
   @override
@@ -284,6 +305,22 @@ class _AlbumsGrid extends StatelessWidget {
                                   style: const TextStyle(color: Color(0xE6FFFFFF), fontSize: 12),
                                 ),
                               ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Material(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                          child: InkWell(
+                            onTap: () => onDeleteAlbum(a),
+                            borderRadius: BorderRadius.circular(8),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: Icon(Icons.delete_outline, color: Colors.white, size: 16),
                             ),
                           ),
                         ),

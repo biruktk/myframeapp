@@ -35,19 +35,31 @@ class _HomeScreenState extends State<HomeScreen> {
   OverlayEntry? _coachEntry;
   bool? _activeFrameServerOnline;
   bool _checkingFrameStatus = false;
+  Timer? _pollTimer;
 
   @override
   void initState() {
     super.initState();
     DeviceStore.instance.revision.addListener(_onDeviceStoreRevision);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _load();
+      _startPolling();
+    });
   }
 
   @override
   void dispose() {
     DeviceStore.instance.revision.removeListener(_onDeviceStoreRevision);
     _removeCoach();
+    _pollTimer?.cancel();
     super.dispose();
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      _refreshActiveFrameStatus();
+    });
   }
 
   void _onDeviceStoreRevision() {
@@ -212,6 +224,23 @@ class _HomeScreenState extends State<HomeScreen> {
     await _load();
   }
 
+  void _showOfflineDialog() {
+    final s = AppStrings.of(context);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.frameOfflineReconnectTitle),
+        content: Text(s.frameOfflineReconnectBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(s.gotItLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
@@ -269,33 +298,25 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             children: [
               if (showOfflineBanner) ...[
-                Card(
-                  color: Colors.orange.shade50,
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(Icons.warning_amber_rounded, color: Colors.orange),
-                            SizedBox(width: 8),
-                            Text(
-                              'Frame offline',
-                              style: TextStyle(fontWeight: FontWeight.w800),
+                GestureDetector(
+                  onTap: _showOfflineDialog,
+                  child: Card(
+                    color: Colors.orange.shade50,
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              s.frameOfflineLabel,
+                              style: const TextStyle(fontWeight: FontWeight.w800),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            OutlinedButton(
-                              onPressed: _refreshActiveFrameStatus,
-                              child: const Text('Retry'),
-                            ),
-                          ],
-                        ),
-                      ],
+                          ),
+                          Icon(Icons.chevron_right, color: Colors.orange.shade300),
+                        ],
+                      ),
                     ),
                   ),
                 ),

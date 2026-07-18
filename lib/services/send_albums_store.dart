@@ -97,6 +97,12 @@ class SendAlbumsStore {
     await _persist();
   }
 
+  Future<void> deleteAlbum(String albumId) async {
+    await load();
+    _albums.removeWhere((a) => a.id == albumId);
+    await _persist();
+  }
+
   Future<void> renameAlbum(String albumId, String newName) async {
     await load();
     final i = _albums.indexWhere((a) => a.id == albumId);

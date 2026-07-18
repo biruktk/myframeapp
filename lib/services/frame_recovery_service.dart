@@ -62,7 +62,8 @@ class FrameRecoveryService {
   }
 
   Future<void> wakeFrameMqtt(PairedFrame paired) async {
-    await sendMqttBrokerConfig(paired);
+    // NEVER send mqtt_config during send flow - it overwrites retained play command!
+    // mqtt_config is sent ONLY during BLE pairing (matches mini app behavior)
     await sendLoginAck(paired);
   }
 
@@ -120,5 +121,46 @@ class FrameRecoveryService {
       throw StateError((data['error'] ?? data['message'] ?? 'login_ack failed').toString());
     }
     return 'login_ack sent to $mac';
+  }
+
+  /// HTTP republish fallback — wake MQTT then re-publish play command.
+  /// Used when MQTT delivery fails or frame doesn't confirm.
+  /// Matches WeChat mini app's `burstDeliverPlay()` function.
+  Future<String> republishPlayWithWake(
+    PairedFrame paired,
+    String imageUrl,
+  ) async {
+    // Wake MQTT first
+    await sendLoginAck(paired);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+
+    // Republish play command
+    final mac = pairedFrameMac(paired);
+    if (mac == null) {
+      throw StateError('Paired frame MAC is unavailable. Re-scan the frame first.');
+    }
+    final base = paired.resolvedApiBaseUrl ?? VpsDefaults.apiBase;
+    final token = paired.resolvedPairingToken;
+    final uri = Uri.parse('$base/api/device/send');
+    final res = await http
+        .post(
+          uri,
+          headers: {
+            'content-type': 'application/json',
+            'accept': 'application/json',
+            if ((token ?? '').isNotEmpty) 'x-pairing-token': token!,
+          },
+          body: jsonEncode({
+            'device_id': mac,
+            'image_url': imageUrl,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+    final data = (res.body.isEmpty ? const <String, dynamic>{} : jsonDecode(res.body) as Map<String, dynamic>);
+    final success = res.statusCode >= 200 && res.statusCode < 300 && data['ok'] == true;
+    if (!success) {
+      throw StateError((data['error'] ?? data['message'] ?? 'republish failed').toString());
+    }
+    return 'Play command republished to $mac';
   }
 }

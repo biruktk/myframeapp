@@ -110,34 +110,6 @@ class _FirmwareUpdatePanelState extends State<FirmwareUpdatePanel> {
     _poll = Timer.periodic(const Duration(seconds: 8), (_) => _runCheck(silent: true));
   }
 
-  Future<void> _install() async {
-    final deviceId = _deviceId;
-    final token = AppSettingsScope.of(context).authToken.trim();
-    if (deviceId == null || token.isEmpty) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    final result = await _service.installUpdate(
-      deviceId: deviceId,
-      bearerToken: token,
-      bleMac: _bleMac,
-      displayName: _displayName,
-    );
-    if (!mounted) return;
-    if (!result.ok) {
-      setState(() {
-        _busy = false;
-        _error = result.message ?? result.error ?? 'install_failed';
-      });
-      return;
-    }
-    await _runCheck(silent: true);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    _startPolling();
-  }
-
   @override
   void initState() {
     super.initState();
@@ -214,27 +186,6 @@ class _FirmwareUpdatePanelState extends State<FirmwareUpdatePanel> {
               Text(_error!, style: TextStyle(color: cs.error, fontSize: 13)),
             ],
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _runCheck(),
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: Text(s.deviceCheckUpdatesCta),
-                  ),
-                ),
-                if (check?.updateAvailable == true) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: (_busy || check?.frameOnline != true) ? null : () => _install(),
-                      icon: const Icon(Icons.system_update_alt, size: 18),
-                      label: Text(s.firmwareInstallUpdate),
-                    ),
-                  ),
-                ],
-              ],
-            ),
           ],
         ),
       ),

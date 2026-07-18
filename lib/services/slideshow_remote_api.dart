@@ -18,6 +18,7 @@ class SlideshowRemoteApi {
     required String macSlug,
     required List<String> imageIds,
     required int intervalMinutes,
+    bool skipPlay = false,
   }) async {
     if (imageIds.isEmpty) return;
     final encoded = Uri.encodeComponent(macSlug);
@@ -33,10 +34,15 @@ class SlideshowRemoteApi {
       final pt = pairingToken?.trim() ?? '';
       if (pt.isNotEmpty) headers['x-pairing-token'] = pt;
     }
+    final body = <String, dynamic>{
+      'imageIds': imageIds,
+      'intervalMinutes': intervalMinutes,
+    };
+    if (skipPlay) body['skipPlay'] = true;
     final res = await http.post(
       uri,
       headers: headers,
-      body: jsonEncode({'imageIds': imageIds, 'intervalMinutes': intervalMinutes}),
+      body: jsonEncode(body),
     );
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw SlideshowPublishException(res.statusCode, res.body);

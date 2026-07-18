@@ -219,6 +219,25 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     );
   }
 
+  Future<void> _confirmDeleteAlbum() async {
+    final s = AppStrings.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(s.deleteAction),
+        content: Text('Delete "${_album?.name ?? ''}" and all its photos?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
+          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.deleteAction)),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await SendAlbumsStore.instance.deleteAlbum(widget.albumId);
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
   Future<void> _openViewer(int initialIndex) async {
     final a = _album;
     if (a == null || a.paths.isEmpty) return;
@@ -271,7 +290,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 }),
                 child: Text(s.cancel),
               ),
-            ] else
+            ] else ...[
               IconButton(
                 tooltip: s.albumDetailSelect,
                 icon: const Icon(Icons.checklist_outlined),
@@ -281,6 +300,15 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                   setState(() => _selecting = true);
                 },
               ),
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'delete') _confirmDeleteAlbum();
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'delete', child: Text(s.deleteAction)),
+                ],
+              ),
+            ],
           ],
         ),
         floatingActionButton: FloatingActionButton.extended(

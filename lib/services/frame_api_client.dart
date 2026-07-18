@@ -16,7 +16,7 @@ class FrameApiClient {
   final http.Client _http;
   final Duration defaultTimeout;
 
-  /// POST /api/photo/upload — multipart, per `ra/api/Image_Processing_API_Integration.md`.
+  /// POST /api/frames/{MAC}/upload — multipart, matches WeChat mini app endpoint.
   /// [baseUrlOverride] — e.g. LAN URL from pairing QR (`http://192.168.x.x:8080`).
   Future<PhotoUploadResponse> uploadPhoto({
     required Uint8List fileBytes,
@@ -29,28 +29,36 @@ class FrameApiClient {
     String? pairingToken,
     String? userAuthToken,
     Duration? timeout,
+    bool skipPlay = false,
   }) async {
     final checksum = sha256.convert(fileBytes).toString();
     final effectiveTimeout = timeout ?? defaultTimeout;
     final bases = _candidateBases(baseUrlOverride);
     Object? lastErr;
+    
+    // Clean MAC address (remove prefixes, keep last 12 hex chars)
+    final cleanMac = deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    final macSlug = cleanMac.length >= 12 ? cleanMac.substring(cleanMac.length - 12) : cleanMac;
+    
     for (final base in bases) {
       for (var attempt = 0; attempt < 2; attempt++) {
         try {
-          final uri = Uri.parse('$base/api/photo/upload');
+          final uri = Uri.parse('$base/api/frames/$macSlug/upload');
           final request = http.MultipartRequest('POST', uri)
+            ..fields['mac'] = macSlug
             ..fields['device_id'] = deviceId
             ..fields['checksum'] = checksum
             ..fields['size'] = '${fileBytes.length}'
-            ..fields.addAll({
-              if (slideshowStyle != null && slideshowStyle.isNotEmpty) 'slideshow_style': slideshowStyle,
-              if (displaySeconds != null && displaySeconds > 0)
-                'display_seconds': '$displaySeconds',
-              if (transport != null && transport.isNotEmpty) 'transport': transport,
-            })
+              ..fields.addAll({
+                if (slideshowStyle != null && slideshowStyle.isNotEmpty) 'slideshow_style': slideshowStyle,
+                if (displaySeconds != null && displaySeconds > 0)
+                  'display_seconds': '$displaySeconds',
+                if (transport != null && transport.isNotEmpty) 'transport': transport,
+                if (skipPlay) 'skip_play': 'true',
+              })
             ..files.add(
               http.MultipartFile.fromBytes(
-                'file',
+                'photo',  // Server expects 'photo' field for /api/frames/{MAC}/upload
                 fileBytes,
                 filename: filename,
               ),
@@ -202,6 +210,55 @@ class FrameApiClient {
     if (lastErr is TimeoutException) throw lastErr;
     if (lastErr is SocketException) throw lastErr;
     throw Exception('Delivery status failed after retries: $lastErr');
+  }
+
+  /// HTTP republish fallback — re-publishes MQTT play command when delivery fails.
+  /// Endpoint: POST /api/device/send
+  /// Used when MQTT publish failed or frame did not confirm delivery.
+  Future<RepublishResponse> republishFramePlay({
+    required String deviceId,
+    required String imageUrl,
+    String? baseUrlOverride,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final t = timeout ?? const Duration(seconds: 12);
+    Object? lastErr;
+    for (final base in _candidateBases(baseUrlOverride)) {
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          final uri = Uri.parse('$base/api/device/send');
+          final res = await _http
+              .post(
+                uri,
+                headers: {
+                  'content-type': 'application/json',
+                  'accept': 'application/json',
+                  if (pairingToken != null && pairingToken.trim().isNotEmpty)
+                    'x-pairing-token': pairingToken.trim(),
+                },
+                body: jsonEncode({
+                  'device_id': deviceId,
+                  'image_url': imageUrl,
+                }),
+              )
+              .timeout(t, onTimeout: () => throw TimeoutException('POST /api/device/send', t));
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            throw FrameApiException(res.statusCode, res.body);
+          }
+          final json = jsonDecode(res.body) as Map<String, dynamic>;
+          return RepublishResponse.fromJson(json);
+        } catch (e) {
+          lastErr = e;
+          if (!_isTransient(e) || attempt == 1) break;
+          await Future<void>.delayed(Duration(milliseconds: 300 * (1 << attempt)));
+        }
+      }
+    }
+    if (lastErr is FrameApiException) throw lastErr;
+    if (lastErr is TimeoutException) throw lastErr;
+    if (lastErr is SocketException) throw lastErr;
+    throw Exception('Republish failed after retries: $lastErr');
   }
 
   void close() => _http.close();
@@ -379,12 +436,39 @@ class FrameCastStatusResponse {
 
     if (displayed == true) return true;
 
-    // play_ack or firmware result codes mean the panel actually refreshed.
+    // Firmware result codes mean the panel actually refreshed.
     final action = (lastAction ?? '').toLowerCase();
-    if (action == 'play_ack') return true;
     final code = result ?? displayCode;
-    if (code == 113 || code == 184) return true;
+    // play_ack without displayed/display-code means download start (106), not done.
+    if (action == 'play_ack' && displayed != true) {
+      if (code == 113 || code == 182 || code == 184 || code == 186 || code == 188 || code == 210) {
+        return true;
+      }
+      return false;
+    }
+    // Display codes: 113, 182, 184, 186, 188, 210 = finished
+    if (code == 113 || code == 182 || code == 184 || code == 186 || code == 188 || code == 210) {
+      return true;
+    }
     return false;
+  }
+
+  /// Check if frame is stuck downloading (code 106) or failed (code 104).
+  bool get isDownloadInProgress {
+    final code = result ?? displayCode;
+    return code == 106; // Download in progress
+  }
+
+  /// Check if download failed.
+  bool get isDownloadFailed {
+    final code = result ?? displayCode;
+    return code == 104; // Download failed
+  }
+
+  /// Check if download completed but not displayed yet.
+  bool get isDownloadComplete {
+    final code = result ?? displayCode;
+    return code == 107; // Download complete
   }
 }
 
@@ -406,6 +490,29 @@ class DeliveryStatusResponse {
       ok: json['ok'] as bool? ?? false,
       found: json['found'] as bool? ?? false,
       deliveredToFrame: json['delivered_to_frame'] as bool? ?? false,
+      deliveryMode: json['delivery_mode'] as String?,
+    );
+  }
+}
+
+class RepublishResponse {
+  RepublishResponse({
+    required this.ok,
+    this.message,
+    this.published,
+    this.deliveryMode,
+  });
+
+  final bool ok;
+  final String? message;
+  final bool? published;
+  final String? deliveryMode;
+
+  factory RepublishResponse.fromJson(Map<String, dynamic> json) {
+    return RepublishResponse(
+      ok: json['ok'] as bool? ?? false,
+      message: json['message'] as String?,
+      published: json['published'] as bool?,
       deliveryMode: json['delivery_mode'] as String?,
     );
   }

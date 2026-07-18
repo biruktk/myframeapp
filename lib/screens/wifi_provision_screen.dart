@@ -10,14 +10,14 @@ import '../l10n/app_strings.dart';
 import '../models/pairing_nav_result.dart';
 import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
-import '../services/frame_recovery_service.dart';
 import '../services/wifi_credential_cache.dart';
 import 'frame_profile_setup_screen.dart';
 import '../services/permission_gate.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
-import '../services/app_release_guard.dart';
 import '../widgets/debug_slog_overlay.dart';
+
+const _kRed = Color(0xFFE5252A);
 
 class WifiProvisionScreen extends StatefulWidget {
   const WifiProvisionScreen({
@@ -27,13 +27,8 @@ class WifiProvisionScreen extends StatefulWidget {
     this.openSendAfterSetup = true,
   });
 
-  /// First-time pairing: profile setup + open Send gallery after success.
   final bool firstTimeSetup;
-
-  /// When mqtt_config was already sent in an earlier BLE session (EspBlufi order).
   final bool serverConfigAlreadySent;
-
-  /// When false, caller handles navigation (e.g. image editor upload).
   final bool openSendAfterSetup;
 
   @override
@@ -44,26 +39,21 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   static const MethodChannel _nativeBleMethod = MethodChannel('myframe/native_ble/methods');
   final _ssidCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
-  final _mqttHostCtrl = TextEditingController();
-  final _mqttPortCtrl = TextEditingController(text: '1883');
-  final _mqttUserCtrl = TextEditingController();
-  final _mqttPassCtrl = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
   final _scrollController = ScrollController();
-  final _manualKey = GlobalKey();
 
   List<({String ssid, int rssi, bool secure})> _wifiNetworks = [];
   String? _selectedSsid;
   bool _scanningWifi = false;
   bool _busy = false;
   bool _hide = true;
+  bool _showManualEntry = false;
   bool _selectedIsOpen = false;
   String? _status;
-  /// When false on Android with scan results, SSID/password fields stay collapsed until + is used.
-  bool _showManualEntry = false;
+  String? _error;
   bool _didAutoLaunch = false;
-  final Map<String, bool> _savedPasswordForSsid = {};
-  bool _recoveryBusy = false;
+  bool _wifiConfirmed = false;
+  String? _currentWifiSsid;
+  String? _frameMac;
 
   @override
   void initState() {
@@ -72,21 +62,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     if (paired != null) {
       _ssidCtrl.text = normalizeWifiSsid(paired.wifiSsid);
       _passCtrl.text = paired.wifiPassword ?? '';
-      _mqttHostCtrl.text =
-          paired.mqttBrokerHost?.trim().isNotEmpty == true ? paired.mqttBrokerHost! : VpsDefaults.host;
-      _mqttPortCtrl.text =
-          (paired.mqttBrokerPort ?? VpsDefaults.mqttPort).toString();
-      _mqttUserCtrl.text =
-          paired.mqttBrokerUser?.trim().isNotEmpty == true ? paired.mqttBrokerUser! : VpsDefaults.mqttUser;
-      _mqttPassCtrl.text = paired.mqttBrokerPassword ?? VpsDefaults.mqttPass;
-    } else {
-      _mqttHostCtrl.text = VpsDefaults.host;
-      _mqttPortCtrl.text = '${VpsDefaults.mqttPort}';
-      _mqttUserCtrl.text = VpsDefaults.mqttUser;
-      _mqttPassCtrl.text = VpsDefaults.mqttPass;
-    }
-    if (Platform.isIOS) {
-      _showManualEntry = true;
+      _frameMac = paired.deviceId;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _seedPairedIntoCache();
@@ -109,10 +85,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     _scrollController.dispose();
     _ssidCtrl.dispose();
     _passCtrl.dispose();
-    _mqttHostCtrl.dispose();
-    _mqttPortCtrl.dispose();
-    _mqttUserCtrl.dispose();
-    _mqttPassCtrl.dispose();
     super.dispose();
   }
 
@@ -136,7 +108,8 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     _didAutoLaunch = true;
     _passCtrl.text = pass;
     if (!mounted) return;
-    setState(() => _status = AppStrings.of(context).wifiSavedPasswordConnecting);
+    final s = AppStrings.of(context);
+    setState(() => _status = s.wifiConnectingSavedPassword);
     if (mounted) await _connect();
   }
 
@@ -144,6 +117,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     setState(() {
       _scanningWifi = true;
       _status = null;
+      _error = null;
     });
     try {
       try {
@@ -159,6 +133,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       final currentSsid = normalizeWifiSsid(info?['ssid']?.toString() ?? '');
       if (currentSsid.isNotEmpty && currentSsid != '<unknown ssid>') {
         setState(() {
+          _currentWifiSsid = currentSsid;
           _ssidCtrl.text = currentSsid;
           _selectedSsid = currentSsid;
         });
@@ -166,9 +141,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       if (!Platform.isAndroid) {
         setState(() {
           _showManualEntry = true;
-          if (currentSsid.isEmpty) {
-            _status = 'Enter the Wi‑Fi name and password manually.';
-          }
+          _scanningWifi = false;
         });
         return;
       }
@@ -178,7 +151,8 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         setState(() {
           _wifiNetworks = const [];
           _selectedSsid = null;
-          _status = 'Turn on phone Wi-Fi to scan networks.';
+          _scanningWifi = false;
+          _showManualEntry = true;
         });
         return;
       }
@@ -196,25 +170,10 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           secure: item['secure'] == true,
         ));
       }
-      final isCurrentInList = currentSsid.isNotEmpty &&
-          currentSsid != '<unknown ssid>' &&
-          parsed.any((n) => wifiSsidEquals(n.ssid, currentSsid));
-      final savedMap = <String, bool>{};
-      for (final n in parsed) {
-        final pw = await _passwordForSsid(n.ssid);
-        savedMap[n.ssid] = pw != null && pw.isNotEmpty;
-      }
       if (!mounted) return;
       setState(() {
         _wifiNetworks = parsed;
-        _savedPasswordForSsid
-          ..clear()
-          ..addAll(savedMap);
-        if (!isCurrentInList && _selectedSsid != null && !_wifiNetworks.any((n) => wifiSsidEquals(n.ssid, _selectedSsid))) {
-          _selectedSsid = null;
-        }
         if (_wifiNetworks.isEmpty) {
-          _status = 'No Wi-Fi networks found. You can still enter SSID manually.';
           _showManualEntry = true;
         }
       });
@@ -222,7 +181,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _status = 'Unable to scan Wi-Fi networks. You can still enter SSID manually.';
         _showManualEntry = true;
       });
     } finally {
@@ -230,54 +188,38 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     }
   }
 
-  void _openManualEntry() {
-    setState(() => _showManualEntry = true);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _manualKey.currentContext;
-      if (ctx != null) {
-        Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 320),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
-  Future<void> _onPickNetwork(String ssid) async {
+  void _onSelectNetwork(String ssid, bool secure) {
     if (_busy) return;
-    ({String ssid, int rssi, bool secure})? network;
-    for (final n in _wifiNetworks) {
-      if (wifiSsidEquals(n.ssid, ssid)) {
-        network = n;
-        break;
-      }
-    }
-    final pass = await _passwordForSsid(ssid);
-    if (!mounted) return;
     setState(() {
       _selectedSsid = normalizeWifiSsid(ssid);
       _ssidCtrl.text = _selectedSsid!;
-      _selectedIsOpen = network?.secure == false;
-      if (pass != null && pass.isNotEmpty) {
-        _passCtrl.text = pass;
-        _status = AppStrings.of(context).wifiSavedPasswordConnecting;
-      } else if (_selectedIsOpen) {
-        _passCtrl.clear();
-        _status = 'Open network selected. Password not required.';
-      } else {
-        _passCtrl.clear();
-        _status = AppStrings.of(context).wifiEnterPasswordForNetwork;
-        _showManualEntry = true;
-      }
+      _selectedIsOpen = !secure;
+      _error = null;
+      _status = null;
     });
-    if (network != null && network.secure && (pass == null || pass.isEmpty)) {
-      _openManualEntry();
-      return;
+    if (!secure) {
+      _passCtrl.clear();
     }
-    if (!_busy) {
-      await _connect();
-    }
+  }
+
+  Widget _signalBar(int rssi) {
+    final t = ((rssi + 100) / 60).clamp(0.0, 1.0);
+    final filled = (t * 4).round().clamp(0, 4);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(4, (i) {
+        final on = i < filled;
+        return Container(
+          width: 6,
+          height: 12,
+          margin: const EdgeInsets.only(right: 2),
+          decoration: BoxDecoration(
+            color: on ? _kRed : const Color(0xFFEEEEEE),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        );
+      }),
+    );
   }
 
   Future<void> _connect() async {
@@ -286,109 +228,115 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     } catch (e, st) {
       AppDiagLog.verbose('[WiFi] connect failed: $e\n$st');
       if (!mounted) return;
+      final s = AppStrings.of(context);
       setState(() {
         _busy = false;
-        _status = AppDiagLog.userFacingStatus(
+        _error = AppDiagLog.userFacingStatus(
           e.toString(),
-          fallback: 'Wi‑Fi setup failed. Please try again.',
+          fallback: s.wifiConnectionFailed,
         );
       });
     }
   }
 
   Future<void> _connectInner() async {
+    final s = AppStrings.of(context);
     final paired = DeviceStore.instance.cached;
     final currentSsid = normalizeWifiSsid(_ssidCtrl.text);
-    final knownSsid = paired?.wifiSsid;
     final knownPass = paired?.wifiPassword ?? '';
-    final usingKnownNetwork = wifiSsidEquals(knownSsid, currentSsid) && (knownPass.isNotEmpty);
     final cached = await WifiCredentialCache.instance.passwordFor(currentSsid) ?? '';
     final effectivePassword = _passCtrl.text.isNotEmpty
         ? _passCtrl.text
-        : (usingKnownNetwork ? knownPass : cached);
-    if (!_formKey.currentState!.validate()) return;
-    for (final n in _wifiNetworks) {
-      if (wifiSsidEquals(n.ssid, currentSsid) && n.secure && effectivePassword.isEmpty) {
-        setState(() {
-          _status = 'This network is secured — enter its Wi‑Fi password.';
-          _showManualEntry = true;
-        });
-        _openManualEntry();
-        return;
-      }
-    }
-    setState(() {
-      _busy = true;
-      _status = null;
-    });
-    if (paired == null) {
-      AppDiagLog.verbose('[WiFi] connect aborted: no paired frame in DeviceStore');
+        : (knownPass.isNotEmpty ? knownPass : cached);
+
+    final secure = _wifiNetworks.any((n) => wifiSsidEquals(n.ssid, currentSsid) && n.secure);
+    if (currentSsid.isEmpty) {
       setState(() {
-        _busy = false;
-        _status = 'No paired frame selected';
+        _error = s.wifiSsidRequired;
       });
       return;
     }
+    if (secure && effectivePassword.isEmpty) {
+      setState(() {
+        _error = s.wifiRequiresPasswordError;
+      });
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _error = null;
+      _status = s.connectingWifi;
+    });
+
+    if (paired == null) {
+      setState(() {
+        _busy = false;
+        _error = s.firmwareNoDevice;
+      });
+      return;
+    }
+
     AppDiagLog.verbose(
-      '[WiFi] connect start ssid="${_ssidCtrl.text.trim()}" pwdLen=${effectivePassword.length} '
-      'paired deviceId=${paired.deviceId} bleRemoteId=${paired.bleRemoteId} bleNamePrefix=${paired.bleNamePrefix}',
+      '[WiFi] connect start ssid="$currentSsid" pwdLen=${effectivePassword.length}',
     );
-    final mqHost = _mqttHostCtrl.text.trim();
-    final mqPort = int.tryParse(_mqttPortCtrl.text.trim()) ?? 1883;
-    await DeviceStore.instance.saveSelfHostedMqtt(
-      host: mqHost,
-      port: mqPort,
-      user: _mqttUserCtrl.text.trim(),
-      password: _mqttPassCtrl.text,
+
+    final selfHostedMqtt = SelfHostedMqttConfig(
+      host: VpsDefaults.host,
+      port: VpsDefaults.mqttPort,
+      user: VpsDefaults.mqttUser,
+      password: VpsDefaults.mqttPass,
     );
-    final selfHostedMqtt = mqHost.isEmpty
-        ? null
-        : SelfHostedMqttConfig(
-            host: mqHost,
-            port: mqPort,
-            user: _mqttUserCtrl.text.trim(),
-            password: _mqttPassCtrl.text,
-          );
+
     final provision = await BlufiProvisioningService.instance.provision(
       paired: paired,
-      ssid: _ssidCtrl.text.trim(),
+      ssid: currentSsid,
       password: effectivePassword,
       selfHostedMqtt: selfHostedMqtt,
       serverConfigAlreadySent: widget.serverConfigAlreadySent,
     );
+
     AppDiagLog.verbose(
       '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}"',
     );
+
     if (!mounted) return;
+
     if (!provision.ok || !provision.confirmed) {
       setState(() {
         _busy = false;
-        _status = AppDiagLog.userFacingStatus(
+        _error = AppDiagLog.userFacingStatus(
           provision.message,
-          fallback: 'Could not connect the frame to Wi‑Fi. Try again.',
+          fallback: s.wifiConnectFrameFailed,
         );
       });
       return;
     }
+
     AppDiagLog.verbose('[WiFi] frame confirmed Wi‑Fi — saving SSID, opening profile setup…');
     await DeviceStore.instance.saveWifiProvision(
-      ssid: _ssidCtrl.text,
+      ssid: currentSsid,
       password: effectivePassword,
     );
+
     if (!mounted) return;
     setState(() {
       _busy = false;
-      _status = AppStrings.of(context).wifiConnectSuccess(_ssidCtrl.text.trim());
+      _wifiConfirmed = true;
+      _status = '${s.wifiConnectedTo} $currentSsid';
     });
 
-    final profileOk = await SafeNav.push<bool>(
-      context,
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+
+    final profileOk = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => FrameProfileSetupScreen(
           requiredSetup: widget.firstTimeSetup,
         ),
       ),
     );
+
     if (!mounted) return;
     if (widget.firstTimeSetup) {
       final openSend = profileOk == true && widget.openSendAfterSetup;
@@ -396,312 +344,537 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         success: profileOk == true,
         openSendGallery: openSend,
       );
-      await SafeNav.popAfterFrame<PairingNavResult>(context, result: result);
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop<PairingNavResult>(result);
+      }
       if (openSend) {
         PairingFlowNav.onComplete(result);
       }
       return;
     }
-    await SafeNav.popAfterFrame<bool>(context, result: profileOk == true);
-  }
-
-  Future<void> _reconfigureServer({required bool resetLabel}) async {
-    final paired = DeviceStore.instance.cached;
-    if (paired == null) {
-      setState(() => _status = 'No paired frame selected');
-      return;
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop<bool>(profileOk == true);
     }
-    setState(() {
-      _recoveryBusy = true;
-      _status = resetLabel ? 'Resetting server settings on the frame…' : 'Reconfiguring server…';
-    });
-    try {
-      final msg = await FrameRecoveryService.instance.reconfigureServer(paired);
-      if (!mounted) return;
-      setState(() => _status = AppDiagLog.userFacingStatus(msg));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _status = AppDiagLog.userFacingStatus(
-            e.toString(),
-            fallback: 'Could not reach the frame. Stay nearby and try again.',
-          ));
-    } finally {
-      if (mounted) setState(() => _recoveryBusy = false);
-    }
-  }
-
-  Future<void> _sendLoginAck() async {
-    final paired = DeviceStore.instance.cached;
-    if (paired == null) {
-      setState(() => _status = 'No paired frame selected');
-      return;
-    }
-    setState(() {
-      _recoveryBusy = true;
-      _status = 'Sending login_ack…';
-    });
-    try {
-      final msg = await FrameRecoveryService.instance.sendLoginAck(paired);
-      if (!mounted) return;
-      setState(() => _status = AppDiagLog.userFacingStatus(msg));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _status = AppDiagLog.userFacingStatus(
-            e.toString(),
-            fallback: 'Could not reach the frame. Stay nearby and try again.',
-          ));
-    } finally {
-      if (mounted) setState(() => _recoveryBusy = false);
-    }
-  }
-
-  Widget _rssiBars(int rssi, ColorScheme cs) {
-    final t = ((rssi + 100) / 60).clamp(0.0, 1.0);
-    final filled = (t * 4).round().clamp(0, 4);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(4, (i) {
-        final on = i < filled;
-        return Container(
-          width: 5,
-          height: 12,
-          margin: const EdgeInsets.only(right: 2),
-          decoration: BoxDecoration(
-            color: on ? cs.primary : cs.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        );
-      }),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
-    final showFormFields = _showManualEntry || Platform.isIOS || _wifiNetworks.isEmpty;
+    final paired = DeviceStore.instance.cached;
+    final mac = _frameMac ?? paired?.deviceId ?? '';
 
     return DebugSlogOverlay(
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(s.wifiSetupTitle),
-        actions: [
-          if (Platform.isAndroid)
-            IconButton(
-              tooltip: s.wifiRescanNetworks,
-              onPressed: (_busy || _scanningWifi) ? null : () => unawaited(_scanWifiNetworks()),
-              icon: _scanningWifi
-                  ? SizedBox(
-                      width: 22,
-                      height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: cs.onSurface),
-                    )
-                  : const Icon(Icons.wifi_find),
-            ),
-          IconButton(
-            tooltip: s.wifiAddNetworkManually,
-            onPressed: _busy ? null : _openManualEntry,
-            icon: const Icon(Icons.add),
-          ),
-        ],
-      ),
-      body: ListView(
-        controller: _scrollController,
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(s.wifiSetupBody, style: TextStyle(color: cs.onSurfaceVariant, height: 1.4)),
-          if (Platform.isIOS) ...[
-            const SizedBox(height: 8),
-            Text(
-              'On iPhone, type the Wi‑Fi name (SSID) and password manually.',
-              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
-            ),
-          ],
-          if (Platform.isAndroid && _wifiNetworks.isNotEmpty && !_showManualEntry) ...[
-            const SizedBox(height: 8),
-            Text(
-              s.wifiTapPlusForNewNetwork,
-              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
-            ),
-          ],
-          const SizedBox(height: 14),
-          if (Platform.isAndroid && _scanningWifi && _wifiNetworks.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
+        backgroundColor: cs.surface,
+        appBar: AppBar(
+          title: Text(s.wifiSetupTitle, style: const TextStyle(fontWeight: FontWeight.w700)),
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0.5,
+        ),
+        body: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(s.wifiScanningNetworks, style: TextStyle(fontWeight: FontWeight.w600, color: cs.primary)),
-                ],
-              ),
-            ),
-          if (Platform.isAndroid && _wifiNetworks.isNotEmpty) ...[
-            Text(s.wifiNearbyNetworksTitle, style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Card(
-              margin: EdgeInsets.zero,
-              child: Column(
-                children: [
-                  for (final n in _wifiNetworks)
-                    ListTile(
-                      selected: wifiSsidEquals(_selectedSsid, n.ssid),
-                      leading: Icon(n.secure ? Icons.wifi_lock_outlined : Icons.wifi_outlined),
-                      title: Text(n.ssid, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Row(
-                        children: [
-                          _rssiBars(n.rssi, cs),
-                          const SizedBox(width: 8),
-                          Text(
-                            '${n.rssi} dBm · ${n.secure ? 'Secured' : 'Open'}',
-                            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                          ),
-                          if (_savedPasswordForSsid[n.ssid] == true) ...[
-                            const SizedBox(width: 8),
-                            Icon(Icons.key, size: 16, color: cs.tertiary),
-                          ],
-                        ],
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: _busy ? null : () => unawaited(_onPickNetwork(n.ssid)),
+                  // Frame info strip
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: cs.outlineVariant),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
                     ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          Card(
-            key: _manualKey,
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (!showFormFields)
-                      Text(
-                        s.wifiManualEntryCollapsedHint,
-                        style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
-                      ),
-                    Visibility(
-                      visible: showFormFields,
-                      maintainState: true,
-                      maintainAnimation: true,
-                      maintainSize: false,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextFormField(
-                            controller: _ssidCtrl,
-                            decoration: InputDecoration(
-                              labelText: s.wifiSsidLabel,
-                              prefixIcon: const Icon(Icons.wifi),
-                            ),
-                            validator: (v) {
-                              if (v == null || normalizeWifiSsid(v).isEmpty) return s.wifiSsidRequired;
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 10),
-                          TextFormField(
-                            controller: _passCtrl,
-                            obscureText: _hide,
-                            decoration: InputDecoration(
-                              labelText: s.wifiPasswordLabel,
-                              prefixIcon: const Icon(Icons.lock_outline),
-                              suffixIcon: IconButton(
-                                onPressed: () => setState(() => _hide = !_hide),
-                                icon: Icon(_hide ? Icons.visibility : Icons.visibility_off),
-                              ),
-                            ),
-                            validator: (v) {
-                              return null;
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ExpansionTile(
-                      title: const Text('Self-hosted MQTT (optional)'),
-                      subtitle: Text(
-                        'Send your VPS broker to the frame after Wi‑Fi (empty = use factory cloud).',
-                        style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-                      ),
-                      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextFormField(
-                          controller: _mqttHostCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'MQTT host',
-                            hintText: 'mqtt.example.com',
-                            prefixIcon: Icon(Icons.dns_outlined),
+                        Text(
+                          s.appName,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        TextFormField(
-                          controller: _mqttPortCtrl,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'MQTT port',
-                            prefixIcon: Icon(Icons.numbers),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextFormField(
-                          controller: _mqttUserCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'MQTT user (optional)',
-                            prefixIcon: Icon(Icons.person_outline),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextFormField(
-                          controller: _mqttPassCtrl,
-                          obscureText: true,
-                          decoration: const InputDecoration(
-                            labelText: 'MQTT password (optional)',
-                            prefixIcon: Icon(Icons.key_outlined),
+                        const SizedBox(height: 2),
+                        Text(
+                          'MAC · ${mac.isNotEmpty ? mac : s.unknownLabel}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: cs.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
-                    if (_status != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _status!,
-                        style: TextStyle(color: cs.primary, fontWeight: FontWeight.w600),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Available WiFi networks card (scrollable rectangle at top)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 4),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: cs.outlineVariant),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          s.wifiSsidLabel,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          s.wifiProvisionPhoneHint,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+
+                        // Current WiFi
+                        if (_currentWifiSsid != null && _currentWifiSsid!.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: cs.surfaceContainerLow,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: cs.outlineVariant),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        s.wifiCurrentNetwork,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: cs.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _currentWifiSsid!,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          color: cs.onSurface,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => _onSelectNetwork(_currentWifiSsid!, true),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: _kRed,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      s.wifiUseNetwork,
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        // Scanning indicator
+                        if (_scanningWifi && _wifiNetworks.isEmpty && (_currentWifiSsid == null || _currentWifiSsid!.isEmpty)) ...[
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: _kRed,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                s.wifiScanningNetworks,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: _kRed,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+
+                        // Other networks scrollable list
+                        if (_wifiNetworks.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            s.wifiNearbyNetworksTitle,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 200),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: cs.outlineVariant),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              itemCount: _wifiNetworks.length,
+                              separatorBuilder: (_, __) => Divider(
+                                height: 1,
+                                color: cs.outlineVariant,
+                              ),
+                              itemBuilder: (context, i) {
+                                final n = _wifiNetworks[i];
+                                final selected = wifiSsidEquals(_selectedSsid, n.ssid);
+                                return InkWell(
+                                  onTap: () => _onSelectNetwork(n.ssid, n.secure),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    color: selected
+                                        ? _kRed.withValues(alpha: 0.08)
+                                        : Colors.transparent,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                n.ssid,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: cs.onSurface,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                n.secure ? s.wifiPasswordRequiredLabel : s.wifiOpenNetworkLabel,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  color: cs.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        _signalBar(n.rssi),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 10),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // WiFi manual entry card (SSID + password)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: cs.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: cs.outlineVariant),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          s.wifiSsidLabel,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextField(
+                          controller: _ssidCtrl,
+                          style: const TextStyle(fontSize: 15),
+                          decoration: InputDecoration(
+                            hintText: s.wifiSsidRequired,
+                            filled: true,
+                            fillColor: cs.surfaceContainerLow,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: cs.outlineVariant),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(color: cs.outlineVariant),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            isDense: true,
+                          ),
+                        ),
+
+                        // Password section
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: _kRed.withValues(alpha: 0.28),
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    s.wifiPasswordLabel,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: cs.onSurface,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _hide = !_hide),
+                                    child: Text(
+                                      _hide ? s.wifiShowPassword : s.wifiHidePassword,
+                                      style: const TextStyle(
+                                        color: _kRed,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                s.wifiRequiredForNetwork,
+                                style: TextStyle(
+                                  color: _kRed,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextField(
+                                controller: _passCtrl,
+                                obscureText: _hide,
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                decoration: InputDecoration(
+                                  hintText: s.wifiPasswordRequired,
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: cs.outlineVariant, width: 1.5),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(color: cs.outlineVariant, width: 1.5),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  isDense: true,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                s.wifiLeaveBlankHint,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: cs.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Status
+                  if (_status != null) ...[
                     const SizedBox(height: 14),
-                    SizedBox(
+                    Container(
                       width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _busy || _recoveryBusy ? null : _connect,
-                        icon: _busy
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.wifi_tethering),
-                        label: Text(_busy ? s.connectingWifi : s.connectWifiButton),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: cs.outlineVariant),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                            Text(
+                              _busy ? s.connectingWifi : s.statusLabel,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _status!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
+
+                  // Error
+                  if (_error != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: _kRed.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _kRed.withValues(alpha: 0.2)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, size: 16, color: _kRed),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _kRed,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+                ],
+              ),
+            ),
+
+            // Bottom action bar
+            Container(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                12,
+                16,
+                16 + MediaQuery.of(context).padding.bottom,
+              ),
+              decoration: BoxDecoration(
+                color: cs.surface,
+                border: Border(top: BorderSide(color: cs.outlineVariant)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: (_busy || _wifiConfirmed)
+                        ? null
+                        : _connect,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _kRed,
+                      disabledBackgroundColor: _kRed.withValues(alpha: 0.45),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                      elevation: 4,
+                      shadowColor: _kRed.withValues(alpha: 0.25),
+                    ),
+                    child: _busy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                            : Text(
+                                _wifiConfirmed ? s.wifiConnectedLabel : s.wifiConnectNowLabel,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 }

@@ -68,7 +68,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
     final pFrame = DeviceStore.instance.cached;
     if (pFrame == null || !pFrame.canUploadToServer) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.pairingNeedsApiUrl)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.connectFrameFirst)));
       }
       return;
     }
@@ -151,6 +151,9 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
         if (uploadBin == null) continue;
 
         final ts = DateTime.now().millisecondsSinceEpoch;
+        // First upload triggers MQTT play so the frame shows the image immediately.
+        // Subsequent uploads are stored only — the slideshow endpoint will manage timing.
+        final isFirstUpload = i == 0;
         final cast = await FrameCloudCastService.instance.castPhoto(
           api: _api,
           paired: pFrame,
@@ -159,7 +162,8 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           slideshowStyle: SlideshowStyle.fade.apiValue,
           strings: s,
           userAuthToken: token.isNotEmpty ? token : null,
-          syncSlideshowAfterSuccess: false, // one VPS slideshow publish after all casts
+          syncSlideshowAfterSuccess: false,
+          skipPlay: !isFirstUpload,
           onProgress: (_) {},
         );
         if (!cast.ok) {
@@ -204,6 +208,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             macSlug: frameBleMacSlug(pFrame),
             imageIds: ids,
             intervalMinutes: _intervalMinutes,
+            skipPlay: true,
           );
         } on SlideshowPublishException catch (e) {
           AppDiagLog.verbose(

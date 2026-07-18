@@ -77,7 +77,13 @@ class AppSettings extends ChangeNotifier {
   /// Opening [ImageEditorScreen] without a sticky cache uses this as the slideshow preset.
   SlideshowStyle defaultSlideshowStyle = SlideshowStyle.fade;
 
-  /// OTA is allowed only when [autoInstallUpdates] is on and the device is not in “stop firmware” mode.
+  /// Slideshow interval in seconds (default 3 minutes = 180s)
+  int slideshowIntervalSeconds = 180;
+
+  /// Whether to show captions on the frame (when false, captions are saved but not displayed)
+  bool showCaptionsOnFrame = true;
+
+  /// OTA is allowed only when [autoInstallUpdates] is on and the device is not in "stop firmware" mode.
   bool get isFrameOtaEnabled => autoInstallUpdates && !stopFrameFirmwareOta;
 
   /// Unified UI: automatic Wi‑Fi OTA when on (default); off blocks auto updates.
@@ -125,6 +131,8 @@ class AppSettings extends ChangeNotifier {
   static const _kStopFrameFirmwareOta =
       'settings_device_stop_frame_firmware_ota';
   static const _kDefaultSlideshow = 'settings_default_slideshow_style';
+  static const _kSlideshowIntervalSeconds = 'settings_slideshow_interval_seconds';
+  static const _kShowCaptionsOnFrame = 'settings_show_captions_on_frame';
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
@@ -192,6 +200,8 @@ class AppSettings extends ChangeNotifier {
       (e) => e.name == sl,
       orElse: () => SlideshowStyle.fade,
     );
+    slideshowIntervalSeconds = p.getInt(_kSlideshowIntervalSeconds) ?? 180;
+    showCaptionsOnFrame = p.getBool(_kShowCaptionsOnFrame) ?? true;
     notifyListeners();
   }
 
@@ -532,6 +542,20 @@ class AppSettings extends ChangeNotifier {
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setString(_kDefaultSlideshow, value.name);
+  }
+
+  Future<void> setSlideshowIntervalSeconds(int value) async {
+    slideshowIntervalSeconds = value.clamp(10, 3600);
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setInt(_kSlideshowIntervalSeconds, slideshowIntervalSeconds);
+  }
+
+  Future<void> setShowCaptionsOnFrame(bool value) async {
+    showCaptionsOnFrame = value;
+    notifyListeners();
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kShowCaptionsOnFrame, value);
   }
 }
 

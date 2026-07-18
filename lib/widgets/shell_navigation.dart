@@ -61,6 +61,11 @@ class ShellNavigation {
     _setTab?.call(index);
   }
 
+  /// Switch to the Send tab (tab index 2).
+  static void switchToSend() {
+    goToTab(2);
+  }
+
   /// Bottom inset for shell tab bodies while [Scaffold.extendBody] is true:
   /// system gesture inset + [BottomAppBar] + center-docked FAB clearance.
   static double contentBottomOverlap(BuildContext context) {

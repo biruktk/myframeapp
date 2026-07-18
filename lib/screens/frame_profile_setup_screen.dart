@@ -11,7 +11,6 @@ class FrameProfileSetupScreen extends StatefulWidget {
     this.requiredSetup = false,
   });
 
-  /// First-time Wi‑Fi setup: user must tap Continue (no accidental back-out).
   final bool requiredSetup;
 
   @override
@@ -20,7 +19,6 @@ class FrameProfileSetupScreen extends StatefulWidget {
 
 class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
   final _nameCtrl = TextEditingController();
-  String _orientation = 'portrait';
   bool _busy = false;
 
   @override
@@ -28,7 +26,6 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
     super.initState();
     final paired = DeviceStore.instance.cached;
     _nameCtrl.text = paired?.frameName?.trim() ?? '';
-    _orientation = paired?.frameOrientation == 'landscape' ? 'landscape' : 'portrait';
   }
 
   @override
@@ -46,7 +43,7 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
       }
       await DeviceStore.instance.saveFrameProfile(
         frameName: name,
-        orientation: _orientation,
+        orientation: 'portrait',
       );
       if (!mounted) return;
       setState(() => _busy = false);
@@ -58,58 +55,104 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
       if (!mounted) return;
       setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not save frame profile. Try again.'),
-        ),
+        const SnackBar(content: Text('Could not save frame profile. Try again.')),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final s = AppStrings.of(context);
     return PopScope(
       canPop: !widget.requiredSetup,
       child: Scaffold(
-      appBar: AppBar(
-        title: Text(s.frameProfileTitle),
-        automaticallyImplyLeading: !widget.requiredSetup,
+        appBar: AppBar(
+          title: const Text('Name Your Frame'),
+          centerTitle: true,
+          automaticallyImplyLeading: !widget.requiredSetup,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            children: [
+              const Spacer(flex: 2),
+              Icon(
+                Icons.check_circle_outline,
+                size: 64,
+                color: const Color(0xFFE5252A),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Your Frame is Connected!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Give your frame a name and start sending photos.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 28),
+              TextField(
+                controller: _nameCtrl,
+                style: const TextStyle(fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Living Room Frame',
+                  prefixIcon: const Icon(Icons.edit_outlined),
+                  filled: true,
+                  fillColor: Theme.of(context).colorScheme.surfaceContainerLow,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                    ),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
+                ),
+              ),
+              const Spacer(flex: 1),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _busy ? null : _save,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFE5252A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(100),
+                    ),
+                    elevation: 4,
+                    shadowColor: const Color(0xFFE5252A).withValues(alpha: 0.25),
+                  ),
+                  child: const Text(
+                    'Start Sending',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+          ),
+        ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(s.frameProfileBody),
-          const SizedBox(height: 14),
-          TextField(
-            controller: _nameCtrl,
-            decoration: InputDecoration(
-              labelText: s.frameNameLabel,
-              hintText: s.frameDefaultDisplayName,
-              prefixIcon: const Icon(Icons.edit_outlined),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(s.frameOrientationLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
-          RadioListTile<String>(
-            value: 'portrait',
-            groupValue: _orientation,
-            onChanged: (v) => setState(() => _orientation = v ?? 'portrait'),
-            title: Text(s.frameOrientationPortrait),
-          ),
-          RadioListTile<String>(
-            value: 'landscape',
-            groupValue: _orientation,
-            onChanged: (v) => setState(() => _orientation = v ?? 'landscape'),
-            title: Text(s.frameOrientationLandscape),
-          ),
-          const SizedBox(height: 10),
-          FilledButton(
-            onPressed: _busy ? null : _save,
-            child: Text(s.finishSetupButton),
-          ),
-        ],
-      ),
-    ),
     );
   }
 }

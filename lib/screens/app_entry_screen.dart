@@ -16,9 +16,9 @@ import '../services/mobile_auth_deep_link.dart';
 import '../services/wechat_sign_in_service.dart';
 import '../settings/app_settings.dart';
 import '../services/user_gallery_cloud_service.dart';
+import '../widgets/animated_splash_screen.dart';
 import '../widgets/main_shell.dart';
 import '../widgets/myframe_branding_lockup.dart';
-import '../widgets/splash_branding_icon.dart';
 
 class AppEntryScreen extends StatefulWidget {
   const AppEntryScreen({super.key});
@@ -30,13 +30,9 @@ class AppEntryScreen extends StatefulWidget {
 class _AppEntryScreenState extends State<AppEntryScreen> {
   var _showSplash = true;
 
-  @override
-  void initState() {
-    super.initState();
-    Timer(const Duration(milliseconds: 3200), () {
-      if (!mounted) return;
-      setState(() => _showSplash = false);
-    });
+  void _onSplashComplete() {
+    if (!mounted) return;
+    setState(() => _showSplash = false);
   }
 
   @override
@@ -46,7 +42,7 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
       listenable: app,
       builder: (context, _) {
         if (_showSplash) {
-          return const _SplashScreen();
+          return AnimatedSplashScreen(onComplete: _onSplashComplete);
         }
         if (!app.onboardingDone) {
           return Localizations.override(
@@ -61,71 +57,10 @@ class _AppEntryScreenState extends State<AppEntryScreen> {
           );
         }
         if (!app.hasAuthenticatedSession) {
-          return Localizations.override(
-            context: context,
-            locale: const Locale('en'),
-            child: _AuthScreen(onAuthenticated: () {}),
-          );
+          return _AuthScreen(onAuthenticated: () {});
         }
         return const MainShell();
       },
-    );
-  }
-}
-
-class _SplashScreen extends StatelessWidget {
-  const _SplashScreen();
-
-  static const _iconSize = 156.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.white,
-      body: ColoredBox(
-        color: Colors.white,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SplashBrandingIcon(size: _iconSize),
-              SizedBox(height: 22),
-              _MyFrameWordmark(fontSize: 34),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MyFrameWordmark extends StatelessWidget {
-  const _MyFrameWordmark({required this.fontSize});
-
-  final double fontSize;
-
-  @override
-  Widget build(BuildContext context) {
-    return RichText(
-      textAlign: TextAlign.center,
-      text: TextSpan(
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w900,
-          height: 1,
-          fontFamily: 'Roboto',
-        ),
-        children: const [
-          TextSpan(
-            text: 'My',
-            style: TextStyle(color: Color(0xFFD91E1E)),
-          ),
-          TextSpan(
-            text: 'Frame',
-            style: TextStyle(color: Colors.black),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -910,6 +845,113 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     );
   }
 
+  Widget _languageSwitcher(AppStrings s, ColorScheme cs) {
+    final app = AppSettingsScope.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Text(
+          s.language,
+          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(width: 4),
+        SizedBox(
+          width: 32,
+          height: 32,
+          child: PopupMenuButton<String?>(
+            tooltip: s.onboardingLanguageHint,
+            onSelected: (code) async {
+              await app.setLanguageCode(code);
+              if (!context.mounted) return;
+              setState(() {});
+            },
+            itemBuilder: (c) => [
+              PopupMenuItem(
+                value: null,
+                child: Row(
+                  children: [
+                    const Text('🌐', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Text(s.languageSystem),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'en',
+                child: Row(
+                  children: [
+                    const Text('🇬🇧', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Text(s.languageEnglish),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'zh',
+                child: Row(
+                  children: [
+                    const Text('🇨🇳', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Text(s.languageChinese),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'ja',
+                child: Row(
+                  children: [
+                    const Text('🇯🇵', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Text(s.languageJapanese),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'es',
+                child: Row(
+                  children: [
+                    const Text('🇪🇸', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Text(s.languageSpanish),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'fr',
+                child: Row(
+                  children: [
+                    const Text('🇫🇷', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Text(s.languageFrench),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'de',
+                child: Row(
+                  children: [
+                    const Text('🇩🇪', style: TextStyle(fontSize: 18)),
+                    const SizedBox(width: 10),
+                    Text(s.languageGerman),
+                  ],
+                ),
+              ),
+            ],
+            child: Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.translate_rounded, size: 20),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _segmentedTabs(AppStrings s, ColorScheme cs) {
     return Container(
       padding: const EdgeInsets.all(4),
@@ -1126,13 +1168,17 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(28),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 22, 20, 8),
-                        child: _segmentedTabs(s, cs),
-                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                            child: _languageSwitcher(s, cs),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
+                            child: _segmentedTabs(s, cs),
+                          ),
                       Expanded(
                         child: IndexedStack(
                           index: _authTab,
