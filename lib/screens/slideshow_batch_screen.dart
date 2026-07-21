@@ -9,7 +9,6 @@ import 'package:image_picker/image_picker.dart';
 import '../services/gallery_photo_picker.dart';
 import '../config/api_config.dart';
 import '../l10n/app_strings.dart';
-import '../models/send_overlay_options.dart';
 import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';

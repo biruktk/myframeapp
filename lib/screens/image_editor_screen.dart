@@ -604,9 +604,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 
   Future<Uint8List> _compressImage(Uint8List bytes) async {
-    final img = img_lib.decodeImage(bytes);
-    if (img == null) return bytes;
-    final resized = img.copyResize(img, width: 1200);
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return bytes;
+    final resized = img.copyResize(decoded, width: 1200);
     return Uint8List.fromList(img.encodeJpg(resized, quality: 85));
   }
 

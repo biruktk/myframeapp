@@ -103,11 +103,6 @@ class FrameCloudCastService {
         );
         lastRes = res;
 
-        final hash = _shortHash(res);
-        final successMsg = strings.uploadSuccessLine(
-          res.receivedBytes ?? 0,
-          hash,
-        );
         report(CastProgress(
           phase: CastPhase.success,
           message: 'Photo uploaded — frame will update shortly.',
@@ -152,12 +147,6 @@ class FrameCloudCastService {
       }
     }
     return strings.sendOfflineNoNetworkForWifi;
-  }
-
-  static String _shortHash(PhotoUploadResponse res) {
-    final full = res.checksumSha256;
-    if (full != null && full.length >= 8) return full.substring(0, 8);
-    return '…';
   }
 
   Future<void> _syncSlideshowAfterSingleCast({
