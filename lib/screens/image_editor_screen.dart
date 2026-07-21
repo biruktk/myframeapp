@@ -309,8 +309,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       );
     }
 
-    // Brief pause so user reads the success message, then go Home
-    await Future<void>.delayed(const Duration(seconds: 2));
+    // Show beautiful success overlay, then go Home
+    await _showSendSuccessOverlay(status);
     if (!mounted) return;
 
     if (widget.queueIndex >= widget.queueTotal || _isPlaylist) {
@@ -319,6 +319,97 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         ShellNavigation.goToTab(0);
       });
     }
+  }
+
+  Future<void> _showSendSuccessOverlay(String status) async {
+    if (!mounted) return;
+    final frameName = _paired?.frameName ?? _strings?.frameDefaultDisplayName ?? 'MyFrame';
+    final completer = Completer<void>();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: Center(
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.elasticOut,
+            builder: (context, value, child) => Transform.scale(
+              scale: value,
+              alignment: Alignment.center,
+              child: Opacity(
+                opacity: value.clamp(0, 1),
+                child: child,
+              ),
+            ),
+            child: Container(
+              width: 280,
+              padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 40,
+                    offset: const Offset(0, 12),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF34C759), Color(0xFF28A745)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF34C759).withValues(alpha: 0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.check_rounded, color: Colors.white, size: 48),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Image Sent!',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1C1C1E),
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'to $frameName',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ).then((_) => completer.complete());
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) Navigator.of(context, rootNavigator: true).pop();
+    await completer.future;
   }
 
   Future<void> _saveSentPhotoToGallery(
