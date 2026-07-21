@@ -12,6 +12,7 @@ import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
+import 'image_editor_screen.dart';
 
 /// Personal photo grid + named albums (no social).
 class GalleryScreen extends StatefulWidget {
@@ -474,7 +475,20 @@ class _PersonalPhotoViewerScreenState extends State<_PersonalPhotoViewerScreen> 
   Future<void> _sendCurrent() async {
     if (widget.paths.isEmpty) return;
     final path = widget.paths[_index];
-    await widget.onSendToFrame(path);
+    final file = File(path);
+    if (!await file.exists()) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ImageEditorScreen(
+          imageBytes: bytes,
+          galleryPersistPath: path,
+          slideshow: slideshow,
+        ),
+      ),
+    );
   }
 
   @override

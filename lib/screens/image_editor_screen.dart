@@ -2745,9 +2745,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                                     ? s.sendPlaylistLabel(_perStates?.length ?? 0)
                                     : s.sendLabel,
                                 style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.2,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3,
                                 ),
                               ),
                       ),
