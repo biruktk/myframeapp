@@ -151,6 +151,9 @@ img.Image drawSendOverlayOnImage(
       img.drawRect(out, x1: 0, y1: 0, x2: w - 1, y2: h - 1, color: img.ColorRgb8(20, 20, 20), thickness: 4);
       img.drawRect(out, x1: 8, y1: 8, x2: w - 9, y2: h - 9, color: img.ColorRgb8(255, 255, 255), thickness: 2);
       break;
+    case 'rounded':
+      img.drawRect(out, x1: 2, y1: 2, x2: w - 3, y2: h - 3, color: img.ColorRgba8(0, 0, 0, 50), thickness: 2);
+      break;
   }
 
   final sticker = overlay.centerSticker.trim();
