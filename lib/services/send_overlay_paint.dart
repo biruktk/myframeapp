@@ -60,11 +60,31 @@ void _drawSticker(
         );
       }
       break;
-    case '★':
-    case '☀':
-      img.fillCircle(out, x: cx, y: cy, radius: r, color: yellow);
-      img.drawCircle(out, x: cx, y: cy, radius: r, color: black);
+    case '★': {
+      final ir = (r * 0.45).round();
+      final pts = <img.Point>[];
+      for (var i = 0; i < 10; i++) {
+        final angle = (i * math.pi) / 5 - math.pi / 2;
+        final rad = i.isEven ? r : ir;
+        pts.add(img.Point(cx + (rad * math.cos(angle)).round(), cy + (rad * math.sin(angle)).round()));
+      }
+      img.fillPolygon(out, vertices: pts, color: yellow);
+      img.drawPolygon(out, vertices: pts, color: black);
       break;
+    }
+    case '☀': {
+      final rayR = (r * 0.5).round();
+      final pts = <img.Point>[];
+      for (var i = 0; i < 12; i++) {
+        final angle = (i * math.pi * 2) / 12 - math.pi / 2;
+        final tipR = i.isEven ? r : rayR;
+        pts.add(img.Point(cx + (tipR * math.cos(angle)).round(), cy + (tipR * math.sin(angle)).round()));
+      }
+      img.fillPolygon(out, vertices: pts, color: yellow);
+      img.fillCircle(out, x: cx, y: cy, radius: (r * 0.55).round(), color: yellow);
+      img.drawCircle(out, x: cx, y: cy, radius: (r * 0.55).round(), color: black);
+      break;
+    }
     case '●':
       img.fillCircle(out, x: cx, y: cy, radius: r, color: blue);
       break;
