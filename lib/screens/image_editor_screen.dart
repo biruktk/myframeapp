@@ -2826,44 +2826,46 @@ class _FastEinkPreviewDialogState extends State<_FastEinkPreviewDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: _bytes != null
-                  ? Image.memory(_bytes!, fit: BoxFit.contain)
-                  : const SizedBox(
-                      height: 220,
-                      child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
-                    ),
-            ),
-          ),
-          if (_loading && _bytes != null)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 4),
-              child: SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: _bytes != null
+                    ? Image.memory(_bytes!, fit: BoxFit.contain)
+                    : const SizedBox(
+                        height: 220,
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+                      ),
               ),
             ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
-            child: Text(
-              'Preview of your edited photo.',
-              style: TextStyle(fontSize: 12, color: Colors.black54),
-              textAlign: TextAlign.center,
+            if (_loading && _bytes != null)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: Text(
+                'Preview of your edited photo.',
+                style: TextStyle(fontSize: 12, color: Colors.black54),
+                textAlign: TextAlign.center,
+              ),
             ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-          const SizedBox(height: 8),
-        ],
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }
