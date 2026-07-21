@@ -328,13 +328,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black54,
+      barrierColor: Colors.black.withValues(alpha: 0.6),
       builder: (ctx) => PopScope(
         canPop: false,
         child: Center(
           child: TweenAnimationBuilder<double>(
             tween: Tween(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 500),
+            duration: const Duration(milliseconds: 600),
             curve: Curves.elasticOut,
             builder: (context, value, child) => Transform.scale(
               scale: value,
@@ -345,60 +345,64 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               ),
             ),
             child: Container(
-              width: 280,
-              padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 32),
+              width: 300,
+              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 28),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(32),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 40,
-                    offset: const Offset(0, 12),
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 50,
+                    offset: const Offset(0, 16),
                   ),
                 ],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF34C759), Color(0xFF28A745)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF34C759).withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.check_rounded, color: Colors.white, size: 48),
-                  ),
-                  const SizedBox(height: 24),
+                  _AnimatedCheckmark(size: 80),
+                  const SizedBox(height: 28),
                   const Text(
-                    'Image Sent!',
+                    'Sent Successfully!',
                     style: TextStyle(
-                      fontSize: 22,
+                      fontSize: 24,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF1C1C1E),
-                      letterSpacing: -0.3,
+                      letterSpacing: -0.4,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     'to $frameName',
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w400,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
                       color: Colors.grey.shade600,
                     ),
+                  ),
+                  const SizedBox(height: 28),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.grey.shade400,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Frame is refreshing…',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -407,7 +411,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         ),
       ),
     ).then((_) => completer.complete());
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(const Duration(seconds: 3));
     if (mounted) Navigator.of(context, rootNavigator: true).pop();
     await completer.future;
   }
@@ -1628,9 +1632,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: cs.outlineVariant),
-        );
-    }
+    );
   }
+}
 
   Widget _filteredImage() {
     // During drag: skip all pixel-level filter/grade — just raw image for 60fps.
@@ -2868,6 +2872,89 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         fallbackBytes: widget.imageBytes,
         load: () => compute(isolateFastPreviewJpeg, args),
       ),
+    );
+  }
+}
+
+class _AnimatedCheckmark extends StatefulWidget {
+  final double size;
+  const _AnimatedCheckmark({required this.size});
+
+  @override
+  State<_AnimatedCheckmark> createState() => _AnimatedCheckmarkState();
+}
+
+class _AnimatedCheckmarkState extends State<_AnimatedCheckmark>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scaleAnim;
+  late Animation<double> _pulseAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _scaleAnim = CurvedAnimation(
+      parent: _ctrl,
+      curve: const Interval(0, 0.5, curve: Curves.elasticOut),
+    );
+    _pulseAnim = Tween<double>(begin: 1, end: 1.08).animate(
+      CurvedAnimation(
+        parent: _ctrl,
+        curve: const Interval(0.6, 1.0, curve: Curves.easeInOut),
+      ),
+    );
+    _ctrl.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) {
+        final scale = _ctrl.value < 0.5
+            ? _scaleAnim.value
+            : _pulseAnim.value;
+        return Transform.scale(
+          scale: scale,
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              gradient: const SweepGradient(
+                colors: [
+                  Color(0xFF34C759),
+                  Color(0xFF30D158),
+                  Color(0xFF28A745),
+                  Color(0xFF34C759),
+                ],
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF34C759).withValues(alpha: 0.35),
+                  blurRadius: widget.size * 0.3,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: widget.size * 0.55,
+            ),
+          ),
+        );
+      },
     );
   }
 }
