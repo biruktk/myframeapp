@@ -637,6 +637,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         'stickerAlignX': ov.stickerAlignX,
         'stickerAlignY': ov.stickerAlignY,
         'stickerSize': ov.stickerSize,
+        'customText': ov.customText,
+        'greetingCustom': ov.greetingCustom,
       },
       'locationText': _overlayLocationValue,
     };
@@ -688,6 +690,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         'stickerAlignX': ov.stickerAlignX,
         'stickerAlignY': ov.stickerAlignY,
         'stickerSize': ov.stickerSize,
+        'customText': ov.customText,
+        'greetingCustom': ov.greetingCustom,
       },
       'locationText': locationTxt,
     });
