@@ -2619,7 +2619,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       children: List.generate(7, (i) {
         final selected = _borderStyle == keys[i];
         return GestureDetector(
-          onTap: () => setState(() => _borderStyle = keys[i]),
+          onTap: () => setState(() {
+            _borderStyle = keys[i];
+            _invalidateProcessCache();
+          }),
           child: Container(
             width: 88,
             height: 44,
