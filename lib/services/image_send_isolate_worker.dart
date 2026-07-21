@@ -55,8 +55,6 @@ img.Image? _buildSizedWorkImage({
   required double contrast,
   required double saturation,
   required FrameImageFilter filter,
-  SendOverlayOptions overlay = const SendOverlayOptions(),
-  String locationText = '',
   bool flipH = false,
   bool flipV = false,
   double cropAspect = 0,
@@ -81,11 +79,6 @@ img.Image? _buildSizedWorkImage({
     saturation: saturation,
     filter: filter,
   );
-  if (work == null) return null;
-
-  if (overlay.hasAnyOverlay) {
-    work = drawSendOverlayOnImage(work, overlay, locationText: locationText);
-  }
   return work;
 }
 
@@ -110,9 +103,6 @@ Uint8List? isolateFastPreviewJpeg(FrameProcessOnlyArgs args) {
     filter: filter,
   );
   if (work == null) return null;
-  if (args.overlay.hasAnyOverlay) {
-    work = drawSendOverlayOnImage(work, args.overlay, locationText: args.locationText);
-  }
   return proc.encodeJpg(work, quality: 85);
 }
 
@@ -188,8 +178,6 @@ ProcessedFrameResult? isolateFrameProcessOnly(FrameProcessOnlyArgs args) {
     contrast: args.contrast,
     saturation: args.saturation,
     filter: filter,
-    overlay: args.overlay,
-    locationText: args.locationText,
     flipH: args.flipH,
     flipV: args.flipV,
     cropAspect: args.cropAspect,
