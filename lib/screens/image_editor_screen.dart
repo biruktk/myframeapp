@@ -719,6 +719,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       'cropZoom': (_cropZoom / 100).clamp(1.0, 3.0),
       'cropPanX': _cropPanX,
       'cropPanY': _cropPanY,
+      'alreadyProcessed': true,
       'borderStyle': _borderStyle,
       'overlay': {
         'showDate': ov.showDate,
@@ -979,7 +980,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         _previewBytes = await compute(isolateFastPreviewJpeg, _previewArgs()) ?? compressed;
       }
       final edits = jsonEncode(_buildEditsJson());
-      AppDiagLog.verbose('[Editor] compressed bytes=${compressed.length}');
+
+      AppDiagLog.verbose('[Editor] preview bytes available=${_previewBytes != null}');
 
       final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
       final httpName = 'photo_$ts.jpg';
@@ -994,7 +996,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       final cast = await FrameCloudCastService.instance.castPhoto(
         api: _api,
         paired: activePaired,
-        jpegBytes: compressed,
+        jpegBytes: _previewBytes ?? compressed,
         filename: httpName,
         slideshowStyle: _slideshow.apiValue,
         displaySeconds: widget.displaySeconds,
