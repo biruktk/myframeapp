@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as imgLib;
 import 'package:image_picker/image_picker.dart';
 
 import '../services/gallery_photo_picker.dart';
@@ -12,8 +14,6 @@ import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
 import '../services/frame_cloud_cast_service.dart';
-import '../services/image_processor_service.dart';
-import '../services/image_send_isolate_worker.dart';
 import '../services/network_link.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_style.dart';
@@ -135,29 +135,16 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
         );
 
         final bytes = await File(sourcePaths[i]).readAsBytes();
-        final uploadBin = await compute(
-          isolateComposeUploadBin,
-          ComposeUploadIsolateArgs(
-            imageBytes: bytes,
-            quarterTurns: 0,
-            brightness: 1,
-            contrast: 1,
-            saturation: 1,
-            filterIndex: FrameImageFilter.none.index,
-            overlay: const SendOverlayOptions(),
-            locationText: pFrame.listDisplayTitle(s),
-          ),
-        );
-        if (uploadBin == null) continue;
+        final img = imgLib.decodeImage(bytes);
+        final resized = imgLib.copyResize(img!, width: 1200);
+        final compressed = Uint8List.fromList(imgLib.encodeJpg(resized, quality: 85));
 
         final ts = DateTime.now().millisecondsSinceEpoch;
-        // First upload triggers MQTT play so the frame shows the image immediately.
-        // Subsequent uploads are stored only — the slideshow endpoint will manage timing.
         final isFirstUpload = i == 0;
         final cast = await FrameCloudCastService.instance.castPhoto(
           api: _api,
           paired: pFrame,
-          jpegBytes: uploadBin,
+          jpegBytes: compressed,
           filename: 'slideshow_$ts.bin',
           slideshowStyle: SlideshowStyle.fade.apiValue,
           strings: s,

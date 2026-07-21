@@ -30,6 +30,7 @@ class FrameApiClient {
     String? userAuthToken,
     Duration? timeout,
     bool skipPlay = false,
+    String? editsJson,
   }) async {
     final checksum = sha256.convert(fileBytes).toString();
     final effectiveTimeout = timeout ?? defaultTimeout;
@@ -55,6 +56,7 @@ class FrameApiClient {
                   'display_seconds': '$displaySeconds',
                 if (transport != null && transport.isNotEmpty) 'transport': transport,
                 if (skipPlay) 'skip_play': 'true',
+                if (editsJson != null && editsJson.isNotEmpty) 'edits': editsJson,
               })
             ..files.add(
               http.MultipartFile.fromBytes(

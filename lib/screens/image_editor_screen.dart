@@ -603,6 +603,96 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     return result;
   }
 
+  Future<Uint8List> _compressImage(Uint8List bytes) async {
+    final img = img_lib.decodeImage(bytes);
+    if (img == null) return bytes;
+    final resized = img.copyResize(img, width: 1200);
+    return Uint8List.fromList(img.encodeJpg(resized, quality: 85));
+  }
+
+  Map<String, dynamic> _buildEditsJson() {
+    final ov = _currentOverlay;
+    return {
+      'quarterTurns': _quarterTurns,
+      'brightness': 1.0 + _brightness * 0.35,
+      'contrast': 1.0 + _contrast * 0.45,
+      'saturation': 1.0 + _saturation * 0.45,
+      'filter': _filter.name,
+      'flipH': _flipH,
+      'flipV': _flipV,
+      'cropAspect': _cropAspectRatioValue,
+      'cropZoom': (_cropZoom / 100).clamp(1.0, 3.0),
+      'cropPanX': _cropPanX,
+      'cropPanY': _cropPanY,
+      'overlay': {
+        'showDate': ov.showDate,
+        'showLocation': ov.showLocation,
+        'showGreeting': ov.showGreeting,
+        'showWeather': ov.showWeather,
+        'centerText': ov.centerText,
+        'centerTextColor': '#${ov.centerTextColor.toRadixString(16).padLeft(8, '0').substring(2)}',
+        'centerTextSize': ov.centerTextSize,
+        'centerSticker': ov.centerSticker,
+        'weatherText': ov.weatherText,
+        'stickerAlignX': ov.stickerAlignX,
+        'stickerAlignY': ov.stickerAlignY,
+        'stickerSize': ov.stickerSize,
+      },
+      'locationText': _overlayLocationValue,
+    };
+  }
+
+  String _buildEditsJsonForIndex(int index) {
+    if (_perStates == null || index >= _perStates!.length) return jsonEncode(_buildEditsJson());
+    final s = _perStates![index];
+    final ov = SendOverlayOptions(
+      showDate: s.oDate,
+      showLocation: s.oLocation && !s.oWeather,
+      showGreeting: s.oGreeting,
+      showWeather: s.oWeather,
+      customText: '',
+      greetingCustom: widget.overlay.greetingCustom,
+      centerText: s.overlayText,
+      centerTextColor: const [0xFF000000, 0xFFFFFFFF, 0xFFFFFF00, 0xFFFF0000, 0xFF0000FF, 0xFF00FF00][s.textColor.clamp(0, 5)],
+      centerTextSize: s.textSize,
+      centerSticker: s.selectedSticker ?? '',
+      stickerAlignX: (s.stickerAlignX + 1) / 2,
+      stickerAlignY: (s.stickerAlignY + 1) / 2,
+      stickerSize: s.stickerSize,
+      weatherText: s.weatherLine,
+    );
+    final paired = _paired;
+    final locationTxt = paired?.frameName?.trim() ?? _strings?.frameDefaultDisplayName ?? '';
+    return jsonEncode({
+      'quarterTurns': s.quarterTurns,
+      'brightness': 1.0 + s.brightness * 0.35,
+      'contrast': 1.0 + s.contrast * 0.45,
+      'saturation': 1.0 + s.saturation * 0.45,
+      'filter': s.filter.name,
+      'flipH': s.flipH,
+      'flipV': s.flipV,
+      'cropAspect': _cropAspectRatioValue,
+      'cropZoom': (s.cropZoom / 100).clamp(1.0, 3.0),
+      'cropPanX': s.cropPanX,
+      'cropPanY': s.cropPanY,
+      'overlay': {
+        'showDate': ov.showDate,
+        'showLocation': ov.showLocation,
+        'showGreeting': ov.showGreeting,
+        'showWeather': ov.showWeather,
+        'centerText': ov.centerText,
+        'centerTextColor': '#${ov.centerTextColor.toRadixString(16).padLeft(8, '0').substring(2)}',
+        'centerTextSize': ov.centerTextSize,
+        'centerSticker': ov.centerSticker,
+        'weatherText': ov.weatherText,
+        'stickerAlignX': ov.stickerAlignX,
+        'stickerAlignY': ov.stickerAlignY,
+        'stickerSize': ov.stickerSize,
+      },
+      'locationText': locationTxt,
+    });
+  }
+
   Future<void> _send() async {
     if (_decoded == null) return;
     try {
@@ -700,17 +790,16 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           await SchedulerBinding.instance.endOfFrame;
           if (!mounted) break;
 
-          final composeArgs = _composeArgsForIndex(i);
-          final uploadBin = await compute(isolateComposeUploadBin, composeArgs);
-          if (uploadBin == null) continue;
-
+          final state = _perStates![i];
+          final compressed = await _compressImage(state.originalBytes);
+          final edits = _buildEditsJsonForIndex(i);
           final ts = DateTime.now().millisecondsSinceEpoch;
-          final httpName = 'slideshow_$ts.bin';
+          final httpName = 'slideshow_$ts.jpg';
           final isFirstUpload = i == 0;
           final cast = await FrameCloudCastService.instance.castPhoto(
             api: _api,
             paired: activePaired,
-            jpegBytes: uploadBin,
+            jpegBytes: compressed,
             filename: httpName,
             slideshowStyle: _slideshow.apiValue,
             displaySeconds: widget.displaySeconds,
@@ -718,6 +807,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             userAuthToken: authToken,
             syncSlideshowAfterSuccess: false,
             skipPlay: !isFirstUpload,
+            editsJson: edits,
             onProgress: (_) {},
           );
           if (!cast.ok) {
@@ -783,17 +873,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       }
 
       AppDiagLog.verbose('[Editor] input bytes=${widget.imageBytes.length}');
-      final previewArgs = _previewArgs();
-      var uploadJpeg = _previewBytes;
-      if (uploadJpeg == null || uploadJpeg.isEmpty) {
-        uploadJpeg = await compute(isolateFastPreviewJpeg, previewArgs);
-      }
-      if (uploadJpeg == null || uploadJpeg.isEmpty) {
-        if (!mounted) return;
-        setState(() => _status = s.processingFailed);
-        return;
-      }
-      AppDiagLog.verbose('[Editor] upload jpeg bytes=${uploadJpeg.length}');
+      final compressed = await _compressImage(_currentBytes);
+      _previewBytes ??= compressed;
+      final edits = jsonEncode(_buildEditsJson());
+      AppDiagLog.verbose('[Editor] compressed bytes=${compressed.length}');
 
       final ts = DateTime.now().toIso8601String().replaceAll(':', '-');
       final httpName = 'photo_$ts.jpg';
@@ -808,13 +891,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       final cast = await FrameCloudCastService.instance.castPhoto(
         api: _api,
         paired: activePaired,
-        jpegBytes: uploadJpeg,
+        jpegBytes: compressed,
         filename: httpName,
         slideshowStyle: _slideshow.apiValue,
         displaySeconds: widget.displaySeconds,
         strings: s,
         userAuthToken: authToken,
         syncSlideshowAfterSuccess: false,
+        editsJson: edits,
         onProgress: (p) {
           if (!mounted) return;
           setState(() {
@@ -1269,6 +1353,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   double _stickerAlignY = -0.15;
   double _stickerSize = 28;
 
+  // ─── Drag performance state ───────────────────────────────────────
+  bool _isDragging = false;
+  bool _touchMovePending = false;
+
   // ─── Border state ─────────────────────────────────────────────────
   String _borderStyle = 'none';
 
@@ -1446,6 +1534,17 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 
   Widget _filteredImage() {
+    // During drag: skip all pixel-level filter/grade — just raw image for 60fps.
+    if (_isDragging) {
+      return Image.memory(
+        _currentBytes,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.low,
+      );
+    }
     final idx = _filter.index.clamp(0, _filterPreviewMatrices.length - 1);
     final matrix = _filterPreviewMatrices[idx];
     final b = 1.0 + _brightness * 0.35;
@@ -1606,24 +1705,37 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                   fit: StackFit.expand,
                   children: [
                     GestureDetector(
+                      onPanStart: keyboardOpen
+                          ? null
+                          : (_) => setState(() => _isDragging = true),
+                      onPanEnd: keyboardOpen
+                          ? null
+                          : (_) {
+                              setState(() => _isDragging = false);
+                              _invalidateProcessCache();
+                            },
                       onPanUpdate: keyboardOpen
                           ? null
                           : (d) {
+                              if (_touchMovePending) return;
+                              _touchMovePending = true;
+                              Future.delayed(const Duration(milliseconds: 16), () {
+                                _touchMovePending = false;
+                              });
                               if (_activeTool == 'crop') {
                                 setState(() {
                                   _cropPanX = (_cropPanX + d.delta.dx / 90).clamp(-1.0, 1.0);
                                   _cropPanY = (_cropPanY + d.delta.dy / 90).clamp(-1.0, 1.0);
                                 });
-                                _invalidateProcessCache();
                               } else if (_activeTool == 'stickers' && _selectedSticker != null) {
                                 setState(() {
                                   _stickerAlignX = (_stickerAlignX + d.delta.dx / 120).clamp(-0.85, 0.85);
                                   _stickerAlignY = (_stickerAlignY + d.delta.dy / 120).clamp(-0.85, 0.85);
                                 });
-                                _invalidateProcessCache();
                               }
                             },
-                      child: Transform(
+                      child: RepaintBoundary(
+                        child: Transform(
                         alignment: Alignment.center,
                         transform: () {
                           final m = Matrix4.identity();
@@ -1638,8 +1750,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                           return m;
                         }(),
                         child: _filteredImage(),
+                        ),
                       ),
                     ),
+                    if (_isDragging)
+                      Positioned.fill(
+                        child: ColoredBox(color: Colors.black.withValues(alpha: 0.35)),
+                      ),
                     // On the photo bounds so weather/date/text match E-ink Preview.
                     IgnorePointer(child: _buildLiveOverlayStack()),
                   ],

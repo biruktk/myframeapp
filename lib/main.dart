@@ -19,6 +19,7 @@ import 'services/app_diag_log.dart';
 import 'services/app_release_guard.dart';
 import 'services/google_photos_service.dart';
 import 'services/icloud_photos_service.dart';
+import 'services/fcm_service.dart';
 
 final DeviceTransport _globalTransport = BleFrameDeviceTransport.instance;
 
@@ -52,6 +53,7 @@ Future<void> main() async {
       ShareIncomingService.instance.bootstrap,
     );
     await _guardStartup('splash branding', SplashBranding.preload);
+    await _guardStartup('fcm', FcmService.instance.init);
     runApp(MyFrameApp(settings: settings));
   }, AppReleaseGuard.onUncaughtError);
 }

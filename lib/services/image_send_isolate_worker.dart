@@ -6,42 +6,6 @@ import '../models/send_overlay_options.dart';
 import 'image_processor_service.dart';
 import 'send_overlay_paint.dart';
 
-/// Passed to [compute] from the editor — must not depend on Flutter BuildContext.
-class ComposeUploadIsolateArgs {
-  ComposeUploadIsolateArgs({
-    required this.imageBytes,
-    required this.quarterTurns,
-    required this.brightness,
-    required this.contrast,
-    required this.saturation,
-    required this.filterIndex,
-    required this.overlay,
-    required this.locationText,
-    this.flipH = false,
-    this.flipV = false,
-    this.cropAspect = 0,
-    this.cropZoom = 1.0,
-    this.cropPanX = 0,
-    this.cropPanY = 0,
-  });
-
-  final Uint8List imageBytes;
-  final int quarterTurns;
-  final double brightness;
-  final double contrast;
-  final double saturation;
-  final int filterIndex;
-  final SendOverlayOptions overlay;
-  final String locationText;
-  final bool flipH;
-  final bool flipV;
-  final double cropAspect;
-  final double cropZoom;
-  final double cropPanX;
-  final double cropPanY;
-}
-
-/// Preview / SD export — grade, filter, optional caption overlay.
 class FrameProcessOnlyArgs {
   FrameProcessOnlyArgs({
     required this.imageBytes,
@@ -79,11 +43,7 @@ class FrameProcessOnlyArgs {
 FrameImageFilter _filterEnumAt(int index) {
   final vals = FrameImageFilter.values;
   final last = vals.length - 1;
-  final i = index < 0
-      ? 0
-      : index > last
-      ? last
-      : index;
+  final i = index < 0 ? 0 : index > last ? last : index;
   return vals[i];
 }
 
@@ -129,36 +89,6 @@ img.Image? _buildSizedWorkImage({
   return work;
 }
 
-ProcessedFrameResult? isolateFrameProcessOnly(FrameProcessOnlyArgs args) {
-  final filter = _filterEnumAt(args.filterIndex);
-  final proc = ImageProcessorService();
-  final work = _buildSizedWorkImage(
-    proc: proc,
-    imageBytes: args.imageBytes,
-    quarterTurns: args.quarterTurns,
-    brightness: args.brightness,
-    contrast: args.contrast,
-    saturation: args.saturation,
-    filter: filter,
-    overlay: args.overlay,
-    locationText: args.locationText,
-    flipH: args.flipH,
-    flipV: args.flipV,
-    cropAspect: args.cropAspect,
-    cropZoom: args.cropZoom,
-    cropPanX: args.cropPanX,
-    cropPanY: args.cropPanY,
-  );
-  if (work == null) return null;
-  return proc.processWorkImageForFrame(work);
-}
-
-/// Editor preview — 6‑color dither preview (same pipeline as frame `.bin`).
-Uint8List? isolateFrameEinkPreviewJpeg(FrameProcessOnlyArgs args) {
-  return isolateFrameProcessOnly(args)?.einkPreviewJpeg;
-}
-
-/// Fast preview JPEG — grade + crop + resize only, no dither.
 Uint8List? isolateFastPreviewJpeg(FrameProcessOnlyArgs args) {
   final filter = _filterEnumAt(args.filterIndex);
   final proc = ImageProcessorService();
@@ -186,61 +116,40 @@ Uint8List? isolateFastPreviewJpeg(FrameProcessOnlyArgs args) {
   return proc.encodeJpg(work, quality: 85);
 }
 
-/// Wi‑Fi upload: firmware `.bin` (exact E6 palette — screenshots & photos).
-Uint8List? isolateComposeUploadBin(ComposeUploadIsolateArgs args) {
-  final filter = _filterEnumAt(args.filterIndex);
-  final proc = ImageProcessorService();
-  final work = _buildSizedWorkImage(
-    proc: proc,
-    imageBytes: args.imageBytes,
-    quarterTurns: args.quarterTurns,
-    brightness: args.brightness,
-    contrast: args.contrast,
-    saturation: args.saturation,
-    filter: filter,
-    overlay: args.overlay,
-    locationText: args.locationText,
-    flipH: args.flipH,
-    flipV: args.flipV,
-    cropAspect: args.cropAspect,
-    cropZoom: args.cropZoom,
-    cropPanX: args.cropPanX,
-    cropPanY: args.cropPanY,
-  );
-  if (work == null) return null;
+class ComposeUploadIsolateArgs {
+  ComposeUploadIsolateArgs({
+    required this.imageBytes,
+    required this.quarterTurns,
+    required this.brightness,
+    required this.contrast,
+    required this.saturation,
+    required this.filterIndex,
+    required this.overlay,
+    required this.locationText,
+    this.flipH = false,
+    this.flipV = false,
+    this.cropAspect = 0,
+    this.cropZoom = 1.0,
+    this.cropPanX = 0,
+    this.cropPanY = 0,
+  });
 
-  final graded = proc.processWorkImageForFrame(work);
-  return graded?.binPayload;
+  final Uint8List imageBytes;
+  final int quarterTurns;
+  final double brightness;
+  final double contrast;
+  final double saturation;
+  final int filterIndex;
+  final SendOverlayOptions overlay;
+  final String locationText;
+  final bool flipH;
+  final bool flipV;
+  final double cropAspect;
+  final double cropZoom;
+  final double cropPanX;
+  final double cropPanY;
 }
 
-/// Legacy JPEG upload (VPS MYFM re-encode) — photos only fallback.
-Uint8List? isolateComposeUploadFrameJpeg(ComposeUploadIsolateArgs args) {
-  final filter = _filterEnumAt(args.filterIndex);
-  final proc = ImageProcessorService();
-  final work = _buildSizedWorkImage(
-    proc: proc,
-    imageBytes: args.imageBytes,
-    quarterTurns: args.quarterTurns,
-    brightness: args.brightness,
-    contrast: args.contrast,
-    saturation: args.saturation,
-    filter: filter,
-    overlay: args.overlay,
-    locationText: args.locationText,
-    flipH: args.flipH,
-    flipV: args.flipV,
-    cropAspect: args.cropAspect,
-    cropZoom: args.cropZoom,
-    cropPanX: args.cropPanX,
-    cropPanY: args.cropPanY,
-  );
-  if (work == null) return null;
-
-  final graded = proc.processWorkImageForFrame(work);
-  return graded?.frameJpeg;
-}
-
-/// Full-color high-quality JPEG for Google Photos / iCloud Photos copies.
 Uint8List? isolateComposeCloudJpeg(ComposeUploadIsolateArgs args) {
   final filter = _filterEnumAt(args.filterIndex);
   final proc = ImageProcessorService();
@@ -263,11 +172,35 @@ Uint8List? isolateComposeCloudJpeg(ComposeUploadIsolateArgs args) {
   );
   if (work == null) return null;
   if (args.overlay.hasAnyOverlay) {
-    work = drawSendOverlayOnImage(
-      work,
-      args.overlay,
-      locationText: args.locationText,
-    );
+    work = drawSendOverlayOnImage(work, args.overlay, locationText: args.locationText);
   }
   return proc.encodeJpg(work, quality: 100);
+}
+
+ProcessedFrameResult? isolateFrameProcessOnly(FrameProcessOnlyArgs args) {
+  final filter = _filterEnumAt(args.filterIndex);
+  final proc = ImageProcessorService();
+  final work = _buildSizedWorkImage(
+    proc: proc,
+    imageBytes: args.imageBytes,
+    quarterTurns: args.quarterTurns,
+    brightness: args.brightness,
+    contrast: args.contrast,
+    saturation: args.saturation,
+    filter: filter,
+    overlay: args.overlay,
+    locationText: args.locationText,
+    flipH: args.flipH,
+    flipV: args.flipV,
+    cropAspect: args.cropAspect,
+    cropZoom: args.cropZoom,
+    cropPanX: args.cropPanX,
+    cropPanY: args.cropPanY,
+  );
+  if (work == null) return null;
+  return proc.processWorkImageForFrame(work);
+}
+
+Uint8List? isolateFrameEinkPreviewJpeg(FrameProcessOnlyArgs args) {
+  return isolateFrameProcessOnly(args)?.einkPreviewJpeg;
 }

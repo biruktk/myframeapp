@@ -16,6 +16,7 @@ import '../services/mobile_auth_deep_link.dart';
 import '../services/wechat_sign_in_service.dart';
 import '../settings/app_settings.dart';
 import '../services/user_gallery_cloud_service.dart';
+import '../services/fcm_service.dart';
 import '../widgets/animated_splash_screen.dart';
 import '../widgets/main_shell.dart';
 import '../widgets/myframe_branding_lockup.dart';
@@ -461,8 +462,15 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       provider: provider,
     );
     unawaited(UserGalleryCloudService.instance.syncFromServer(data.token));
+    unawaited(_saveFcmTokenAfterLogin());
     if (!mounted) return;
     widget.onAuthenticated();
+  }
+
+  Future<void> _saveFcmTokenAfterLogin() async {
+    try {
+      await FcmService.instance.getToken();
+    } catch (_) {}
   }
 
   void _showAuthMessage(String msg) {
