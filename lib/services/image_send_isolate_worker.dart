@@ -103,6 +103,7 @@ Uint8List? isolateFastPreviewJpeg(FrameProcessOnlyArgs args) {
     filter: filter,
   );
   if (work == null) return null;
+  work = drawSendOverlayOnImage(work, args.overlay, locationText: args.locationText);
   return proc.encodeJpg(work, quality: 85);
 }
 

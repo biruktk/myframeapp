@@ -624,6 +624,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       'cropZoom': (_cropZoom / 100).clamp(1.0, 3.0),
       'cropPanX': _cropPanX,
       'cropPanY': _cropPanY,
+      'borderStyle': _borderStyle,
       'overlay': {
         'showDate': ov.showDate,
         'showLocation': ov.showLocation,
@@ -677,6 +678,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       'cropZoom': (s.cropZoom / 100).clamp(1.0, 3.0),
       'cropPanX': s.cropPanX,
       'cropPanY': s.cropPanY,
+      'borderStyle': s.borderStyle,
       'overlay': {
         'showDate': ov.showDate,
         'showLocation': ov.showLocation,
@@ -878,7 +880,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
       AppDiagLog.verbose('[Editor] input bytes=${widget.imageBytes.length}');
       final compressed = await _compressImage(_currentBytes);
-      _previewBytes ??= compressed;
+      if (_previewBytes == null) {
+        _previewBytes = await compute(isolateFastPreviewJpeg, _previewArgs()) ?? compressed;
+      }
       final edits = jsonEncode(_buildEditsJson());
       AppDiagLog.verbose('[Editor] compressed bytes=${compressed.length}');
 
