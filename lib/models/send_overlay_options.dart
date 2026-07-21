@@ -14,6 +14,7 @@ class SendOverlayOptions {
     this.stickerAlignX = 0.62,
     this.stickerAlignY = 0.40,
     this.stickerSize = 28,
+    this.borderStyle = 'none',
   });
 
   final bool showDate;
@@ -39,6 +40,9 @@ class SendOverlayOptions {
   /// Real weather line (e.g. "☀ 24°C · Paris").
   final String weatherText;
 
+  /// Border style applied around the full image.
+  final String borderStyle;
+
   bool get hasAnyOverlay =>
       showDate ||
       showLocation ||
@@ -47,5 +51,6 @@ class SendOverlayOptions {
       customText.trim().isNotEmpty ||
       centerText.trim().isNotEmpty ||
       centerSticker.trim().isNotEmpty ||
-      weatherText.trim().isNotEmpty;
+      weatherText.trim().isNotEmpty ||
+      borderStyle != 'none';
 }

@@ -129,6 +129,29 @@ img.Image drawSendOverlayOnImage(
 }) {
   if (!overlay.hasAnyOverlay) return source;
   final out = img.copyCrop(source, x: 0, y: 0, width: source.width, height: source.height);
+  final w = out.width;
+  final h = out.height;
+
+  // Border (drawn before any bar)
+  switch (overlay.borderStyle) {
+    case 'thinBlack':
+      img.drawRect(out, x1: 0, y1: 0, x2: w - 1, y2: h - 1, color: img.ColorRgb8(0, 0, 0), thickness: 2);
+      break;
+    case 'thickWhite':
+      img.drawRect(out, x1: 0, y1: 0, x2: w - 1, y2: h - 1, color: img.ColorRgb8(255, 255, 255), thickness: 10);
+      break;
+    case 'polaroid':
+      img.drawRect(out, x1: 0, y1: 0, x2: w - 1, y2: h - 1, color: img.ColorRgb8(255, 255, 255), thickness: 10);
+      img.fillRect(out, x1: 0, y1: h - 28, x2: w, y2: h, color: img.ColorRgb8(255, 255, 255));
+      break;
+    case 'film':
+      img.drawRect(out, x1: 0, y1: 0, x2: w - 1, y2: h - 1, color: img.ColorRgb8(0, 0, 0), thickness: 12);
+      break;
+    case 'double':
+      img.drawRect(out, x1: 0, y1: 0, x2: w - 1, y2: h - 1, color: img.ColorRgb8(20, 20, 20), thickness: 4);
+      img.drawRect(out, x1: 8, y1: 8, x2: w - 9, y2: h - 9, color: img.ColorRgb8(255, 255, 255), thickness: 2);
+      break;
+  }
 
   final sticker = overlay.centerSticker.trim();
   if (sticker.isNotEmpty) {

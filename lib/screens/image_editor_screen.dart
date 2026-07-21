@@ -203,6 +203,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       stickerAlignY: (_stickerAlignY + 1) / 2,
       stickerSize: _stickerSize,
       weatherText: _weatherLine,
+      borderStyle: _borderStyle,
     );
   }
 
@@ -759,6 +760,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       stickerAlignY: (s.stickerAlignY + 1) / 2,
       stickerSize: s.stickerSize,
       weatherText: s.weatherLine,
+      borderStyle: s.borderStyle,
     );
     final paired = _paired;
     final locationTxt = paired?.frameName?.trim() ?? _strings?.frameDefaultDisplayName ?? '';
@@ -1419,6 +1421,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       stickerAlignY: (s.stickerAlignY + 1) / 2,
       stickerSize: s.stickerSize,
       weatherText: s.weatherLine,
+      borderStyle: s.borderStyle,
     );
     final paired = _paired;
     final locationTxt = paired?.frameName?.trim() ?? _strings?.frameDefaultDisplayName ?? '';
