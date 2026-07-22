@@ -406,7 +406,7 @@ class FrameCastStatusResponse {
     final now = DateTime.now().millisecondsSinceEpoch;
     final fresh = provisionStartedMs != null
         ? seen >= provisionStartedMs - 60000
-        : seen >= now - 600000;
+        : seen >= now - 30000;
     if (!fresh || online != true) return false;
     final action = (lastAction ?? '').toLowerCase();
     if (action == 'login' ||
