@@ -127,8 +127,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           if (!loc.isGranted && !loc.isLimited) {
             await PermissionGate.enqueueLocationCoarse();
           }
-        } else {
-          await PermissionGate.locationWhenInUse();
         }
       } catch (_) {}
       final info = await _nativeBleMethod.invokeMethod<Map<dynamic, dynamic>>('getWifiInfo');

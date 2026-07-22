@@ -29,11 +29,13 @@ import NetworkExtension
           NEHotspotNetwork.fetchCurrent { network in
             let ssid = network?.ssid ?? ""
             let enabled = !ssid.isEmpty
+            NSLog("[myframe] getWifiInfo: ssid='\(ssid)' enabled=\(enabled) hasNetwork=\(network != nil)")
             DispatchQueue.main.async {
               result(["enabled": enabled, "ssid": ssid])
             }
           }
         } else {
+          NSLog("[myframe] getWifiInfo: iOS < 14, returning empty")
           result(["enabled": false, "ssid": ""])
         }
       default:
