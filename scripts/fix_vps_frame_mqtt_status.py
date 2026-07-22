@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VPS = "root@128.241.231.234"
+VPS = "root@47.76.164.162"
 REMOTE_BACKEND = "/var/www/myframe/backend"
 # VPS production matches myframe_website/backend (device.ts has /frames/:mac/status).
 LOCAL_BACKEND = Path(__file__).resolve().parents[2] / "myframe_website/backend"

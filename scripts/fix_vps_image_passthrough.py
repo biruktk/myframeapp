@@ -17,7 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-VPS = "root@128.241.231.234"
+VPS = "root@47.76.164.162"
 REMOTE_BACKEND = "/var/www/myframe/backend"
 LOCAL_BACKEND = Path(__file__).resolve().parents[2] / "yingxiang/Myframe_official_web/backend"
 MYFM_REL = "src/services/myfm_encode.ts"

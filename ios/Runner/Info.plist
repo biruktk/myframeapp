@@ -148,7 +148,7 @@
 	<true/>
 	<!-- Mirrors lib/config/vps_defaults.dart production API — Flutter uses that at runtime unless API_BASE dart-define overrides. -->
 	<key>MyframeApiBase</key>
-	<string>http://128.241.231.234:3001</string>
+	<string>http://47.76.164.162:3001</string>
 	<!-- Marketing hostname alternate (same VPS :3001 if DNS resolves). Flutter defaults to raw IP via VpsDefaults.apiBase for reliability. -->
 	<key>MyframeInkHost</key>
 	<string>http://myframe.ink:3001</string>

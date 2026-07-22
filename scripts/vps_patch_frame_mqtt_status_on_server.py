@@ -47,7 +47,7 @@ export function isFrameMqttOnline(macRaw: string, maxAgeMs = 120_000): boolean {
 }
 
 function mqttBrokerDefaults() {
-  const host = String(process.env.FRAME_MQTT_BROKER_HOST ?? "128.241.231.234").trim();
+  const host = String(process.env.FRAME_MQTT_BROKER_HOST ?? "47.76.164.162").trim();
   const port = Number(process.env.FRAME_MQTT_BROKER_PORT ?? 1883) || 1883;
   const usr = String(process.env.FRAME_MQTT_DEVICE_USER ?? "device").trim();
   const pwd = String(process.env.FRAME_MQTT_DEVICE_PASS ?? "framepass2026").trim();

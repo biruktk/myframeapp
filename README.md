@@ -16,7 +16,7 @@ flutter run
 
 **Production API URL (built in — no `--dart-define` required)**
 
-- **`lib/config/vps_defaults.dart`** defines the default Express API as **`http://128.241.231.234:3001`** (raw IP — same VPS as typical MQTT/media).
+- **`lib/config/vps_defaults.dart`** defines the default Express API as **`http://47.76.164.162:3001`** (raw IP — same VPS as typical MQTT/media).
 - **`lib/config/api_config.dart`** uses that whenever **`API_BASE`** is **not** passed at compile time.
 - **Android**: emulator still often needs **`--dart-define=API_BASE=http://10.0.2.2:3001`** to hit the host PC.
 - **iOS Simulator with API on Mac**: optional **`API_BASE=http://127.0.0.1:3001`**.
