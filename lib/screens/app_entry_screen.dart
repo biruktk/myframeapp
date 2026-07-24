@@ -20,6 +20,8 @@ import '../services/fcm_service.dart';
 import '../widgets/animated_splash_screen.dart';
 import '../widgets/main_shell.dart';
 import '../widgets/myframe_branding_lockup.dart';
+import 'forgot_password_screen.dart';
+import 'reset_password_screen.dart';
 
 class AppEntryScreen extends StatefulWidget {
   const AppEntryScreen({super.key});
@@ -28,8 +30,79 @@ class AppEntryScreen extends StatefulWidget {
   State<AppEntryScreen> createState() => _AppEntryScreenState();
 }
 
-class _AppEntryScreenState extends State<AppEntryScreen> {
+class _AppEntryScreenState extends State<AppEntryScreen> with WidgetsBindingObserver {
   var _showSplash = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _listenForResetPasswordDeepLink();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _listenForResetPasswordDeepLink();
+    }
+  }
+
+  void _listenForResetPasswordDeepLink() {
+    unawaited(_checkResetPasswordDeepLink());
+    unawaited(_checkVerifyEmailDeepLink());
+  }
+
+  Future<void> _checkResetPasswordDeepLink() async {
+    try {
+      final result = await MobileAuthDeepLink.waitForResetPassword(timeout: const Duration(seconds: 1));
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ResetPasswordScreen(token: result.token),
+        ),
+      );
+    } on TimeoutException {
+      // no pending reset-password deep link
+    } catch (_) {
+      // cancelled or error
+    }
+  }
+
+  Future<void> _checkVerifyEmailDeepLink() async {
+    try {
+      final result = await MobileAuthDeepLink.waitForVerifyEmail(timeout: const Duration(seconds: 1));
+      if (!mounted) return;
+      final s = AppStrings.of(context);
+      final auth = AuthApiService();
+      setState(() {});
+      final r = await auth.verifyEmail(token: result.token);
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: Text(r is AuthApiSuccess ? s.verifyEmailSuccess : s.verifyEmailFailed),
+          content: Text(r is AuthApiSuccess ? s.verifyEmailSuccessBody : s.verifyEmailFailedBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text(s.coachGotIt),
+            ),
+          ],
+        ),
+      );
+    } on TimeoutException {
+      // no pending verify-email deep link
+    } catch (_) {
+      // cancelled or error
+    }
+  }
 
   void _onSplashComplete() {
     if (!mounted) return;
@@ -469,7 +542,12 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
 
   Future<void> _saveFcmTokenAfterLogin() async {
     try {
-      await FcmService.instance.getToken();
+      final app = AppSettingsScope.of(context);
+      final authToken = app.authToken;
+      if (authToken == null || authToken.isEmpty) return;
+      final fcmToken = await FcmService.instance.getToken();
+      if (fcmToken == null || fcmToken.isEmpty) return;
+      unawaited(_auth.registerFcmToken(token: fcmToken, authToken: authToken));
     } catch (_) {}
   }
 
@@ -493,6 +571,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       return _socialFailureMessage(f, s, socialProvider);
     }
     final sc = f.statusCode;
+    if (f.errorKey == 'email_not_verified') {
+      return s.authErrorEmailNotVerified;
+    }
     if (sc == 401 && f.errorKey == 'invalid_credentials') {
       return s.authErrorInvalidCredentials;
     }
@@ -620,10 +701,33 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() => _busy = false);
     if (r is AuthApiSuccess) {
-      await _finishAuthSession(r);
+      if (r.token.isNotEmpty) {
+        await _finishAuthSession(r);
+      } else {
+        _showVerificationSent();
+      }
       return;
     }
     if (r is AuthApiFailure) _showAuthMessage(_failureMessage(r, s));
+  }
+
+  void _showVerificationSent() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(AppStrings.of(context).verifyEmailTitle),
+        content: Text(AppStrings.of(context).verifyEmailSent),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+            },
+            child: Text(AppStrings.of(context).coachGotIt),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _onAppleTap() async {
@@ -1188,117 +1292,163 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                             child: _segmentedTabs(s, cs),
                           ),
                       Expanded(
-                        child: IndexedStack(
-                          index: _authTab,
+                        child: Stack(
                           children: [
-                            _authScroll(
-                              s,
-                              cs,
+                            IndexedStack(
+                              index: _authTab,
                               children: [
-                                TextField(
-                                  controller: _email,
-                                  keyboardType: TextInputType.emailAddress,
-                                  textInputAction: TextInputAction.next,
-                                  style: TextStyle(color: cs.onSurface),
-                                  decoration: _underlineField(cs, s.emailLabel),
-                                  enabled: !_busy,
-                                ),
-                                const SizedBox(height: 20),
-                                TextField(
-                                  controller: _password,
-                                  obscureText: true,
-                                  textInputAction: TextInputAction.done,
-                                  onSubmitted: (_) => _submitLogin(),
-                                  style: TextStyle(color: cs.onSurface),
-                                  decoration: _underlineField(
-                                    cs,
-                                    s.passwordLabel,
-                                  ),
-                                  enabled: !_busy,
-                                ),
-                                const SizedBox(height: 28),
-                                SizedBox(
-                                  height: 52,
-                                  child: FilledButton(
-                                    onPressed: _busy ? null : _submitLogin,
-                                    style: FilledButton.styleFrom(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
+                                _authScroll(
+                                  s,
+                                  cs,
+                                  children: [
+                                    TextField(
+                                      controller: _email,
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.next,
+                                      style: TextStyle(color: cs.onSurface),
+                                      decoration: _underlineField(cs, s.emailLabel),
+                                      enabled: !_busy,
+                                    ),
+                                    const SizedBox(height: 20),
+                                    TextField(
+                                      controller: _password,
+                                      obscureText: true,
+                                      textInputAction: TextInputAction.done,
+                                      onSubmitted: (_) => _submitLogin(),
+                                      style: TextStyle(color: cs.onSurface),
+                                      decoration: _underlineField(
+                                        cs,
+                                        s.passwordLabel,
+                                      ),
+                                      enabled: !_busy,
+                                    ),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed: _busy
+                                            ? null
+                                            : () => Navigator.of(context).push(
+                                                  MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        const ForgotPasswordScreen(),
+                                                  ),
+                                                ),
+                                        child: Text(
+                                          s.forgotPasswordLink,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: cs.primary,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                    child: Text(
-                                      s.loginLabel,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 16,
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      height: 52,
+                                      child: FilledButton(
+                                        onPressed: _busy ? null : _submitLogin,
+                                        style: FilledButton.styleFrom(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(16),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          s.loginLabel,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16,
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(height: 28),
+                                    _socialRow(s, cs),
+                                  ],
                                 ),
-                                const SizedBox(height: 28),
-                                _socialRow(s, cs),
+                                _authScroll(
+                                  s,
+                                  cs,
+                                  children: [
+                                    TextField(
+                                      controller: _regName,
+                                      textInputAction: TextInputAction.next,
+                                      textCapitalization: TextCapitalization.words,
+                                      style: TextStyle(color: cs.onSurface),
+                                      decoration: _underlineField(
+                                        cs,
+                                        s.authUsernameLabel,
+                                      ),
+                                      enabled: !_busy,
+                                    ),
+                                    const SizedBox(height: 20),
+                                    TextField(
+                                      controller: _regEmail,
+                                      keyboardType: TextInputType.emailAddress,
+                                      textInputAction: TextInputAction.next,
+                                      style: TextStyle(color: cs.onSurface),
+                                      decoration: _underlineField(cs, s.emailLabel),
+                                      enabled: !_busy,
+                                    ),
+                                    const SizedBox(height: 20),
+                                    TextField(
+                                      controller: _regPassword,
+                                      obscureText: true,
+                                      textInputAction: TextInputAction.done,
+                                      onSubmitted: (_) => _submitRegister(),
+                                      style: TextStyle(color: cs.onSurface),
+                                      decoration: _underlineField(
+                                        cs,
+                                        s.passwordLabel,
+                                      ),
+                                      enabled: !_busy,
+                                    ),
+                                    const SizedBox(height: 28),
+                                    SizedBox(
+                                      height: 52,
+                                      child: FilledButton(
+                                        onPressed: _busy ? null : _submitRegister,
+                                        style: FilledButton.styleFrom(
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(16),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          s.registerLabel,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 28),
+                                    _socialRow(s, cs),
+                                  ],
+                                ),
                               ],
                             ),
-                            _authScroll(
-                              s,
-                              cs,
-                              children: [
-                                TextField(
-                                  controller: _regName,
-                                  textInputAction: TextInputAction.next,
-                                  textCapitalization: TextCapitalization.words,
-                                  style: TextStyle(color: cs.onSurface),
-                                  decoration: _underlineField(
-                                    cs,
-                                    s.authUsernameLabel,
-                                  ),
-                                  enabled: !_busy,
-                                ),
-                                const SizedBox(height: 20),
-                                TextField(
-                                  controller: _regEmail,
-                                  keyboardType: TextInputType.emailAddress,
-                                  textInputAction: TextInputAction.next,
-                                  style: TextStyle(color: cs.onSurface),
-                                  decoration: _underlineField(cs, s.emailLabel),
-                                  enabled: !_busy,
-                                ),
-                                const SizedBox(height: 20),
-                                TextField(
-                                  controller: _regPassword,
-                                  obscureText: true,
-                                  textInputAction: TextInputAction.done,
-                                  onSubmitted: (_) => _submitRegister(),
-                                  style: TextStyle(color: cs.onSurface),
-                                  decoration: _underlineField(
-                                    cs,
-                                    s.passwordLabel,
-                                  ),
-                                  enabled: !_busy,
-                                ),
-                                const SizedBox(height: 28),
-                                SizedBox(
-                                  height: 52,
-                                  child: FilledButton(
-                                    onPressed: _busy ? null : _submitRegister,
-                                    style: FilledButton.styleFrom(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
+                            if (_busy)
+                              Positioned.fill(
+                                child: Center(
+                                  child: Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                    child: Text(
-                                      s.registerLabel,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 16,
+                                    alignment: Alignment.center,
+                                    child: const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                       ),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 28),
-                                _socialRow(s, cs),
-                              ],
-                            ),
+                              ),
                           ],
                         ),
                       ),

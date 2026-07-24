@@ -17,12 +17,27 @@ class MobileGoogleAuthResult {
   final String name;
 }
 
+/// Result from `myframe://auth/reset-password#token=…`.
+class MobileResetPasswordResult {
+  const MobileResetPasswordResult({required this.token});
+
+  final String token;
+}
+
+class MobileVerifyEmailResult {
+  const MobileVerifyEmailResult({required this.token});
+
+  final String token;
+}
+
 /// Waits for Google auth deep links opened by [GoogleSignInBridge].
 class MobileAuthDeepLink {
   MobileAuthDeepLink._();
 
   static final AppLinks _links = AppLinks();
   static Completer<MobileGoogleAuthResult>? _pendingGoogle;
+  static Completer<MobileResetPasswordResult>? _pendingResetPassword;
+  static Completer<MobileVerifyEmailResult>? _pendingVerifyEmail;
 
   static Future<void> bootstrap() async {
     try {
@@ -72,6 +87,40 @@ class MobileAuthDeepLink {
     }
   }
 
+  static Future<MobileResetPasswordResult> waitForResetPassword({
+    Duration timeout = const Duration(minutes: 8),
+  }) {
+    _pendingResetPassword?.completeError(StateError('replaced'));
+    final c = Completer<MobileResetPasswordResult>();
+    _pendingResetPassword = c;
+    return c.future.timeout(timeout);
+  }
+
+  static void cancelPendingResetPassword() {
+    final c = _pendingResetPassword;
+    _pendingResetPassword = null;
+    if (c != null && !c.isCompleted) {
+      c.completeError(StateError('cancelled'));
+    }
+  }
+
+  static Future<MobileVerifyEmailResult> waitForVerifyEmail({
+    Duration timeout = const Duration(minutes: 8),
+  }) {
+    _pendingVerifyEmail?.completeError(StateError('replaced'));
+    final c = Completer<MobileVerifyEmailResult>();
+    _pendingVerifyEmail = c;
+    return c.future.timeout(timeout);
+  }
+
+  static void cancelPendingVerifyEmail() {
+    final c = _pendingVerifyEmail;
+    _pendingVerifyEmail = null;
+    if (c != null && !c.isCompleted) {
+      c.completeError(StateError('cancelled'));
+    }
+  }
+
   static Map<String, String> _params(Uri uri) {
     if (uri.queryParameters.isNotEmpty) return uri.queryParameters;
     if (uri.fragment.isEmpty) return const {};
@@ -85,8 +134,36 @@ class MobileAuthDeepLink {
     return host == 'auth' && path == '/google';
   }
 
+  static bool _isResetPasswordUri(Uri uri) {
+    if (uri.scheme.toLowerCase() != 'myframe') return false;
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
+    return host == 'auth' && path == '/reset-password';
+  }
+
+  static bool _isVerifyEmailUri(Uri uri) {
+    if (uri.scheme.toLowerCase() != 'myframe') return false;
+    final host = uri.host.toLowerCase();
+    final path = uri.path.toLowerCase();
+    return host == 'auth' && path == '/verify-email';
+  }
+
   static void _applyUri(Uri uri) {
-    if (!_isGoogleAuthUri(uri)) return;
+    if (_isGoogleAuthUri(uri)) {
+      _applyGoogleAuth(uri);
+      return;
+    }
+    if (_isResetPasswordUri(uri)) {
+      _applyResetPassword(uri);
+      return;
+    }
+    if (_isVerifyEmailUri(uri)) {
+      _applyVerifyEmail(uri);
+      return;
+    }
+  }
+
+  static void _applyGoogleAuth(Uri uri) {
     final p = _params(uri);
     final token = (p['token'] ?? '').trim();
     final userId = (p['userId'] ?? p['user_id'] ?? '').trim();
@@ -102,6 +179,32 @@ class MobileAuthDeepLink {
     );
     final c = _pendingGoogle;
     _pendingGoogle = null;
+    if (c != null && !c.isCompleted) {
+      c.complete(result);
+    }
+  }
+
+  static void _applyResetPassword(Uri uri) {
+    final p = _params(uri);
+    final token = (p['token'] ?? '').trim();
+    if (token.isEmpty) return;
+
+    final result = MobileResetPasswordResult(token: token);
+    final c = _pendingResetPassword;
+    _pendingResetPassword = null;
+    if (c != null && !c.isCompleted) {
+      c.complete(result);
+    }
+  }
+
+  static void _applyVerifyEmail(Uri uri) {
+    final p = _params(uri);
+    final token = (p['token'] ?? '').trim();
+    if (token.isEmpty) return;
+
+    final result = MobileVerifyEmailResult(token: token);
+    final c = _pendingVerifyEmail;
+    _pendingVerifyEmail = null;
     if (c != null && !c.isCompleted) {
       c.complete(result);
     }

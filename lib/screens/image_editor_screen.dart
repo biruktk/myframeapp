@@ -314,12 +314,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     await _showSendSuccessOverlay(status);
     if (!mounted) return;
 
-    if (widget.queueIndex >= widget.queueTotal || _isPlaylist) {
-      _leaveEditorAfterSend();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ShellNavigation.goToTab(0);
-      });
-    }
+    _leaveEditorAfterSend();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ShellNavigation.goToTab(0);
+    });
   }
 
   Future<void> _showSendSuccessOverlay(String status) async {
@@ -2771,15 +2769,15 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               if (_isPlaylist && !_uploading) ...[
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 4,
                     children: [
                       Text('Interval: ', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-                      const SizedBox(width: 4),
-                      ...[5, 10, 30, 60].map((m) {
+                      ...[2, 5, 10, 30, 60].map((m) {
                         final sel = _playlistIntervalMinutes == m;
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
                           child: ChoiceChip(
                             label: Text(
                               m < 60 ? '${m}m' : '1h',

@@ -18,6 +18,7 @@ import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_style.dart';
 import '../services/slideshow_remote_api.dart';
 import '../services/frame_ble_mac_slug.dart';
+import '../widgets/shell_navigation.dart';
 import '../services/user_playlist_remote_api.dart';
 import '../settings/app_settings.dart';
 
@@ -40,7 +41,7 @@ class SlideshowBatchScreen extends StatefulWidget {
 }
 
 class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
-  static const _intervals = [5, 10, 30, 60];
+  static const _intervals = [2, 5, 10, 30, 60];
   int _intervalMinutes = 10;
   var _busy = false;
   final _api = FrameApiClient();
@@ -50,6 +51,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
 
   String _intervalLabel(AppStrings s, int m) {
     return switch (m) {
+      2 => '2 min',
       5 => '5 min',
       10 => '10 min',
       30 => '30 min',
@@ -237,7 +239,13 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             ),
           ),
         );
-        if (_hasPresetPaths) Navigator.of(context).pop();
+        if (_hasPresetPaths) {
+          Navigator.of(context).pop();
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            ShellNavigation.goToTab(0);
+          });
+        }
       }
     } catch (e, st) {
       AppDiagLog.verbose('[Slideshow] pipeline failed: $e\n$st');

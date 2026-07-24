@@ -235,6 +235,14 @@ class AppStrings {
     de: 'Falsche Zugangsdaten',
     ja: '認証に失敗しました',
   );
+  String get authErrorEmailNotVerified => _l6(
+    en: 'Please verify your email first. Check your inbox for the verification link.',
+    zh: '请先验证邮箱。请查收收件箱中的验证链接。',
+    es: 'Primero verifica tu correo. Revisa tu bandeja de entrada.',
+    fr: 'Veuillez d\'abord vérifier votre e-mail. Consultez votre boîte de réception.',
+    de: 'Bitte bestätigen Sie zuerst Ihre E-Mail. Prüfen Sie Ihren Posteingang.',
+    ja: '先にメールを確認してください。受信箱の確認リンクをご確認ください。',
+  );
   String get authErrorMobileAdminToken => _l6(
     en:
         'Sign-in reached the server but the mobile admin token was rejected. '
@@ -6723,4 +6731,184 @@ class AppStrings {
         de: 'Stellen Sie sicher, dass das Telefon mit WLAN verbunden ist, oder entfernen Sie das Gerät und verbinden Sie es erneut.',
         ja: '電話がWiFiに接続されていることを確認するか、デバイスを削除して再接続してください。',
       );
+
+  // —— Email Verification ——
+  String get verifyEmailTitle => _l6(
+    en: 'Verify your email',
+    zh: '验证邮箱',
+    es: 'Verifica tu correo',
+    fr: 'Vérifiez votre e-mail',
+    de: 'E-Mail bestätigen',
+    ja: 'メールを確認',
+  );
+  String get verifyEmailSent => _l6(
+    en: 'We sent a verification link to your email. Check your inbox and tap the link to complete registration.',
+    zh: '我们已向您的邮箱发送验证链接。请查收并点击链接完成注册。',
+    es: 'Enviamos un enlace de verificación a tu correo. Revisa tu bandeja de entrada.',
+    fr: 'Un lien de vérification a été envoyé à votre e-mail. Consultez votre boîte de réception.',
+    de: 'Wir haben einen Bestätigungslink an Ihre E-Mail gesendet. Prüfen Sie Ihren Posteingang.',
+    ja: '確認リンクをメールに送信しました。受信箱を確認してリンクをタップしてください。',
+  );
+  String get verifyEmailSuccess => _l6(
+    en: 'Email verified!',
+    zh: '邮箱已验证！',
+    es: '¡Correo verificado!',
+    fr: 'E-mail vérifié !',
+    de: 'E-Mail bestätigt!',
+    ja: 'メール確認完了！',
+  );
+  String get verifyEmailSuccessBody => _l6(
+    en: 'Your email has been verified. You can now log in to your account.',
+    zh: '您的邮箱已验证，现在可以登录您的账户。',
+    es: 'Tu correo ha sido verificado. Ya puedes iniciar sesión.',
+    fr: 'Votre e-mail a été vérifié. Vous pouvez maintenant vous connecter.',
+    de: 'Ihre E-Mail wurde bestätigt. Sie können sich jetzt anmelden.',
+    ja: 'メールが確認されました。ログインできます。',
+  );
+  String get verifyEmailFailed => _l6(
+    en: 'Verification failed',
+    zh: '验证失败',
+    es: 'Verificación fallida',
+    fr: 'Échec de la vérification',
+    de: 'Bestätigung fehlgeschlagen',
+    ja: '確認に失敗しました',
+  );
+  String get verifyEmailFailedBody => _l6(
+    en: 'The verification link is invalid or has expired. Try registering again.',
+    zh: '验证链接无效或已过期，请重新注册。',
+    es: 'El enlace de verificación no es válido o ha caducado. Intenta registrarte de nuevo.',
+    fr: 'Le lien de vérification est invalide ou a expiré. Essayez de vous réinscrire.',
+    de: 'Der Bestätigungslink ist ungültig oder abgelaufen. Versuchen Sie, sich erneut zu registrieren.',
+    ja: '確認リンクが無効または期限切れです。もう一度登録してください。',
+  );
+
+  // —— Forgot / Reset Password ——
+  String get forgotPasswordTitle => _l6(
+    en: 'Forgot Password',
+    zh: '忘记密码',
+    es: 'Olvidé mi contraseña',
+    fr: 'Mot de passe oublié',
+    de: 'Passwort vergessen',
+    ja: 'パスワードをお忘れですか',
+  );
+  String get forgotPasswordDescription => _l6(
+    en: 'Enter your email address and we\'ll send you a link to reset your password.',
+    zh: '输入您的邮箱，我们将向您发送重置密码的链接。',
+    es: 'Introduce tu correo y te enviaremos un enlace para restablecer la contraseña.',
+    fr: 'Saisissez votre e-mail et nous vous enverrons un lien pour réinitialiser votre mot de passe.',
+    de: 'Geben Sie Ihre E-Mail-Adresse ein, wir senden Ihnen einen Link zum Zurücksetzen des Passworts.',
+    ja: 'メールアドレスを入力してください。パスワードリセット用のリンクをお送りします。',
+  );
+  String get forgotPasswordLink => _l6(
+    en: 'Forgot password?',
+    zh: '忘记密码？',
+    es: '¿Olvidaste tu contraseña?',
+    fr: 'Mot de passe oublié ?',
+    de: 'Passwort vergessen?',
+    ja: 'パスワードをお忘れですか？',
+  );
+  String get forgotPasswordSend => _l6(
+    en: 'Send Reset Link',
+    zh: '发送重置链接',
+    es: 'Enviar enlace',
+    fr: 'Envoyer le lien',
+    de: 'Link senden',
+    ja: 'リセットリンクを送信',
+  );
+  String get forgotPasswordSent => _l6(
+    en: 'If that email is registered, a reset link has been sent. Check your inbox.',
+    zh: '如果该邮箱已注册，重置链接已发送。请查看收件箱。',
+    es: 'Si el correo está registrado, se ha enviado un enlace. Revisa tu bandeja de entrada.',
+    fr: 'Si cet e-mail est enregistré, un lien de réinitialisation a été envoyé. Vérifiez votre boîte de réception.',
+    de: 'Falls die E-Mail registriert ist, wurde ein Link gesendet. Prüfen Sie Ihren Posteingang.',
+    ja: '登録されたメールアドレスの場合、リセットリンクを送信しました。受信箱をご確認ください。',
+  );
+  String get forgotPasswordRateLimited => _l6(
+    en: 'Too many attempts. Please wait a minute and try again.',
+    zh: '尝试次数过多，请稍后再试。',
+    es: 'Demasiados intentos. Espera un minuto e inténtalo de nuevo.',
+    fr: 'Trop de tentatives. Veuillez patienter une minute.',
+    de: 'Zu viele Versuche. Bitte warten Sie eine Minute.',
+    ja: '試行回数が多すぎます。しばらく待ってからもう一度お試しください。',
+  );
+  String get resetPasswordTitle => _l6(
+    en: 'Reset Password',
+    zh: '重置密码',
+    es: 'Restablecer contraseña',
+    fr: 'Réinitialiser le mot de passe',
+    de: 'Passwort zurücksetzen',
+    ja: 'パスワードをリセット',
+  );
+  String get resetPasswordDescription => _l6(
+    en: 'Enter your new password.',
+    zh: '输入您的新密码。',
+    es: 'Introduce tu nueva contraseña.',
+    fr: 'Saisissez votre nouveau mot de passe.',
+    de: 'Geben Sie Ihr neues Passwort ein.',
+    ja: '新しいパスワードを入力してください。',
+  );
+  String get resetPasswordConfirm => _l6(
+    en: 'Confirm password',
+    zh: '确认密码',
+    es: 'Confirmar contraseña',
+    fr: 'Confirmer le mot de passe',
+    de: 'Passwort bestätigen',
+    ja: 'パスワードを確認',
+  );
+  String get resetPasswordSubmit => _l6(
+    en: 'Reset Password',
+    zh: '重置密码',
+    es: 'Restablecer',
+    fr: 'Réinitialiser',
+    de: 'Zurücksetzen',
+    ja: 'リセット',
+  );
+  String get resetPasswordSuccess => _l6(
+    en: 'Your password has been reset successfully.',
+    zh: '密码已成功重置。',
+    es: 'Tu contraseña se ha restablecido correctamente.',
+    fr: 'Votre mot de passe a été réinitialisé.',
+    de: 'Ihr Passwort wurde erfolgreich zurückgesetzt.',
+    ja: 'パスワードが正常にリセットされました。',
+  );
+  String get resetPasswordGoToLogin => _l6(
+    en: 'Go to Login',
+    zh: '前往登录',
+    es: 'Ir a iniciar sesión',
+    fr: 'Aller à la connexion',
+    de: 'Zur Anmeldung',
+    ja: 'ログインへ',
+  );
+  String get resetPasswordInvalidToken => _l6(
+    en: 'This reset link is invalid or has expired.',
+    zh: '此重置链接无效或已过期。',
+    es: 'Este enlace de restablecimiento no es válido o ha caducado.',
+    fr: 'Ce lien de réinitialisation est invalide ou a expiré.',
+    de: 'Dieser Link ist ungültig oder abgelaufen.',
+    ja: 'このリセットリンクは無効または期限切れです。',
+  );
+  String get resetPasswordExpired => _l6(
+    en: 'This reset link has expired. Request a new one.',
+    zh: '此重置链接已过期，请重新申请。',
+    es: 'Este enlace ha caducado. Solicita uno nuevo.',
+    fr: 'Ce lien a expiré. Demandez-en un nouveau.',
+    de: 'Dieser Link ist abgelaufen. Fordern Sie einen neuen an.',
+    ja: 'このリセットリンクは期限切れです。新しいものをリクエストしてください。',
+  );
+  String get resetPasswordAlreadyUsed => _l6(
+    en: 'This reset link has already been used.',
+    zh: '此重置链接已被使用。',
+    es: 'Este enlace ya ha sido usado.',
+    fr: 'Ce lien a déjà été utilisé.',
+    de: 'Dieser Link wurde bereits verwendet.',
+    ja: 'このリセットリンクは既に使用されています。',
+  );
+  String get resetPasswordMismatch => _l6(
+    en: 'Passwords do not match.',
+    zh: '两次输入的密码不一致。',
+    es: 'Las contraseñas no coinciden.',
+    fr: 'Les mots de passe ne correspondent pas.',
+    de: 'Passwörter stimmen nicht überein.',
+    ja: 'パスワードが一致しません。',
+  );
 }

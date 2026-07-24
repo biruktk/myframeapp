@@ -95,8 +95,8 @@ class AuthApiService {
             }),
           )
           .timeout(_requestTimeout);
-      AppDiagLog.verbose('Login response: ${res.statusCode} ${res.body}');
-      return _parseBody(res.statusCode, res.body);
+      AppDiagLog.verbose('Register response: ${res.statusCode} ${res.body}');
+      return _parseRegisterBody(res.statusCode, res.body);
     } catch (e, st) {
       AppDiagLog.verbose('register exception: $e\n$st');
       return _failureFromCatch(e, 'POST /api/auth/register', uri);
@@ -205,6 +205,100 @@ class AuthApiService {
     }
   }
 
+  Future<AuthApiResult> forgotPassword({required String email}) async {
+    final uri = _u('/api/auth/forgot-password');
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'email': email.trim()}),
+          )
+          .timeout(_requestTimeout);
+      AppDiagLog.verbose('forgot-password response: ${res.statusCode} ${res.body}');
+      return _parseSimple(res.statusCode, res.body);
+    } catch (e, st) {
+      AppDiagLog.verbose('forgot-password exception: $e\n$st');
+      return _failureFromCatch(e, 'POST /api/auth/forgot-password', uri);
+    }
+  }
+
+  Future<AuthApiResult> validateResetToken({required String token}) async {
+    final uri = _u('/api/auth/reset-password/validate?token=${Uri.encodeQueryComponent(token)}');
+    try {
+      final res = await http.get(
+        uri,
+        headers: {'Accept': 'application/json'},
+      ).timeout(_requestTimeout);
+      AppDiagLog.verbose('validate-reset-token response: ${res.statusCode}');
+      return _parseSimple(res.statusCode, res.body);
+    } catch (e, st) {
+      AppDiagLog.verbose('validate-reset-token exception: $e\n$st');
+      return _failureFromCatch(e, 'GET /api/auth/reset-password/validate', uri);
+    }
+  }
+
+  Future<AuthApiResult> resetPassword({required String token, required String password}) async {
+    final uri = _u('/api/auth/reset-password');
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'token': token.trim(), 'password': password}),
+          )
+          .timeout(_requestTimeout);
+      AppDiagLog.verbose('reset-password response: ${res.statusCode} ${res.body}');
+      return _parseSimple(res.statusCode, res.body);
+    } catch (e, st) {
+      AppDiagLog.verbose('reset-password exception: $e\n$st');
+      return _failureFromCatch(e, 'POST /api/auth/reset-password', uri);
+    }
+  }
+
+  Future<AuthApiResult> verifyEmail({required String token}) async {
+    final uri = _u('/api/auth/verify-email?token=${Uri.encodeQueryComponent(token)}');
+    try {
+      final res = await http.get(
+        uri,
+        headers: {'Accept': 'application/json'},
+      ).timeout(_requestTimeout);
+      AppDiagLog.verbose('verify-email response: ${res.statusCode}');
+      return _parseSimple(res.statusCode, res.body);
+    } catch (e, st) {
+      AppDiagLog.verbose('verify-email exception: $e\n$st');
+      return _failureFromCatch(e, 'GET /api/auth/verify-email', uri);
+    }
+  }
+
+  Future<AuthApiResult> registerFcmToken({required String token, required String authToken}) async {
+    final uri = _u('/api/auth/fcm-token');
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $authToken',
+            },
+            body: jsonEncode({'token': token.trim()}),
+          )
+          .timeout(_requestTimeout);
+      AppDiagLog.verbose('fcm-token response: ${res.statusCode}');
+      return _parseSimple(res.statusCode, res.body);
+    } catch (e, st) {
+      AppDiagLog.verbose('fcm-token exception: $e\n$st');
+      return _failureFromCatch(e, 'POST /api/auth/fcm-token', uri);
+    }
+  }
+
   static Map<String, dynamic>? _asJsonMap(dynamic raw) {
     if (raw is Map<String, dynamic>) return raw;
     if (raw is Map) {
@@ -236,6 +330,90 @@ class AuthApiService {
       }
     }
     return out;
+  }
+
+  /// Parses register response — may contain token+user (no SMTP) or just ok message (SMTP verification).
+  AuthApiResult _parseRegisterBody(int status, String bodyText) {
+    final trimmed = bodyText.trimLeft();
+    final noBom = trimmed.startsWith('\ufeff') ? trimmed.substring(1) : trimmed;
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(noBom.isEmpty ? '{}' : noBom);
+    } catch (_) {
+      return AuthApiFailure(
+        statusCode: status,
+        errorKey: status >= 500 ? 'server_error' : 'bad_payload',
+      );
+    }
+
+    final map = _asJsonMap(decoded);
+    if (map == null) {
+      return AuthApiFailure(statusCode: status, errorKey: 'bad_payload');
+    }
+
+    if (status >= 200 && status < 300 && map['ok'] == true) {
+      final tokenRaw = map['token'];
+      final token = tokenRaw is String ? tokenRaw : '';
+      final userMap = _asJsonMap(map['user']);
+
+      if (token.isNotEmpty && userMap != null) {
+        final id = _str(userMap['id']);
+        final email = _str(userMap['email']);
+        final name = _str(userMap['name']);
+        if (id.isNotEmpty && email.isNotEmpty) {
+          return AuthApiSuccess(
+            token: token,
+            user: AuthUserPayload(
+              id: id,
+              email: email,
+              name: name.isEmpty ? email.split('@').first : name,
+            ),
+          );
+        }
+      }
+
+      // No token — SMTP verification mode
+      return AuthApiSuccess(token: '', user: AuthUserPayload(id: '', email: '', name: ''));
+    }
+
+    final err = map['error']?.toString() ?? 'unknown';
+    final msg = map['message']?.toString();
+
+    if (err == 'email_taken' || status == 409) {
+      return AuthApiFailure(statusCode: status, errorKey: 'email_taken', message: msg);
+    }
+
+    return AuthApiFailure(statusCode: status, errorKey: err, message: msg);
+  }
+
+  /// Like _parseBody but accepts responses without token/user (e.g. forgot-password, reset-password).
+  AuthApiResult _parseSimple(int status, String bodyText) {
+    final trimmed = bodyText.trimLeft();
+    final noBom = trimmed.startsWith('\ufeff') ? trimmed.substring(1) : trimmed;
+
+    Object? decoded;
+    try {
+      decoded = jsonDecode(noBom.isEmpty ? '{}' : noBom);
+    } catch (_) {
+      return AuthApiFailure(
+        statusCode: status,
+        errorKey: status >= 500 ? 'server_error' : 'bad_payload',
+      );
+    }
+
+    final map = _asJsonMap(decoded);
+    if (map == null) {
+      return AuthApiFailure(statusCode: status, errorKey: 'bad_payload');
+    }
+
+    if (status >= 200 && status < 300 && map['ok'] == true) {
+      return AuthApiSuccess(token: '', user: AuthUserPayload(id: '', email: '', name: ''));
+    }
+
+    final err = map['error']?.toString() ?? 'unknown';
+    final msg = map['message']?.toString();
+    return AuthApiFailure(statusCode: status, errorKey: err, message: msg);
   }
 
   AuthApiResult _parseBody(int status, String bodyText) {
