@@ -893,7 +893,23 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           if (!mounted) break;
 
           final state = _perStates![i];
-          final compressed = await _compressImage(state.originalBytes);
+          final previewArgs = FrameProcessOnlyArgs(
+            imageBytes: state.originalBytes,
+            quarterTurns: _quarterTurns,
+            brightness: 1.0 + _brightness * 0.35,
+            contrast: 1.0 + _contrast * 0.45,
+            saturation: 1.0 + _saturation * 0.45,
+            filterIndex: _filter.index,
+            overlay: _currentOverlay,
+            locationText: _overlayLocationValue,
+            flipH: _flipH,
+            flipV: _flipV,
+            cropAspect: _cropAspectRatioValue,
+            cropZoom: (_cropZoom / 100).clamp(1.0, 3.0),
+            cropPanX: _cropPanX,
+            cropPanY: _cropPanY,
+          );
+          final edited = await compute(isolateFastPreviewJpeg, previewArgs) ?? await _compressImage(state.originalBytes);
           final edits = _buildEditsJsonForIndex(i);
           final ts = DateTime.now().millisecondsSinceEpoch;
           final httpName = 'slideshow_$ts.jpg';
@@ -901,7 +917,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           final cast = await FrameCloudCastService.instance.castPhoto(
             api: _api,
             paired: activePaired,
-            jpegBytes: compressed,
+            jpegBytes: edited,
             filename: httpName,
             slideshowStyle: _slideshow.apiValue,
             displaySeconds: widget.displaySeconds,
@@ -976,9 +992,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
       AppDiagLog.verbose('[Editor] input bytes=${widget.imageBytes.length}');
       final compressed = await _compressImage(_currentBytes);
-      if (_previewBytes == null) {
-        _previewBytes = await compute(isolateFastPreviewJpeg, _previewArgs()) ?? compressed;
-      }
+      _previewBytes = await compute(isolateFastPreviewJpeg, _previewArgs()) ?? compressed;
       final edits = jsonEncode(_buildEditsJson());
 
       AppDiagLog.verbose('[Editor] preview bytes available=${_previewBytes != null}');
