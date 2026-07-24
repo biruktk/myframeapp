@@ -121,10 +121,10 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     });
     try {
       try {
-        if (Platform.isAndroid) {
-          await PermissionGate.locationWhenInUse();
-          final loc = await Permission.locationWhenInUse.status;
-          if (!loc.isGranted && !loc.isLimited) {
+        await PermissionGate.locationWhenInUse();
+        final loc = await Permission.locationWhenInUse.status;
+        if (!loc.isGranted && !loc.isLimited) {
+          if (Platform.isAndroid) {
             await PermissionGate.enqueueLocationCoarse();
           }
         }
