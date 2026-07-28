@@ -733,7 +733,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
           ),
           const SizedBox(height: 28),
           Text(
-            _scanning ? "正在扫描附近相框" : "扫描完成",
+            _scanning ? s.scanningFrames : s.scanComplete,
             style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -741,9 +741,9 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            "正在搜索 MyFrame 蓝牙相框",
-            style: TextStyle(fontSize: 14, color: Colors.grey),
+          Text(
+            s.searchingBluetoothFrames,
+            style: const TextStyle(fontSize: 14, color: Colors.grey),
           ),
           const SizedBox(height: 12),
           if (_scanning) const LinearProgressIndicator(minHeight: 3),
@@ -805,9 +805,9 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Text(
-                "未找到相框，请确认相框处于配对模式。长按按钮 3 秒，直到指示灯闪烁。",
-                style: TextStyle(
+              child: Text(
+                s.frameNotFoundHint,
+                style: const TextStyle(
                   color: Color(0xFFE53935),
                   fontSize: 13,
                   height: 1.4,
@@ -827,9 +827,9 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                   ),
                   side: BorderSide(color: Colors.grey.shade300),
                 ),
-                child: const Text(
-                  "重新扫描",
-                  style: TextStyle(
+                child: Text(
+                  s.bleRestartScan,
+                  style: const TextStyle(
                     color: Colors.black87,
                     fontWeight: FontWeight.bold,
                     fontSize: 15,

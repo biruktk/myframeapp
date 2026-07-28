@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../config/api_config.dart';
 import '../l10n/app_strings.dart';
+import '../models/playback_config.dart';
 import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
@@ -14,17 +15,20 @@ import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
 import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
+import '../widgets/playlist_controls_widget.dart';
 
 class EditColorGradeScreen extends StatefulWidget {
   final List<File> selectedImages;
   final int initialIntervalSeconds;
   final String playlistName;
+  final String? albumId;
 
   const EditColorGradeScreen({
     super.key,
     required this.selectedImages,
     required this.initialIntervalSeconds,
     required this.playlistName,
+    this.albumId,
   });
 
   @override
@@ -35,15 +39,8 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
   int _currentIndex = 0;
   late int _selectedIntervalSeconds;
   bool _isSending = false;
-
-  final List<Map<String, dynamic>> _intervalPills = [
-    {'seconds': 60, 'label': '1m'},
-    {'seconds': 120, 'label': '2m'},
-    {'seconds': 300, 'label': '5m'},
-    {'seconds': 600, 'label': '10m'},
-    {'seconds': 1800, 'label': '30m'},
-    {'seconds': 3600, 'label': '1h'},
-  ];
+  int _strategy = 1;
+  int _durationHours = 0;
 
   @override
   void initState() {
@@ -53,12 +50,18 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
 
   int get _intervalMinutes => _selectedIntervalSeconds ~/ 60;
 
+  PlaybackConfig get _config => PlaybackConfig(
+        intervalMinutes: _intervalMinutes,
+        strategy: _strategy,
+        durationHours: _durationHours,
+      );
+
   Future<void> _handleSendPlaylist() async {
     setState(() => _isSending = true);
 
+    final s = AppStrings.of(context);
     try {
       if (!mounted) return;
-      final s = AppStrings.of(context);
       final app = AppSettingsScope.of(context);
       final authToken = app.authToken;
 
@@ -67,10 +70,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
       if (activePaired == null || !activePaired.canUploadToServer) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Please connect a frame first.'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(s.pleaseConnectFrame), backgroundColor: Colors.red),
           );
         }
         return;
@@ -130,19 +130,20 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
       if (allIds.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('All uploads failed. Please try again.'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(s.allUploadsFailed), backgroundColor: Colors.red),
           );
         }
         return;
       }
 
       await SendAlbumsStore.instance.createAlbum(
-        widget.playlistName.trim().isEmpty ? 'My New Playlist' : widget.playlistName.trim(),
+        widget.playlistName.trim().isEmpty ? s.myNewPlaylist : widget.playlistName.trim(),
         allPaths,
       );
+
+      if (widget.albumId != null) {
+        await SendAlbumsStore.instance.deleteAlbum(widget.albumId!);
+      }
 
       unawaited(SlideshowPlaylistStore.instance.save(
         paired: activePaired,
@@ -155,15 +156,17 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
         macSlug: frameBleMacSlug(activePaired),
         imageIds: allIds,
         intervalMinutes: _intervalMinutes,
+        strategy: _strategy,
+        durationHours: _durationHours,
         skipPlay: true,
       ));
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Playlist sent successfully to frame!'),
-          backgroundColor: Color(0xFF4CAF50),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(s.playlistSent),
+          backgroundColor: const Color(0xFF4CAF50),
+          duration: const Duration(seconds: 2),
         ),
       );
 
@@ -172,7 +175,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
       AppDiagLog.verbose('[EditColorGrade] send error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload failed: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text(s.uploadFailed(e.toString())), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -183,6 +186,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
+    final s = AppStrings.of(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
@@ -192,7 +196,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Edit & color grade (${_currentIndex + 1}/${widget.selectedImages.length})',
+          s.multiImageCasting(_currentIndex + 1, widget.selectedImages.length),
           style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
         ),
         backgroundColor: Colors.transparent,
@@ -201,130 +205,121 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Container(
-              height: screenHeight * 0.42,
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: PageView.builder(
-                  itemCount: widget.selectedImages.length,
-                  onPageChanged: (idx) => setState(() => _currentIndex = idx),
-                  itemBuilder: (context, index) {
-                    return Image.file(
-                      widget.selectedImages[index],
-                      fit: BoxFit.contain,
-                    );
-                  },
-                ),
-              ),
-            ),
-            if (widget.selectedImages.length > 1)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(widget.selectedImages.length, (i) {
-                    return Container(
-                      width: 8,
-                      height: 8,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      height: screenHeight * 0.35,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: i == _currentIndex
-                            ? const Color(0xFFE53935)
-                            : const Color(0xFFD0D0D0),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                    );
-                  }),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: PageView.builder(
+                          itemCount: widget.selectedImages.length,
+                          onPageChanged: (idx) => setState(() => _currentIndex = idx),
+                          itemBuilder: (context, index) {
+                            return Image.file(
+                              widget.selectedImages[index],
+                              fit: BoxFit.contain,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    if (widget.selectedImages.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(widget.selectedImages.length, (i) {
+                            return Container(
+                              width: 6,
+                              height: 6,
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: i == _currentIndex
+                                    ? const Color(0xFFE53935)
+                                    : const Color(0xFFD0D0D0),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    PlaylistControlsWidget(
+                      selectedIntervalSeconds: _selectedIntervalSeconds,
+                      onIntervalChanged: (seconds) => setState(() => _selectedIntervalSeconds = seconds),
+                      selectedStrategy: _strategy,
+                      onStrategyChanged: (v) => setState(() => _strategy = v),
+                      selectedDurationHours: _durationHours,
+                      onDurationChanged: (v) => setState(() => _durationHours = v),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F0F0),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.schedule, size: 14, color: Colors.black54),
+                          const SizedBox(width: 6),
+                          Text(
+                            s.totalLoopTime(_config.estimatedLoopTime(widget.selectedImages.length)),
+                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 ),
               ),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Interval:',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _intervalPills.map((item) {
-                      final seconds = item['seconds'] as int;
-                      final label = item['label'] as String;
-                      final isSelected = _selectedIntervalSeconds == seconds;
-                      return ChoiceChip(
-                        label: Text(
-                          label,
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        selected: isSelected,
-                        selectedColor: const Color(0xFFE53935),
-                        backgroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          side: BorderSide(
-                            color: isSelected ? const Color(0xFFE53935) : const Color(0xFFE0E0E0),
-                          ),
-                        ),
-                        onSelected: (_) {
-                          setState(() => _selectedIntervalSeconds = seconds);
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ],
-              ),
             ),
-            const SizedBox(height: 16),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
               child: SizedBox(
                 width: double.infinity,
-                height: 52,
+                height: 50,
                 child: ElevatedButton(
                   onPressed: _isSending ? null : _handleSendPlaylist,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFE53935),
                     disabledBackgroundColor: const Color(0xFFE53935).withValues(alpha: 0.6),
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   child: _isSending
                       ? const SizedBox(
-                          width: 24,
-                          height: 24,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
                             strokeWidth: 2.5,
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
                       : Text(
-                          'Send Playlist (${widget.selectedImages.length})',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                          s.sendPlaylistN(widget.selectedImages.length),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                 ),
               ),
             ),
-            const SizedBox(height: 16),
           ],
         ),
       ),

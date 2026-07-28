@@ -2313,6 +2313,94 @@ class AppStrings {
     de: 'Rahmen offline. Vor dem Update mit WLAN verbinden.',
     ja: 'フレームがオフラインです。Wi‑Fi接続後にインストールしてください。',
   );
+  String get sleepMode => _l6(
+    en: 'Sleep Mode',
+    zh: '休眠模式',
+    es: 'Modo de suspensión',
+    fr: 'Mode veille',
+    de: 'Schlafmodus',
+    ja: 'スリープモード',
+  );
+  String get sleepModeSchedule => _l6(
+    en: 'Sleep Mode Schedule',
+    zh: '休眠模式时间表',
+    es: 'Horario de suspensión',
+    fr: 'Horaire de veille',
+    de: 'Schlafzeitplan',
+    ja: 'スリープスケジュール',
+  );
+  String get sleepStartTime => _l6(
+    en: 'Sleep Start Time',
+    zh: '休眠开始时间',
+    es: 'Hora de inicio',
+    fr: 'Heure de début',
+    de: 'Einschlafzeit',
+    ja: 'スリープ開始時間',
+  );
+  String get wakeUpTime => _l6(
+    en: 'Wake Up Time',
+    zh: '唤醒时间',
+    es: 'Hora de despertar',
+    fr: 'Heure de réveil',
+    de: 'Aufwachzeit',
+    ja: '起床時間',
+  );
+  String get disabledLabel => _l6(
+    en: 'Disabled',
+    zh: '已禁用',
+    es: 'Desactivado',
+    fr: 'Désactivé',
+    de: 'Deaktiviert',
+    ja: '無効',
+  );
+  String get otaFirmwareUpdate => _l6(
+    en: 'OTA Firmware Update',
+    zh: 'OTA 固件更新',
+    es: 'Actualización OTA',
+    fr: 'Mise à jour OTA',
+    de: 'OTA-Firmware-Update',
+    ja: 'OTAファームウェア更新',
+  );
+  String get otaAutoCheckOn => _l6(
+    en: 'Auto-check on',
+    zh: '自动检查已开启',
+    es: 'Verificación automática activada',
+    fr: 'Vérification auto activée',
+    de: 'Automatische Prüfung an',
+    ja: '自動チェックオン',
+  );
+  String get otaAutoCheckOff => _l6(
+    en: 'Auto-check off',
+    zh: '自动检查已关闭',
+    es: 'Verificación automática desactivada',
+    fr: 'Vérification auto désactivée',
+    de: 'Automatische Prüfung aus',
+    ja: '自動チェックオフ',
+  );
+  String get okLabel => _l6(
+    en: 'OK',
+    zh: '确定',
+    es: 'OK',
+    fr: 'OK',
+    de: 'OK',
+    ja: 'OK',
+  );
+  String maxPhotosAllowed(int max) => _l6(
+    en: 'Maximum $max photos allowed.',
+    zh: '最多 $max 张照片。',
+    es: 'Máximo $max fotos.',
+    fr: 'Maximum $max photos.',
+    de: 'Maximal $max Fotos.',
+    ja: '最大$max枚までです。',
+  );
+  String onlyMoreAllowed(int remaining, int max) => _l6(
+    en: 'Only $remaining more allowed (max $max).',
+    zh: '仅能再选 $remaining 张（最多 $max）。',
+    es: 'Solo $remaining más (máx $max).',
+    fr: 'Seulement $remaining de plus (max $max).',
+    de: 'Nur $remaining weitere (max. $max).',
+    ja: 'あと$remaining枚のみ（最大$max）。',
+  );
   String firmwareCheckErrorMessage(String code) {
     switch (code) {
       case 'unauthorized_admin_token':
@@ -4437,6 +4525,38 @@ class AppStrings {
     fr: 'Ouvrir les autorisations de l’app',
     de: 'App-Berechtigungen öffnen',
     ja: 'アプリの権限を開く',
+  );
+  String get scanningFrames => _l6(
+    en: 'Scanning nearby frames',
+    zh: '正在扫描附近相框',
+    es: 'Escaneando marcos cercanos',
+    fr: 'Recherche de cadres à proximité',
+    de: 'Nach Rahmen in der Nähe suchen',
+    ja: '近くのフレームをスキャン中',
+  );
+  String get scanComplete => _l6(
+    en: 'Scan complete',
+    zh: '扫描完成',
+    es: 'Escaneo completo',
+    fr: 'Recherche terminée',
+    de: 'Suche abgeschlossen',
+    ja: 'スキャン完了',
+  );
+  String get searchingBluetoothFrames => _l6(
+    en: 'Searching for MyFrame Bluetooth frames',
+    zh: '正在搜索 MyFrame 蓝牙相框',
+    es: 'Buscando marcos MyFrame Bluetooth',
+    fr: 'Recherche de cadres MyFrame Bluetooth',
+    de: 'Suche nach MyFrame Bluetooth-Rahmen',
+    ja: 'MyFrame Bluetoothフレームを検索中',
+  );
+  String get frameNotFoundHint => _l6(
+    en: 'No frames found. Make sure your frame is in pairing mode. Press and hold the button for 3 seconds until the indicator light flashes.',
+    zh: '未找到相框，请确认相框处于配对模式。长按按钮 3 秒，直到指示灯闪烁。',
+    es: 'No se encontraron marcos. Asegúrate de que el marco esté en modo de emparejamiento. Mantén presionado el botón durante 3 segundos hasta que el indicador parpadee.',
+    fr: 'Aucun cadre trouvé. Assurez-vous que votre cadre est en mode appairage. Maintenez le bouton enfoncé pendant 3 secondes jusqu\'à ce que le voyant clignote.',
+    de: 'Keine Rahmen gefunden. Stellen Sie sicher, dass sich Ihr Rahmen im Pairing-Modus befindet. Halten Sie die Taste 3 Sekunden lang gedrückt, bis die Anzeige blinkt.',
+    ja: 'フレームが見つかりません。フレームがペアリングモードであることを確認してください。インジケーターが点滅するまでボタンを3秒間押し続けてください。',
   );
   String bleDebugAdvertLine(String rawName, String mac) => _l6(
     en: 'DEBUG adv: "$rawName" · $mac',
@@ -6934,5 +7054,637 @@ class AppStrings {
     fr: 'Les mots de passe ne correspondent pas.',
     de: 'Passwörter stimmen nicht überein.',
     ja: 'パスワードが一致しません。',
+  );
+
+  // —— Playlist & Color Grade ——
+  String get scanningDevice => _l6(
+    en: 'Scanning device...',
+    zh: '正在扫描设备...',
+    es: 'Escaneando dispositivo...',
+    fr: 'Recherche de l\'appareil...',
+    de: 'Gerät wird gesucht...',
+    ja: 'デバイスをスキャン中...',
+  );
+  String get createPlaylistTitle => _l6(
+    en: 'Create Playlist',
+    zh: '创建播放列表',
+    es: 'Crear lista de reproducción',
+    fr: 'Créer une playlist',
+    de: 'Wiedergabeliste erstellen',
+    ja: 'プレイリストを作成',
+  );
+  String get displayInterval => _l6(
+    en: 'Display Interval',
+    zh: '显示间隔',
+    es: 'Intervalo de visualización',
+    fr: 'Intervalle d\'affichage',
+    de: 'Anzeigeintervall',
+    ja: '表示間隔',
+  );
+  String selectedPhotos(int n) => _l6(
+    en: 'Selected Photos ($n/10)',
+    zh: '已选择照片 ($n/10)',
+    es: 'Fotos seleccionadas ($n/10)',
+    fr: 'Photos sélectionnées ($n/10)',
+    de: 'Ausgewählte Fotos ($n/10)',
+    ja: '選択した写真 ($n/10)',
+  );
+  String get addMore => _l6(
+    en: 'Add More',
+    zh: '添加更多',
+    es: 'Añadir más',
+    fr: 'Ajouter plus',
+    de: 'Mehr hinzufügen',
+    ja: 'さらに追加',
+  );
+  String get sendPlaylistToFrame => _l6(
+    en: 'Send Playlist to Frame',
+    zh: '发送播放列表至相框',
+    es: 'Enviar lista al marco',
+    fr: 'Envoyer la playlist au cadre',
+    de: 'Wiedergabeliste an Rahmen senden',
+    ja: 'プレイリストをフレームに送信',
+  );
+  String editColorGrade(int current, int total) => _l6(
+    en: 'Edit & color grade ($current/$total)',
+    zh: '编辑调色 ($current/$total)',
+    es: 'Editar y graduar color ($current/$total)',
+    fr: 'Édition et étalonnage ($current/$total)',
+    de: 'Bearbeiten & Farbkorrektur ($current/$total)',
+    ja: '編集＆カラーグレード ($current/$total)',
+  );
+  String multiImageCasting(int current, int total) => _l6(
+    en: 'Multi-Image Casting ($current/$total)',
+    zh: '多图投屏 ($current/$total)',
+    es: 'Transmisión múltiple ($current/$total)',
+    fr: 'Diffusion multi-image ($current/$total)',
+    de: 'Multi-Bild-Übertragung ($current/$total)',
+    ja: 'マルチ画像キャスト ($current/$total)',
+  );
+  String get intervalLabel => _l6(
+    en: 'Interval:',
+    zh: '间隔:',
+    es: 'Intervalo:',
+    fr: 'Intervalle :',
+    de: 'Intervall:',
+    ja: '間隔:',
+  );
+  String get playbackMode => _l6(
+    en: 'Playback Mode:',
+    zh: '播放模式:',
+    es: 'Modo de reproducción:',
+    fr: 'Mode de lecture :',
+    de: 'Wiedergabemodus:',
+    ja: '再生モード:',
+  );
+  String get sequential => _l6(
+    en: 'Sequential',
+    zh: '顺序播放',
+    es: 'Secuencial',
+    fr: 'Séquentiel',
+    de: 'Nacheinander',
+    ja: '順次再生',
+  );
+  String get randomShuffle => _l6(
+    en: 'Random',
+    zh: '随机播放',
+    es: 'Aleatorio',
+    fr: 'Aléatoire',
+    de: 'Zufällig',
+    ja: 'ランダム',
+  );
+  String get durationLabel => _l6(
+    en: 'Duration:',
+    zh: '时长:',
+    es: 'Duración:',
+    fr: 'Durée :',
+    de: 'Dauer:',
+    ja: '期間:',
+  );
+  String get unlimited => _l6(
+    en: 'Unlimited',
+    zh: '不限时',
+    es: 'Ilimitado',
+    fr: 'Illimité',
+    de: 'Unbegrenzt',
+    ja: '無制限',
+  );
+  String totalLoopTime(String time) => _l6(
+    en: 'Total loop time: $time',
+    zh: '总循环时长: $time',
+    es: 'Tiempo total de bucle: $time',
+    fr: 'Temps de boucle total : $time',
+    de: 'Gesamtschleifenzeit: $time',
+    ja: '合計ループ時間: $time',
+  );
+  String sendPlaylistN(int n) => _l6(
+    en: 'Send Playlist ($n)',
+    zh: '发送播放列表 ($n)',
+    es: 'Enviar lista ($n)',
+    fr: 'Envoyer la playlist ($n)',
+    de: 'Wiedergabeliste senden ($n)',
+    ja: 'プレイリストを送信 ($n)',
+  );
+  String get playlistSent => _l6(
+    en: 'Playlist sent successfully to frame!',
+    zh: '播放列表已成功发送至相框！',
+    es: '¡Lista enviada correctamente al marco!',
+    fr: 'Playlist envoyée avec succès au cadre !',
+    de: 'Wiedergabeliste erfolgreich an Rahmen gesendet!',
+    ja: 'プレイリストをフレームに送信しました！',
+  );
+  String uploadFailed(String e) => _l6(
+    en: 'Upload failed: $e',
+    zh: '上传失败: $e',
+    es: 'Error de carga: $e',
+    fr: 'Échec du téléchargement : $e',
+    de: 'Upload fehlgeschlagen: $e',
+    ja: 'アップロード失敗: $e',
+  );
+  String get pleaseConnectFrame => _l6(
+    en: 'Please connect a frame first.',
+    zh: '请先连接相框。',
+    es: 'Conecta un marco primero.',
+    fr: 'Veuillez d\'abord connecter un cadre.',
+    de: 'Bitte zuerst einen Rahmen verbinden.',
+    ja: '先にフレームを接続してください。',
+  );
+  String get allUploadsFailed => _l6(
+    en: 'All uploads failed. Please try again.',
+    zh: '所有上传失败，请重试。',
+    es: 'Todas las cargas fallaron. Intenta de nuevo.',
+    fr: 'Tous les téléchargements ont échoué. Veuillez réessayer.',
+    de: 'Alle Uploads fehlgeschlagen. Bitte versuchen Sie es erneut.',
+    ja: 'すべてのアップロードに失敗しました。もう一度お試しください。',
+  );
+  String get myNewPlaylist => _l6(
+    en: 'My New Playlist',
+    zh: '我的新播放列表',
+    es: 'Mi nueva lista',
+    fr: 'Ma nouvelle playlist',
+    de: 'Meine neue Wiedergabeliste',
+    ja: 'マイ新しいプレイリスト',
+  );
+  String get oneMinute => _l6(
+    en: '1 Minute',
+    zh: '1 分钟',
+    es: '1 minuto',
+    fr: '1 minute',
+    de: '1 Minute',
+    ja: '1分',
+  );
+  String nMinutes(int n) => _l6(
+    en: '$n Minutes',
+    zh: '$n 分钟',
+    es: '$n minutos',
+    fr: '$n minutes',
+    de: '$n Minuten',
+    ja: '$n分',
+  );
+  String get oneHour => _l6(
+    en: '1 Hour',
+    zh: '1 小时',
+    es: '1 hora',
+    fr: '1 heure',
+    de: '1 Stunde',
+    ja: '1時間',
+  );
+
+  // —— Device Details ——
+  String get deviceDetails => _l6(
+    en: 'Device Details',
+    zh: '设备详情',
+    es: 'Detalles del dispositivo',
+    fr: 'Détails de l\'appareil',
+    de: 'Gerätedetails',
+    ja: 'デバイス詳細',
+  );
+  String get statusSection => _l6(
+    en: 'Status',
+    zh: '状态',
+    es: 'Estado',
+    fr: 'Statut',
+    de: 'Status',
+    ja: 'ステータス',
+  );
+  String get batteryLabel => _l6(
+    en: 'Battery',
+    zh: '电池',
+    es: 'Batería',
+    fr: 'Batterie',
+    de: 'Akku',
+    ja: 'バッテリー',
+  );
+  String get storageLabel => _l6(
+    en: 'Storage',
+    zh: '存储',
+    es: 'Almacenamiento',
+    fr: 'Stockage',
+    de: 'Speicher',
+    ja: 'ストレージ',
+  );
+  String get deviceInfoSection => _l6(
+    en: 'Device Info',
+    zh: '设备信息',
+    es: 'Información del dispositivo',
+    fr: 'Infos de l\'appareil',
+    de: 'Geräteinfo',
+    ja: 'デバイス情報',
+  );
+  String get macLabel => _l6(
+    en: 'MAC',
+    zh: 'MAC',
+    es: 'MAC',
+    fr: 'MAC',
+    de: 'MAC',
+    ja: 'MAC',
+  );
+  String get firmwareVersionLabel => _l6(
+    en: 'Firmware Version',
+    zh: '固件版本',
+    es: 'Versión de firmware',
+    fr: 'Version du firmware',
+    de: 'Firmware-Version',
+    ja: 'ファームウェアバージョン',
+  );
+  String get networkNameLabel => _l6(
+    en: 'Network name',
+    zh: '网络名称',
+    es: 'Nombre de red',
+    fr: 'Nom du réseau',
+    de: 'Netzwerkname',
+    ja: 'ネットワーク名',
+  );
+  String get lastSeenLabel => _l6(
+    en: 'Last Seen',
+    zh: '最后在线',
+    es: 'Última vez',
+    fr: 'Dernière vue',
+    de: 'Zuletzt gesehen',
+    ja: '最終確認',
+  );
+  String get wifiSignalLabel => _l6(
+    en: 'WiFi Signal',
+    zh: 'WiFi 信号',
+    es: 'Señal WiFi',
+    fr: 'Signal WiFi',
+    de: 'WiFi-Signal',
+    ja: 'WiFi信号',
+  );
+  String get disconnected => _l6(
+    en: 'Disconnected',
+    zh: '未连接',
+    es: 'Desconectado',
+    fr: 'Déconnecté',
+    de: 'Getrennt',
+    ja: '切断済み',
+  );
+  String get onlineStatus => _l6(
+    en: 'Online',
+    zh: '在线',
+    es: 'En línea',
+    fr: 'En ligne',
+    de: 'Online',
+    ja: 'オンライン',
+  );
+  String get offlineStatus => _l6(
+    en: 'Offline',
+    zh: '离线',
+    es: 'Fuera de línea',
+    fr: 'Hors ligne',
+    de: 'Offline',
+    ja: 'オフライン',
+  );
+  String get deleteDevice => _l6(
+    en: 'Delete Device',
+    zh: '删除设备',
+    es: 'Eliminar dispositivo',
+    fr: 'Supprimer l\'appareil',
+    de: 'Gerät löschen',
+    ja: 'デバイスを削除',
+  );
+  String deleteDeviceConfirm(String name) => _l6(
+    en: 'Are you sure you want to remove $name from your account?',
+    zh: '确定要从您的账户中移除 $name 吗？',
+    es: '¿Seguro que quieres eliminar $name de tu cuenta?',
+    fr: 'Voulez-vous vraiment supprimer $name de votre compte ?',
+    de: 'Möchten Sie $name wirklich von Ihrem Konto entfernen?',
+    ja: '$name をアカウントから削除してもよろしいですか？',
+  );
+  String get deleteButton => _l6(
+    en: 'Delete',
+    zh: '删除',
+    es: 'Eliminar',
+    fr: 'Supprimer',
+    de: 'Löschen',
+    ja: '削除',
+  );
+
+  // —— Send Screen ——
+  String get cameraPermissionDenied => _l6(
+    en: 'Camera permission denied. Use Gallery below or enable Camera in Settings.',
+    zh: '相机权限被拒绝。请使用下方相册或在设置中启用相机。',
+    es: 'Permiso de cámara denegado. Usa la galería o habilita la cámara en Ajustes.',
+    fr: 'Permission caméra refusée. Utilisez la galerie ou activez la caméra dans Paramètres.',
+    de: 'Kamera-Berechtigung verweigert. Verwenden Sie die Galerie oder aktivieren Sie die Kamera in den Einstellungen.',
+    ja: 'カメラの許可が拒否されました。ギャラリーを使用するか、設定でカメラを有効にしてください。',
+  );
+  String get settingsLabel => _l6(
+    en: 'Settings',
+    zh: '设置',
+    es: 'Ajustes',
+    fr: 'Paramètres',
+    de: 'Einstellungen',
+    ja: '設定',
+  );
+  String get couldNotCreateLink => _l6(
+    en: 'Could not create upload link. Try again.',
+    zh: '无法创建上传链接，请重试。',
+    es: 'No se pudo crear el enlace. Intenta de nuevo.',
+    fr: 'Impossible de créer le lien. Réessayez.',
+    de: 'Link konnte nicht erstellt werden. Versuchen Sie es erneut.',
+    ja: 'アップロードリンクを作成できませんでした。もう一度お試しください。',
+  );
+  String get cameraPermissionHelp => _l6(
+    en: 'Allow Camera permission (Settings ▸ Apps ▸ MyFrame ▸ Permissions). Or use Gallery instead.',
+    zh: '允许相机权限（设置 ▸ 应用 ▸ MyFrame ▸ 权限），或使用相册。',
+    es: 'Permite la cámara (Ajustes ▸ Apps ▸ MyFrame ▸ Permisos) o usa la galería.',
+    fr: 'Autorisez la caméra (Paramètres ▸ Apps ▸ MyFrame ▸ Permissions) ou utilisez la galerie.',
+    de: 'Kameraberechtigung erlauben (Einstellungen ▸ Apps ▸ MyFrame ▸ Berechtigungen) oder Galerie verwenden.',
+    ja: 'カメラの許可を有効にする（設定 ▸ アプリ ▸ MyFrame ▸ 権限）か、ギャラリーをご利用ください。',
+  );
+  String get allowPhotosPermission => _l6(
+    en: 'Allow Photos/Videos permission to pick images.',
+    zh: '请允许访问相册以选择图片。',
+    es: 'Permite el acceso a Fotos/Videos para seleccionar imágenes.',
+    fr: 'Autorisez l\'accès aux Photos/Vidéos pour choisir des images.',
+    de: 'Erlauben Sie Foto-/Videozugriff, um Bilder auszuwählen.',
+    ja: '画像を選択するには写真/ビデオの許可を有効にしてください。',
+  );
+
+  // —— Image Editor ——
+  String get sendFailedRetry => _l6(
+    en: 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.',
+    zh: '图片发送失败，请重试。确保相框已连接 WiFi，或删除设备后重新发送。',
+    es: 'Error al enviar la imagen. Verifica la conexión WiFi o elimina el dispositivo y reenvía.',
+    fr: 'Échec de l\'envoi. Vérifiez le WiFi ou supprimez l\'appareil et renvoyez.',
+    de: 'Senden fehlgeschlagen. Stellen Sie sicher, dass der Rahmen mit WiFi verbunden ist, oder löschen Sie das Gerät und senden Sie erneut.',
+    ja: '画像の送信に失敗しました。フレームがWiFiに接続されていることを確認するか、デバイスを削除して再送信してください。',
+  );
+  String get connectFrameToSend => _l6(
+    en: 'Connect your frame to send this photo…',
+    zh: '请连接相框以发送此照片…',
+    es: 'Conecta tu marco para enviar esta foto…',
+    fr: 'Connectez votre cadre pour envoyer cette photo…',
+    de: 'Verbinden Sie Ihren Rahmen, um dieses Foto zu senden…',
+    ja: 'この写真を送信するにはフレームを接続してください…',
+  );
+  String get frameConnectionCancelled => _l6(
+    en: 'Frame connection cancelled.',
+    zh: '相框连接已取消。',
+    es: 'Conexión cancelada.',
+    fr: 'Connexion annulée.',
+    de: 'Rahmenverbindung abgebrochen.',
+    ja: 'フレーム接続がキャンセルされました。',
+  );
+  String get noFramePaired => _l6(
+    en: 'No frame paired yet. Scan a frame to continue.',
+    zh: '尚未配对相框。请扫描相框以继续。',
+    es: 'No hay marco emparejado. Escanea un marco para continuar.',
+    fr: 'Aucun cadre appairé. Scannez un cadre pour continuer.',
+    de: 'Kein Rahmen gekoppelt. Scannen Sie einen Rahmen, um fortzufahren.',
+    ja: 'フレームがペアリングされていません。フレームをスキャンしてください。',
+  );
+  String get iosBleOnlyHint => _l6(
+    en: 'This iPhone pairing has only an iOS Bluetooth UUID, not the frame display ID. Scan the frame pairing QR once, then try upload again.',
+    zh: '此 iPhone 仅配对到蓝牙 UUID，未获取相框显示 ID。请扫描相框配对二维码，然后重试上传。',
+    es: 'Este iPhone tiene solo un UUID Bluetooth. Escanea el QR de emparejamiento e intenta de nuevo.',
+    fr: 'Cet iPhone n\'a qu\'un UUID Bluetooth. Scannez le QR d\'appairage et réessayez.',
+    de: 'Dieses iPhone hat nur eine Bluetooth-UUID. Scannen Sie den QR-Code zur Kopplung und versuchen Sie es erneut.',
+    ja: 'このiPhoneはBluetooth UUIDのみを持っています。フレームのペアリングQRをスキャンしてから再試行してください。',
+  );
+  String get completeWifiBeforeSending => _l6(
+    en: 'Complete Wi‑Fi setup before sending photos…',
+    zh: '请先完成 WiFi 设置再发送照片…',
+    es: 'Completa la configuración WiFi antes de enviar…',
+    fr: 'Terminez la configuration WiFi avant d\'envoyer…',
+    de: 'Schließen Sie die Wi‑Fi-Einrichtung ab, bevor Sie Fotos senden…',
+    ja: '写真を送信する前にWiFi設定を完了してください…',
+  );
+  String get preparingImage => _l6(
+    en: 'Preparing image for frame…',
+    zh: '正在为相框准备图片…',
+    es: 'Preparando imagen para el marco…',
+    fr: 'Préparation de l\'image pour le cadre…',
+    de: 'Bild wird für den Rahmen vorbereitet…',
+    ja: 'フレーム用に画像を準備中…',
+  );
+  String get exportFailed => _l6(
+    en: 'Export failed. Try again.',
+    zh: '导出失败，请重试。',
+    es: 'Error de exportación. Intenta de nuevo.',
+    fr: 'Échec de l\'export. Réessayez.',
+    de: 'Export fehlgeschlagen. Versuchen Sie es erneut.',
+    ja: 'エクスポートに失敗しました。もう一度お試しください。',
+  );
+  String get backTooltip => _l6(
+    en: 'Back',
+    zh: '返回',
+    es: 'Atrás',
+    fr: 'Retour',
+    de: 'Zurück',
+    ja: '戻る',
+  );
+  String get originalLabel => _l6(
+    en: 'Original',
+    zh: '原图',
+    es: 'Original',
+    fr: 'Original',
+    de: 'Original',
+    ja: 'オリジナル',
+  );
+  String get contrastLabel => _l6(
+    en: 'Contrast',
+    zh: '对比度',
+    es: 'Contraste',
+    fr: 'Contraste',
+    de: 'Kontrast',
+    ja: 'コントラスト',
+  );
+  String get vividLabel => _l6(
+    en: 'Vivid',
+    zh: '鲜艳',
+    es: 'Vívido',
+    fr: 'Vif',
+    de: 'Lebendig',
+    ja: 'ビビッド',
+  );
+  String get vintageLabel => _l6(
+    en: 'Vintage',
+    zh: '复古',
+    es: 'Vintage',
+    fr: 'Vintage',
+    de: 'Vintage',
+    ja: 'ビンテージ',
+  );
+  String get coolLabel => _l6(
+    en: 'Cool',
+    zh: '冷色',
+    es: 'Frío',
+    fr: 'Froid',
+    de: 'Kühl',
+    ja: 'クール',
+  );
+  String get bwLabel => _l6(
+    en: 'B/W',
+    zh: '黑白',
+    es: 'ByN',
+    fr: 'N&B',
+    de: 'S/W',
+    ja: 'モノクロ',
+  );
+  String get adjustmentsLabel => _l6(
+    en: 'Adjustments',
+    zh: '调整',
+    es: 'Ajustes',
+    fr: 'Réglages',
+    de: 'Anpassungen',
+    ja: '調整',
+  );
+  String get brightnessLabel => _l6(
+    en: 'Brightness',
+    zh: '亮度',
+    es: 'Brillo',
+    fr: 'Luminosité',
+    de: 'Helligkeit',
+    ja: '明るさ',
+  );
+  String get saturationLabel => _l6(
+    en: 'Saturation',
+    zh: '饱和度',
+    es: 'Saturación',
+    fr: 'Saturation',
+    de: 'Sättigung',
+    ja: '彩度',
+  );
+  String get dateHelperText => _l6(
+    en: 'When on, the current date and time are added at the bottom of the frame.',
+    zh: '开启后，当前日期和时间将显示在相框底部。',
+    es: 'Cuando está activado, la fecha y hora se añaden en la parte inferior.',
+    fr: 'Quand activé, la date et l\'heure s\'affichent en bas du cadre.',
+    de: 'Wenn aktiviert, werden Datum und Uhrzeit am unteren Rand des Rahmens angezeigt.',
+    ja: 'オンにすると、現在の日時がフレームの下部に追加されます。',
+  );
+  String get happyBirthdayHint => _l6(
+    en: 'Happy BirthDay',
+    zh: '生日快乐',
+    es: 'Feliz Cumpleaños',
+    fr: 'Joyeux Anniversaire',
+    de: 'Alles Gute zum Geburtstag',
+    ja: 'お誕生日おめでとう',
+  );
+  String get addText => _l6(
+    en: 'Add Text',
+    zh: '添加文字',
+    es: 'Añadir texto',
+    fr: 'Ajouter du texte',
+    de: 'Text hinzufügen',
+    ja: 'テキストを追加',
+  );
+  String get previewHint => _l6(
+    en: 'Preview uses black, white, yellow, red, blue, and green only.',
+    zh: '预览仅使用黑、白、黄、红、蓝、绿色。',
+    es: 'La vista previa usa solo negro, blanco, amarillo, rojo, azul y verde.',
+    fr: 'L\'aperçu utilise uniquement le noir, blanc, jaune, rouge, bleu et vert.',
+    de: 'Die Vorschau verwendet nur Schwarz, Weiß, Gelb, Rot, Blau und Grün.',
+    ja: 'プレビューでは黒、白、黄、赤、青、緑のみを使用します。',
+  );
+  String get closeLabel => _l6(
+    en: 'Close',
+    zh: '关闭',
+    es: 'Cerrar',
+    fr: 'Fermer',
+    de: 'Schließen',
+    ja: '閉じる',
+  );
+  String get previewOfEditedPhoto => _l6(
+    en: 'Preview of your edited photo.',
+    zh: '编辑后照片预览。',
+    es: 'Vista previa de la foto editada.',
+    fr: 'Aperçu de votre photo éditée.',
+    de: 'Vorschau Ihres bearbeiteten Fotos.',
+    ja: '編集した写真のプレビュー。',
+  );
+  String get sentSuccessfully => _l6(
+    en: 'Sent Successfully!',
+    zh: '发送成功！',
+    es: '¡Enviado con éxito!',
+    fr: 'Envoyé avec succès !',
+    de: 'Erfolgreich gesendet!',
+    ja: '送信成功！',
+  );
+  String toFrame(String name) => _l6(
+    en: 'to $name',
+    zh: '至 $name',
+    es: 'a $name',
+    fr: 'à $name',
+    de: 'an $name',
+    ja: '$name へ',
+  );
+  String get frameIsRefreshing => _l6(
+    en: 'Frame is refreshing…',
+    zh: '相框正在刷新…',
+    es: 'El marco se está actualizando…',
+    fr: 'Le cadre se rafraîchit…',
+    de: 'Rahmen wird aktualisiert…',
+    ja: 'フレームを更新中…',
+  );
+  String get intervalPrefix => _l6(
+    en: 'Interval: ',
+    zh: '间隔: ',
+    es: 'Intervalo: ',
+    fr: 'Intervalle : ',
+    de: 'Intervall: ',
+    ja: '間隔: ',
+  );
+  String get castActivity => _l6(
+    en: 'Cast activity',
+    zh: '投屏活动',
+    es: 'Actividad de transmisión',
+    fr: 'Activité de diffusion',
+    de: 'Übertragungsaktivität',
+    ja: 'キャストアクティビティ',
+  );
+  String get copyLog => _l6(
+    en: 'Copy log',
+    zh: '复制日志',
+    es: 'Copiar registro',
+    fr: 'Copier le journal',
+    de: 'Protokoll kopieren',
+    ja: 'ログをコピー',
+  );
+  String get frameCast => _l6(
+    en: 'Frame cast',
+    zh: '相框投屏',
+    es: 'Transmisión al marco',
+    fr: 'Diffusion vers le cadre',
+    de: 'Rahmenübertragung',
+    ja: 'フレームキャスト',
+  );
+  String slideshowPublishStatus(int code, String body) => _l6(
+    en: 'Slideshow publish returned $code. Playlist will not auto-advance. $body',
+    zh: '幻灯片发布返回 $code。播放列表将不会自动轮播。$body',
+    es: 'La publicación devolvió $code. La lista no avanzará automáticamente. $body',
+    fr: 'La publication a renvoyé $code. La liste n\'avancera pas automatiquement. $body',
+    de: 'Veröffentlichung gab $code zurück. Wiedergabeliste wird nicht automatisch fortgesetzt. $body',
+    ja: 'スライドショーの公開が $code を返しました。プレイリストは自動的に進みません。$body',
+  );
+  String slideshowPublishError(String e) => _l6(
+    en: 'Slideshow publish error: $e',
+    zh: '幻灯片发布错误: $e',
+    es: 'Error de publicación: $e',
+    fr: 'Erreur de publication : $e',
+    de: 'Fehler bei der Veröffentlichung: $e',
+    ja: 'スライドショー公開エラー: $e',
   );
 }

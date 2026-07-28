@@ -115,13 +115,14 @@ class _SendScreenState extends State<SendScreen> {
       app_os.AppSettings.openAppSettings(type: app_os.AppSettingsType.settings);
 
   void _showCameraDeniedSnackBar(BuildContext context) {
+    final s = AppStrings.of(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        content: const Text('Camera permission denied. Use Gallery below or enable Camera in Settings.'),
-        action: SnackBarAction(label: 'Settings', onPressed: _openCameraPermissionSettings),
+        content: Text(s.cameraPermissionDenied),
+        action: SnackBarAction(label: s.settingsLabel, onPressed: _openCameraPermissionSettings),
       ),
     );
   }
@@ -172,19 +173,20 @@ class _SendScreenState extends State<SendScreen> {
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
     if (invite == null) {
+      final s = AppStrings.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: const Text('Could not create upload link. Try again.'),
+          content: Text(s.couldNotCreateLink),
         ),
       );
       return;
     }
 
     final frameName = paired.frameName?.trim();
-    final label = frameName != null && frameName.isNotEmpty ? frameName : 'my frame';
+    final label = frameName != null && frameName.isNotEmpty ? frameName : AppStrings.of(context).myNewPlaylist;
 
     // Force Chinese on the hosted invite page.
     final shareUrl = '${invite.inviteUrl}${invite.inviteUrl.contains('?') ? '&' : '?'}lang=zh';
@@ -242,7 +244,7 @@ class _SendScreenState extends State<SendScreen> {
     } on PlatformException catch (e) {
       if (!context.mounted) return;
       final msg = e.code == 'camera_access_denied' || e.code == 'camera_access_denied_android'
-          ? 'Allow Camera permission (Settings ▸ Apps ▸ MyFrame ▸ Permissions). Or use Gallery instead.'
+          ? AppStrings.of(context).cameraPermissionHelp
           : (e.message ?? e.code);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -250,7 +252,7 @@ class _SendScreenState extends State<SendScreen> {
           margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           content: Text(msg),
-          action: SnackBarAction(label: 'Settings', onPressed: _openCameraPermissionSettings),
+          action: SnackBarAction(label: AppStrings.of(context).settingsLabel, onPressed: _openCameraPermissionSettings),
         ),
       );
       return;
@@ -395,16 +397,17 @@ class _SendScreenState extends State<SendScreen> {
     try {
       files = await _pickFromGallery(context);
     } on PlatformException catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          content: Text(e.message ?? e.code),
-          action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
-        ),
-      );
+    if (!context.mounted) return;
+    final s = AppStrings.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(s.cameraPermissionDenied),
+        action: SnackBarAction(label: s.settingsLabel, onPressed: _openCameraPermissionSettings),
+      ),
+    );
       return;
     }
     if (files.isEmpty) {
@@ -557,8 +560,8 @@ class _SendScreenState extends State<SendScreen> {
               behavior: SnackBarBehavior.floating,
               margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              content: const Text('Allow Photos/Videos permission to pick images.'),
-              action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
+              content: Text(AppStrings.of(context).allowPhotosPermission),
+              action: SnackBarAction(label: AppStrings.of(context).settingsLabel, onPressed: openAppSettings),
             ),
           );
           return [];

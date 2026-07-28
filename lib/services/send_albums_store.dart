@@ -61,7 +61,13 @@ class SendAlbumsStore {
     for (final a in _albums) {
       final kept = await GalleryImageCache.filterExisting(a.paths);
       if (kept.length != a.paths.length) changed = true;
-      next.add(SendAlbumEntry(id: a.id, name: a.name, paths: kept));
+      if (kept.isNotEmpty) {
+        next.add(SendAlbumEntry(id: a.id, name: a.name, paths: kept));
+      } else if (a.paths.isEmpty) {
+        next.add(a);
+      } else {
+        changed = true;
+      }
     }
     if (changed) {
       _albums = next;

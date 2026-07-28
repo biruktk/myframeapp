@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_strings.dart';
+import '../services/gallery_image_cache.dart';
+import '../services/gallery_photo_picker.dart';
 import 'edit_color_grade_screen.dart';
 
 class CreatePlaylistScreen extends StatefulWidget {
@@ -18,14 +21,8 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   int _selectedIntervalSeconds = 300;
   late List<File> _images;
 
-  final List<Map<String, dynamic>> _intervalOptions = [
-    {'seconds': 60, 'label': '1 Minute'},
-    {'seconds': 120, 'label': '2 Minutes'},
-    {'seconds': 300, 'label': '5 Minutes'},
-    {'seconds': 600, 'label': '10 Minutes'},
-    {'seconds': 1800, 'label': '30 Minutes'},
-    {'seconds': 3600, 'label': '1 Hour'},
-  ];
+  static const int _maxPhotos = 10;
+  static const List<int> _intervalSecondsList = [60, 120, 300, 600, 1800, 3600];
 
   @override
   void initState() {
@@ -44,8 +41,46 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
     if (_images.isEmpty && mounted) Navigator.pop(context);
   }
 
+  Future<void> _addMore() async {
+    final s = AppStrings.of(context);
+    final remaining = _maxPhotos - _images.length;
+    if (remaining <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(s.maxPhotosAllowed(_maxPhotos))),
+        );
+      }
+      return;
+    }
+
+    final files = await GalleryPhotoPicker.pickMulti(context);
+    if (files.isEmpty || !mounted) return;
+
+    final stored = await GalleryImageCache.persistPaths(files.map((f) => f.path));
+    final allowed = stored.take(remaining).toList();
+    if (stored.length > remaining && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.onlyMoreAllowed(remaining, _maxPhotos))),
+      );
+    }
+    setState(() => _images.addAll(allowed.map((p) => File(p))));
+  }
+
+  String _intervalLabel(AppStrings s, int seconds) {
+    return switch (seconds) {
+      60 => s.oneMinute,
+      120 => s.nMinutes(2),
+      300 => s.nMinutes(5),
+      600 => s.nMinutes(10),
+      1800 => s.nMinutes(30),
+      3600 => s.oneHour,
+      _ => '$seconds sec',
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
@@ -53,9 +88,9 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
           icon: const Icon(Icons.close, color: Colors.black, size: 24),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Create Playlist',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+        title: Text(
+          s.createPlaylistTitle,
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -77,17 +112,17 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                 child: TextField(
                   controller: _playlistNameController,
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
-                  decoration: const InputDecoration(
-                    hintText: 'My New Playlist',
-                    hintStyle: TextStyle(color: Colors.grey, fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: s.myNewPlaylist,
+                    hintStyle: const TextStyle(color: Colors.grey, fontSize: 15),
                     border: InputBorder.none,
                   ),
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'Display Interval',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+              Text(
+                s.displayInterval,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
               ),
               const SizedBox(height: 8),
               Container(
@@ -102,11 +137,11 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                     value: _selectedIntervalSeconds,
                     isExpanded: true,
                     icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black54),
-                    items: _intervalOptions.map((item) {
+                    items: _intervalSecondsList.map((seconds) {
                       return DropdownMenuItem<int>(
-                        value: item['seconds'] as int,
+                        value: seconds,
                         child: Text(
-                          item['label'] as String,
+                          _intervalLabel(s, seconds),
                           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
                         ),
                       );
@@ -122,22 +157,23 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Selected Photos (${_images.length}/10)',
+                    s.selectedPhotos(_images.length),
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
-                  GestureDetector(
-                    onTap: () {},
-                    child: const Row(
-                      children: [
-                        Icon(Icons.add, size: 18, color: Color(0xFFE53935)),
-                        SizedBox(width: 2),
-                        Text(
-                          'Add More',
-                          style: TextStyle(color: Color(0xFFE53935), fontWeight: FontWeight.bold, fontSize: 13),
+                  if (_images.length < _maxPhotos)
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.add, size: 18),
+                      label: Text(s.addMore),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.black,
+                        side: const BorderSide(color: Color(0xFFE53935), width: 1.5),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ],
+                      ),
+                      onPressed: _addMore,
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -216,9 +252,9 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text(
-                    'Send Playlist to Frame',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  child: Text(
+                    s.sendPlaylistToFrame,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                 ),
               ),

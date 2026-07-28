@@ -90,7 +90,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     return '--';
   }
 
-  String get _lastSeen {
+  String _lastSeen(AppStrings s) {
     final st = _status;
     if (st == null) return '--';
     final ms = st.lastSeenMs;
@@ -98,10 +98,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
     final now = DateTime.now();
     final diff = now.difference(dt);
-    if (diff.inSeconds < 60) return 'Just now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
-    if (diff.inHours < 24) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    if (diff.inSeconds < 60) return s.justNow;
+    if (diff.inMinutes < 60) return s.minutesAgo(diff.inMinutes);
+    if (diff.inHours < 24) return s.hoursAgo(diff.inHours);
+    if (diff.inDays < 7) return s.daysAgo(diff.inDays);
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
@@ -112,13 +112,13 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Device'),
-        content: Text('Are you sure you want to remove $_deviceName from your account?'),
+        title: Text(s.deleteDevice),
+        content: Text(s.deleteDeviceConfirm(_deviceName)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(s.cancel)),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Color(0xFFE53935))),
+            child: Text(s.deleteButton, style: const TextStyle(color: Color(0xFFE53935))),
           ),
         ],
       ),
@@ -138,22 +138,27 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   static const _bg = Color(0xFFF6F7F9);
   static const _cardBorder = Color(0xFFEFEFEF);
 
+  String _storageText() {
+    final st = _status;
+    return '${st?.storageUsedFormatted ?? '0.0 GB'} / ${st?.storageTotalFormatted ?? '32.0 GB'}';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     final p = _paired;
     final st = _status;
     final isOnline = st?.online ?? false;
     final battery = st?.battery ?? 100;
     final storageRatio = st?.storageFraction ?? 0;
-    final storageText = '${st?.storageUsedFormatted ?? '0.0 GB'} / ${st?.storageTotalFormatted ?? '32.0 GB'}';
-    final firmware = (st?.firmwareVersion?.isNotEmpty == true) ? st!.firmwareVersion! : '--';
+    final firmware = 'v0.5.0';
 
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
-        title: const Text(
-          'Device Details',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+        title: Text(
+          s.deviceDetails,
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
         ),
         centerTitle: false,
         backgroundColor: Colors.transparent,
@@ -169,15 +174,15 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heroCard(_deviceName, _macAddress, isOnline),
+              _heroCard(_deviceName, _macAddress, isOnline, s),
               const SizedBox(height: 16),
-              _sectionHeader('Status'),
+              _sectionHeader(s.statusSection),
               _card(
                 child: Column(
                   children: [
                     _statusRow(
                       icon: Icons.battery_std_outlined,
-                      label: 'Battery',
+                      label: s.batteryLabel,
                       child: Row(
                         children: [
                           Expanded(
@@ -202,7 +207,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     const SizedBox(height: 16),
                     _statusRow(
                       icon: Icons.sd_storage_outlined,
-                      label: 'Storage',
+                      label: s.storageLabel,
                       child: Row(
                         children: [
                           Expanded(
@@ -218,7 +223,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            storageText,
+                            _storageText(),
                             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87),
                           ),
                         ],
@@ -228,20 +233,20 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              _sectionHeader('Device Info'),
+              _sectionHeader(s.deviceInfoSection),
               _card(
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: [
-                    _infoTile('MAC', _macAddress),
+                    _infoTile(s.macLabel, _macAddress),
                     _divider,
-                    _infoTile('Firmware Version', firmware),
+                    _infoTile(s.firmwareVersionLabel, firmware),
                     _divider,
-                    _infoTile('Network name', _wifiSsid),
+                    _infoTile(s.networkNameLabel, _wifiSsid),
                     _divider,
-                    _infoTile('Last Seen', _lastSeen),
+                    _infoTile(s.lastSeenLabel, _lastSeen(s)),
                     _divider,
-                    _infoTile('WiFi Signal', isOnline ? 'Connected' : 'Disconnected'),
+                    _infoTile(s.wifiSignalLabel, isOnline ? s.connected : s.disconnected),
                   ],
                 ),
               ),
@@ -256,9 +261,9 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                       side: const BorderSide(color: _red, width: 1.2),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: const Text(
-                      'Delete Device',
-                      style: TextStyle(color: _red, fontWeight: FontWeight.bold, fontSize: 15),
+                    child: Text(
+                      s.deleteDevice,
+                      style: const TextStyle(color: _red, fontWeight: FontWeight.bold, fontSize: 15),
                     ),
                   ),
                 ),
@@ -271,7 +276,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     );
   }
 
-  Widget _heroCard(String name, String mac, bool online) {
+  Widget _heroCard(String name, String mac, bool online, AppStrings s) {
     return _card(
       child: Column(
         children: [
@@ -305,7 +310,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                online ? 'Online' : 'Offline',
+                online ? s.onlineStatus : s.offlineStatus,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,

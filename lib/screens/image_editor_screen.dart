@@ -364,9 +364,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                 children: [
                   _AnimatedCheckmark(size: 80),
                   const SizedBox(height: 28),
-                  const Text(
-                    'Sent Successfully!',
-                    style: TextStyle(
+                  Text(
+                    _strings?.sentSuccessfully ?? 'Sent Successfully!',
+                    style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF1C1C1E),
@@ -375,7 +375,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'to $frameName',
+                    _strings?.toFrame(frameName) ?? 'to $frameName',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -396,7 +396,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        'Frame is refreshing…',
+                        _strings?.frameIsRefreshing ?? 'Frame is refreshing…',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w400,
@@ -810,7 +810,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       if (!mounted) return;
       setState(() {
         _uploading = false;
-        _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.';
+        _status = _strings?.sendFailedRetry ?? 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.';
       });
     }
   }
@@ -818,7 +818,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   Future<void> _sendInner() async {
     if (_paired == null) {
       if (!mounted) return;
-      setState(() => _status = 'Connect your frame to send this photo…');
+      setState(() => _status = _strings?.connectFrameToSend ?? 'Connect your frame to send this photo…');
       final result = await SafeNav.push<PairingNavResult>(
         context,
         MaterialPageRoute<PairingNavResult>(
@@ -830,12 +830,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       await _loadPairing();
       if (!mounted) return;
       if (result?.success != true && _paired == null) {
-        setState(() => _status = 'Frame connection cancelled.');
+        setState(() => _status = _strings?.frameConnectionCancelled ?? 'Frame connection cancelled.');
         return;
       }
       if (_paired == null) {
         setState(
-          () => _status = 'No frame paired yet. Scan a frame to continue.',
+          () => _status = _strings?.noFramePaired ?? 'No frame paired yet. Scan a frame to continue.',
         );
         return;
       }
@@ -846,7 +846,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       if (!mounted) return;
       setState(() {
         _status = frame.resolvedFrameTargetCandidates.isEmpty
-            ? 'This iPhone pairing has only an iOS Bluetooth UUID, not the frame display ID. Scan the frame pairing QR once, then try upload again.'
+            ? (_strings?.iosBleOnlyHint ?? 'This iPhone pairing has only an iOS Bluetooth UUID, not the frame display ID. Scan the frame pairing QR once, then try upload again.')
             : sEarly.pairingNeedsApiUrl;
       });
       return;
@@ -854,7 +854,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     var activePaired = frame;
     if (!activePaired.isWifiProvisioned) {
       if (!mounted) return;
-      setState(() => _status = 'Complete Wi‑Fi setup before sending photos…');
+      setState(() => _status = _strings?.completeWifiBeforeSending ?? 'Complete Wi‑Fi setup before sending photos…');
       final setup = await SafeNav.push<PairingNavResult>(
         context,
         MaterialPageRoute<PairingNavResult>(
@@ -873,7 +873,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       _uploading = true;
       _sendSucceeded = false;
       _castLogLines.clear();
-      _status = 'Preparing image for frame…';
+      _status = _strings?.preparingImage ?? 'Preparing image for frame…';
       _castProgress = null;
       _castProgressIndeterminate = true;
     });
@@ -949,7 +949,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
         if (allIds.isEmpty) {
           if (mounted) {
-            setState(() => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.');
+            setState(() => _status = (_strings?.sendFailedRetry ?? 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.'));
           }
           return;
         }
@@ -972,12 +972,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         } on SlideshowPublishException catch (e) {
           AppDiagLog.verbose('[Playlist] VPS publish failed ${e.statusCode}: ${e.body}');
           if (mounted) {
-            setState(() => _status = 'Slideshow publish returned ${e.statusCode}. Playlist will not auto-advance. ${e.body}');
+            setState(() => _status = (_strings?.slideshowPublishStatus(e.statusCode, e.body) ?? 'Slideshow publish returned ${e.statusCode}. Playlist will not auto-advance. ${e.body}'));
           }
         } catch (e) {
           AppDiagLog.verbose('[Playlist] VPS publish: $e');
           if (mounted) {
-            setState(() => _status = 'Slideshow publish error: $e');
+            setState(() => _status = (_strings?.slideshowPublishError('$e') ?? 'Slideshow publish error: $e'));
           }
         }
 
@@ -1065,22 +1065,22 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     } on FrameApiException catch (e) {
       if (!mounted) return;
       AppDiagLog.verbose('[Editor] FrameApiException: $e');
-      setState(() => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.');
+      setState(() => _status = (_strings?.sendFailedRetry ?? 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.'));
     } on SocketException catch (e) {
       if (!mounted) return;
       AppDiagLog.verbose('[Editor] SocketException: $e');
       setState(
-        () => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.',
+        () => _status = (_strings?.sendFailedRetry ?? 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.'),
       );
     } on TimeoutException catch (e) {
       if (!mounted) return;
       AppDiagLog.verbose('[Editor] TimeoutException: $e');
-      setState(() => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.');
+      setState(() => _status = (_strings?.sendFailedRetry ?? 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.'));
     } catch (e) {
       if (mounted) {
         AppDiagLog.verbose('[Editor] send error: $e');
         setState(
-          () => _status = 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.',
+          () => _status = (_strings?.sendFailedRetry ?? 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.'),
         );
       }
     } finally {
@@ -1133,7 +1133,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         setState(
           () => _status = AppDiagLog.userFacingStatus(
             '$e',
-            fallback: 'Export failed. Try again.',
+            fallback: _strings?.exportFailed ?? 'Export failed. Try again.',
           ),
         );
       }
@@ -1152,10 +1152,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       return Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         appBar: AppBar(
-          title: Text(s.editTitle),
-          leadingWidth: 44,
           leading: IconButton(
-            tooltip: 'Back',
+            tooltip: s.backTooltip,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             onPressed: () => Navigator.of(context).maybePop(),
@@ -1167,6 +1165,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               size: 22,
             ),
           ),
+          title: Text(s.editTitle),
+          leadingWidth: 44,
         ),
         body: Center(child: Text(s.decodeError)),
       );
@@ -1200,7 +1200,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             automaticallyImplyLeading: false,
             leadingWidth: 44,
             leading: IconButton(
-              tooltip: 'Back',
+              tooltip: s.backTooltip,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
               onPressed: () => Navigator.of(context).maybePop(),
@@ -1464,9 +1464,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       FrameImageFilter.sepia => s.filterSepia,
       FrameImageFilter.warm => s.filterWarm,
       FrameImageFilter.cool => s.filterCool,
-      FrameImageFilter.contrast => 'Contrast',
-      FrameImageFilter.vivid => 'Vivid',
-      FrameImageFilter.vintage => 'Vintage',
+      FrameImageFilter.contrast => s.contrastLabel,
+      FrameImageFilter.vivid => s.vividLabel,
+      FrameImageFilter.vintage => s.vintageLabel,
     };
   }
 
@@ -1906,7 +1906,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             children: [
-              _toolTab('Filter', 'filters', Icons.filter, cs),
+              _toolTab(s.filterLabel, 'filters', Icons.filter, cs),
               _toolTab(s.dateLabel, 'date', Icons.date_range, cs),
               _toolTab(s.textLabel, 'text', Icons.text_fields, cs),
               _toolTab(s.borderLabel, 'border', Icons.border_style, cs),
@@ -1978,7 +1978,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       FrameImageFilter.vivid,
       FrameImageFilter.grayscale,
     ];
-    const presetLabels = ['Original', 'Contrast', 'Cool', 'Vivid', 'B/W'];
+    final presetLabels = [s.originalLabel, s.contrastLabel, s.coolLabel, s.vividLabel, s.bwLabel];
     final matrices = _filterPreviewMatrices;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2053,7 +2053,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             child: Row(
               children: [
                 Text(
-                  'Adjustments',
+                  s.adjustmentsLabel,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 14,
@@ -2073,7 +2073,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         if (_adjustmentsExpanded) ...[
           const SizedBox(height: 4),
           _adjustmentSlider(
-            label: 'Brightness',
+            label: s.brightnessLabel,
             value: _brightness,
             onChanged: (v) {
               setState(() {
@@ -2083,7 +2083,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             },
           ),
           _adjustmentSlider(
-            label: 'Contrast',
+            label: s.contrastLabel,
             value: _contrast,
             onChanged: (v) {
               setState(() {
@@ -2093,7 +2093,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             },
           ),
           _adjustmentSlider(
-            label: 'Saturation',
+            label: s.saturationLabel,
             value: _saturation,
             onChanged: (v) {
               setState(() {
@@ -2357,7 +2357,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               _invalidateProcessCache();
             });
           },
-          title: Text('Date'),
+          title: Text(s.dateLabel),
           contentPadding: EdgeInsets.zero,
           dense: true,
           activeTrackColor: _kEditorRed,
@@ -2365,7 +2365,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
         Padding(
           padding: const EdgeInsets.only(left: 16),
           child: Text(
-            'When on, the current date and time are added at the bottom of the frame.',
+            s.dateHelperText,
             style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
           ),
         ),
@@ -2396,7 +2396,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                 maxLines: 3,
                 style: const TextStyle(fontSize: 15),
                 decoration: InputDecoration(
-                  hintText: 'Happy BirthDay',
+                  hintText: s.happyBirthdayHint,
                   isDense: true,
                   border: const OutlineInputBorder(),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -2426,7 +2426,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                   _invalidateProcessCache();
                 });
               },
-              child: Text('Add Text', style: const TextStyle(fontSize: 13)),
+              child: Text(s.addText, style: const TextStyle(fontSize: 13)),
             ),
           ],
         ),
@@ -2690,14 +2690,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
               child: Text(
-                'Preview uses black, white, yellow, red, blue, and green only.',
+                _strings?.previewHint ?? 'Preview uses black, white, yellow, red, blue, and green only.',
                 style: TextStyle(fontSize: 11, color: Colors.grey[400]),
                 textAlign: TextAlign.center,
               ),
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Close', style: TextStyle(color: Colors.white)),
+              child: Text(_strings?.closeLabel ?? 'Close', style: const TextStyle(color: Colors.white)),
             ),
             const SizedBox(height: 8),
           ],
@@ -2771,7 +2771,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                     alignment: WrapAlignment.center,
                     spacing: 4,
                     children: [
-                      Text('Interval: ', style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
+                      Text(s.intervalPrefix, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
                       ...[2, 5, 10, 30, 60].map((m) {
                         final sel = _playlistIntervalMinutes == m;
                         return Padding(
@@ -3010,6 +3010,7 @@ class _FastEinkPreviewDialogState extends State<_FastEinkPreviewDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
       child: SingleChildScrollView(
@@ -3037,17 +3038,17 @@ class _FastEinkPreviewDialogState extends State<_FastEinkPreviewDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Text(
-                'Preview of your edited photo.',
-                style: TextStyle(fontSize: 12, color: Colors.black54),
+                s.previewOfEditedPhoto,
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
                 textAlign: TextAlign.center,
               ),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Close'),
+              child: Text(s.closeLabel),
             ),
             const SizedBox(height: 8),
           ],

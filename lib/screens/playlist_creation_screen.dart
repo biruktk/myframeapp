@@ -218,10 +218,17 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                           ),
                         ),
                         if (_paths.length < _maxPhotos)
-                          TextButton.icon(
-                            icon: const Icon(Icons.add, size: 18, color: _red),
-                            label: const Text('Add More',
-                                style: TextStyle(color: _red)),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add More'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black,
+                              side: const BorderSide(color: Color(0xFFE53935), width: 1.5),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
                             onPressed: _addMore,
                           ),
                       ],

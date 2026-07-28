@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -13,7 +12,7 @@ import '../services/slideshow_playlist_store.dart';
 import '../services/user_playlist_remote_api.dart';
 import '../settings/app_settings.dart';
 import '../widgets/text_input_bottom_sheet.dart';
-import 'image_editor_screen.dart';
+import 'edit_color_grade_screen.dart';
 
 /// Playlists are local albums; create like Gallery albums, then pick hours and send.
 class PlaylistScreen extends StatefulWidget {
@@ -54,20 +53,13 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   }
 
   Future<void> _openPlaylistEditor(String albumId, String name, List<String> paths) async {
-    final bytes = <Uint8List>[];
-    for (final p in paths) {
-      try {
-        final f = File(p);
-        if (await f.exists()) bytes.add(await f.readAsBytes());
-      } catch (_) {}
-    }
-    if (bytes.isEmpty || !mounted) return;
+    final files = paths.map((p) => File(p)).toList();
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => ImageEditorScreen(
-          imageBytes: bytes.first,
-          playlistImages: bytes.length > 1 ? bytes : null,
-          playlistTitle: name,
+        builder: (_) => EditColorGradeScreen(
+          selectedImages: files,
+          initialIntervalSeconds: 60,
+          playlistName: name,
           albumId: albumId,
         ),
       ),
@@ -95,7 +87,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     if (title == null || title.trim().isEmpty || !mounted) return;
 
     final files = await SlideshowPhotoPicker.pickMulti(context);
-    if (files.isEmpty || !mounted) return;
+    if (!mounted) return;
 
     final paths = files.map((f) => f.path).toList();
     await SendAlbumsStore.instance.createAlbum(title.trim(), paths);
@@ -104,7 +96,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     final album = SendAlbumsStore.instance.albums.first;
     if (!mounted) return;
 
-    await _openPlaylistEditor(album.id, album.name, List<String>.from(album.paths));
+    if (paths.isNotEmpty) {
+      await _openPlaylistEditor(album.id, album.name, List<String>.from(album.paths));
+    }
   }
 
   Future<void> _sendAlbum(SendAlbumEntry album) async {
@@ -118,7 +112,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       );
       return;
     }
-    final paths = album.paths.where((p) {
+    var paths = album.paths.where((p) {
       try {
         return File(p).existsSync();
       } catch (_) {
@@ -126,11 +120,10 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       }
     }).toList();
     if (paths.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.playlistNeedPhotos)),
-      );
-      return;
+      final files = await SlideshowPhotoPicker.pickMulti(context);
+      if (files.isEmpty || !mounted) return;
+      paths = files.map((f) => f.path).toList();
+      await SendAlbumsStore.instance.addPathsToAlbum(album.id, paths);
     }
     await _openPlaylistEditor(album.id, album.name, paths);
   }

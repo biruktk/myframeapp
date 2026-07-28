@@ -6,14 +6,12 @@ import '../settings/app_settings.dart';
 import 'settings_account_screen.dart';
 import 'settings_notifications_screen.dart';
 import 'settings_language_screen.dart';
-import 'settings_appearance_screen.dart';
-import 'settings_integrations_screen.dart';
+// import 'settings_appearance_screen.dart';
+// import 'settings_integrations_screen.dart';
 import 'settings_ai_generate_screen.dart';
 import 'settings_app_preferences_screen.dart';
 import 'settings_help_screen.dart';
 import 'settings_log_screen.dart';
-import 'settings_debug_screen.dart';
-import 'settings_display_screen.dart';
 import 'device_details_screen.dart';
 import 'playlist_screen.dart';
 
@@ -71,13 +69,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return '$h:${t.minute.toString().padLeft(2, '0')} $p';
   }
 
-  String get _sleepSubtitle {
-    if (!_sleepEnabled) return 'Disabled';
+  String _sleepSubtitle(AppStrings s) {
+    if (!_sleepEnabled) return s.disabledLabel;
     return '${_formatTime(_sleepStart)} – ${_formatTime(_sleepEnd)}';
   }
 
-  String get _otaSubtitle {
-    return 'Version $_firmwareVersion · Auto-check ${_autoOtaEnabled ? 'on' : 'off'}';
+  String _otaSubtitle(AppStrings s) {
+    return '${s.firmwareCurrentVersion} $_firmwareVersion · ${_autoOtaEnabled ? s.otaAutoCheckOn : s.otaAutoCheckOff}';
   }
 
   Future<void> _confirmSignOut(BuildContext context) async {
@@ -98,6 +96,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showSleepPicker() {
+    final s = AppStrings.of(context);
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -109,13 +108,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Sleep Mode Schedule',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Text(
+              s.sleepModeSchedule,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             ListTile(
-              title: const Text('Sleep Start Time'),
+              title: Text(s.sleepStartTime),
               trailing: Text(
                 _formatTime(_sleepStart),
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -129,7 +128,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
             ListTile(
-              title: const Text('Wake Up Time'),
+              title: Text(s.wakeUpTime),
               trailing: Text(
                 _formatTime(_sleepEnd),
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -149,15 +148,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _checkOtaUpdate() {
+    final s = AppStrings.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Firmware Update'),
-        content: Text('Current version is $_firmwareVersion. Your device firmware is up to date.'),
+        title: Text(s.firmwareUpdateTitle),
+        content: Text('${s.firmwareCurrentVersion} $_firmwareVersion. ${s.firmwareUpToDate}'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK', style: TextStyle(color: Color(0xFFE53935))),
+            child: Text(s.okLabel, style: const TextStyle(color: Color(0xFFE53935))),
           ),
         ],
       ),
@@ -169,8 +169,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final s = AppStrings.of(context);
     final app = AppSettingsScope.of(context);
     final cs = Theme.of(context).colorScheme;
-    final appearanceSub =
-        '${s.themeModeLabel(app.themeMode)} · ${s.accentLabel(app.accent)}';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF6F7F9),
@@ -209,18 +207,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             _divider,
             _tile(
-              icon: Icons.display_settings_outlined,
-              title: s.displaySettingsScreenTitle,
-              subtitle: s.displaySettingsSub,
+              icon: Icons.playlist_play,
+              title: s.playlist,
+              subtitle: s.yourPlaylists,
               onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const SettingsDisplayScreen()),
+                context, MaterialPageRoute<void>(builder: (_) => const PlaylistScreen()),
               ),
             ),
             _divider,
             _tile(
               icon: Icons.bedtime_outlined,
-              title: 'Sleep Mode',
-              subtitle: _sleepSubtitle,
+              title: s.sleepMode,
+              subtitle: _sleepSubtitle(s),
               trailing: Switch.adaptive(
                 value: _sleepEnabled,
                 activeTrackColor: _red,
@@ -231,8 +229,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _divider,
             _tile(
               icon: Icons.system_update_alt,
-              title: 'OTA Firmware Update',
-              subtitle: _otaSubtitle,
+              title: s.otaFirmwareUpdate,
+              subtitle: _otaSubtitle(s),
               trailing: Switch.adaptive(
                 value: _autoOtaEnabled,
                 activeTrackColor: _red,
@@ -244,24 +242,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           _sectionHeader(s.settingsSectionApplication),
           _buildGroup([
-            _tile(
-              icon: Icons.playlist_play,
-              title: s.playlist,
-              subtitle: s.yourPlaylists,
-              onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const PlaylistScreen()),
-              ),
-            ),
-            _divider,
-            _tile(
-              icon: Icons.palette_outlined,
-              title: s.appearanceTitle,
-              subtitle: appearanceSub,
-              onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const SettingsAppearanceScreen()),
-              ),
-            ),
-            _divider,
             _tile(
               icon: Icons.notifications_none,
               title: s.notifications,
@@ -279,16 +259,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const SettingsLanguageScreen()),
               ),
             ),
-            _divider,
-            _tile(
-              icon: Icons.link,
-              title: s.integrations,
-              subtitle: s.integrationsSub,
-              onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const SettingsIntegrationsScreen()),
-              ),
-            ),
-            _divider,
+            // _divider,
+            // _tile(
+            //   icon: Icons.link,
+            //   title: s.integrations,
+            //   subtitle: s.integrationsSub,
+            //   onTap: () => Navigator.push<void>(
+            //     context, MaterialPageRoute<void>(builder: (_) => const SettingsIntegrationsScreen()),
+            //   ),
+            // ),
+            // _divider,
             _tile(
               icon: Icons.tune,
               title: s.appPreferences,
@@ -304,15 +284,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: s.aiGenerateSub,
               onTap: () => Navigator.push<void>(
                 context, MaterialPageRoute<void>(builder: (_) => const SettingsAiGenerateScreen()),
-              ),
-            ),
-            _divider,
-            _tile(
-              icon: Icons.bug_report_outlined,
-              title: s.debugModeTitle,
-              subtitle: s.debugModeSub,
-              onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const SettingsDebugScreen()),
               ),
             ),
           ]),

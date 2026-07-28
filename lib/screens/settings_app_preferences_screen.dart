@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
 import '../settings/app_settings.dart';
-import 'settings_appearance_screen.dart';
+import '../theme/app_theme.dart';
 
 class SettingsAppPreferencesScreen extends StatefulWidget {
   const SettingsAppPreferencesScreen({super.key});
@@ -13,6 +13,7 @@ class SettingsAppPreferencesScreen extends StatefulWidget {
 
 class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScreen> {
   late ThemeMode _mode;
+  late AppAccent _accent;
   var _loaded = false;
 
   @override
@@ -21,12 +22,23 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
     if (_loaded) return;
     final a = AppSettingsScope.of(context);
     _mode = a.themeMode;
+    _accent = a.accent;
     _loaded = true;
   }
 
-  Future<void> _persistTheme() async {
+  Future<void> _applyThemeMode(ThemeMode mode) async {
+    setState(() => _mode = mode);
+    await AppSettingsScope.of(context).setThemeMode(mode);
+  }
+
+  Future<void> _saveAppearance() async {
     final app = AppSettingsScope.of(context);
-    await app.setAppPreferences(mode: _mode, updates: app.automaticFrameFirmwareUpdates);
+    await app.setThemeMode(_mode);
+    await app.setAccent(_accent);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(AppStrings.of(context).saveLabel)),
+    );
   }
 
   @override
@@ -50,43 +62,66 @@ class _SettingsAppPreferencesScreenState extends State<SettingsAppPreferencesScr
               subtitle: Text(s.comfortModeSubtitle),
             ),
           ),
-          const SizedBox(height: 12),
-          Text(s.prefsSectionTheme, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 6),
+          const SizedBox(height: 20),
+          Text(s.themeModeSection, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          const SizedBox(height: 8),
           Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(s.prefsAppThemeLabel, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<ThemeMode>(
-                    value: _mode,
-                    items: [
-                      DropdownMenuItem(value: ThemeMode.light, child: Text(s.themeModeLabel(ThemeMode.light))),
-                      DropdownMenuItem(value: ThemeMode.dark, child: Text(s.themeModeLabel(ThemeMode.dark))),
-                      DropdownMenuItem(value: ThemeMode.system, child: Text(s.themeModeLabel(ThemeMode.system))),
-                    ],
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() => _mode = v);
-                      _persistTheme();
-                    },
+            child: Column(
+              children: [
+                RadioListTile<ThemeMode>(
+                  value: ThemeMode.light,
+                  groupValue: _mode,
+                  onChanged: (v) => _applyThemeMode(v!),
+                  title: Text(s.themeLight),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                RadioListTile<ThemeMode>(
+                  value: ThemeMode.dark,
+                  groupValue: _mode,
+                  onChanged: (v) => _applyThemeMode(v!),
+                  title: Text(s.themeDark),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                RadioListTile<ThemeMode>(
+                  value: ThemeMode.system,
+                  groupValue: _mode,
+                  onChanged: (v) => _applyThemeMode(v!),
+                  title: Text(s.themeSystem),
+                  subtitle: Text(
+                    s.themeSystemSubtitle,
+                    style: TextStyle(color: cs.onSurfaceVariant),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.push<void>(
-                context,
-                MaterialPageRoute<void>(builder: (_) => const SettingsAppearanceScreen()),
-              );
-            },
-            icon: const Icon(Icons.palette_outlined, size: 18),
-            label: Text(s.appearanceTitle),
+          const SizedBox(height: 20),
+          Text(s.themeAccentSection, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                RadioListTile<AppAccent>(
+                  value: AppAccent.red,
+                  groupValue: _accent,
+                  onChanged: (v) => setState(() => _accent = v!),
+                  title: Text(s.accentRed),
+                ),
+                const Divider(height: 1, indent: 16, endIndent: 16),
+                RadioListTile<AppAccent>(
+                  value: AppAccent.green,
+                  groupValue: _accent,
+                  onChanged: (v) => setState(() => _accent = v!),
+                  title: Text(s.accentGreen),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _saveAppearance,
+            icon: const Icon(Icons.save),
+            label: Text(s.saveLabel),
           ),
         ],
       ),
