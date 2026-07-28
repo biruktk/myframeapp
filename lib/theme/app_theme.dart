@@ -6,6 +6,46 @@ enum AppAccent {
   green,
 }
 
+/// Auth‑focused styling: modern filled rounded inputs, primary button spec.
+class AppAuthTheme {
+  AppAuthTheme._();
+
+  static const Color primaryRed = Color(0xFFDC2626);
+  static const Color bgLight = Color(0xFFF8F9FA);
+
+  static InputDecoration inputStyle({
+    required String label,
+    required IconData icon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.black54, fontSize: 14),
+      prefixIcon: Icon(icon, color: Colors.grey.shade600, size: 20),
+      suffixIcon: suffixIcon,
+      filled: true,
+      fillColor: Colors.grey.shade50,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: primaryRed, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.redAccent, width: 1),
+      ),
+    );
+  }
+}
+
 /// Themes aligned with `ra/ui/mobile-app-dualmode.html` (red) plus green variant.
 class AppTheme {
   AppTheme._();

@@ -14,12 +14,12 @@ import '../services/app_release_guard.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
 import '../services/family_group_store.dart';
-import '../services/frame_manual_config_service.dart';
+import '../services/frame_api_client.dart';
 import '../services/frame_mac_util.dart';
 import '../services/usage_metrics_store.dart';
 import '../settings/app_settings.dart';
 import 'device_discovery_screen.dart';
-import 'frame_detail_screen.dart';
+import 'device_details_screen.dart';
 
 /// My Frames — paired list, add (+), share, frame detail (spec redesign).
 class HomeScreen extends StatefulWidget {
@@ -33,9 +33,10 @@ class _HomeScreenState extends State<HomeScreen> {
   final GlobalKey _addKey = GlobalKey();
   UsageMetrics? _metrics;
   OverlayEntry? _coachEntry;
-  bool? _activeFrameServerOnline;
   bool _checkingFrameStatus = false;
   Timer? _pollTimer;
+  Map<String, FrameStatus> _frameStatuses = {};
+  final FrameApiClient _apiClient = FrameApiClient();
 
   @override
   void initState() {
@@ -52,13 +53,14 @@ class _HomeScreenState extends State<HomeScreen> {
     DeviceStore.instance.revision.removeListener(_onDeviceStoreRevision);
     _removeCoach();
     _pollTimer?.cancel();
+    _apiClient.close();
     super.dispose();
   }
 
   void _startPolling() {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      _refreshActiveFrameStatus();
+      _refreshAllFrameStatuses();
     });
   }
 
@@ -87,31 +89,40 @@ class _HomeScreenState extends State<HomeScreen> {
     final metrics = await UsageMetricsStore.instance.load();
     if (!mounted) return;
     setState(() => _metrics = metrics);
-    await _refreshActiveFrameStatus();
+    await _refreshAllFrameStatuses();
     _maybeShowCoachmark(app);
   }
 
-  Future<void> _refreshActiveFrameStatus() async {
-    final active = DeviceStore.instance.cached;
-    final mac = DeviceStore.instance.pairedFrameMac ??
-        (active != null
-            ? FrameMacUtil.macFromBleName(active.bleNamePrefix ?? '') ??
-                FrameMacUtil.normalizeSlug(active.deviceId)
-            : null);
-    if (mac == null || mac.length != 12) {
-      if (mounted) setState(() => _activeFrameServerOnline = null);
+  Future<void> _refreshAllFrameStatuses() async {
+    final frames = DeviceStore.instance.pairedFrames;
+    if (frames.isEmpty) {
+      if (mounted) setState(() {
+        _frameStatuses = {};
+      });
       return;
     }
     setState(() => _checkingFrameStatus = true);
-    try {
-      final online = await FrameManualConfigService.instance
-          .checkFrameOnServer(mac);
-      if (mounted) setState(() => _activeFrameServerOnline = online);
-    } catch (_) {
-      if (mounted) setState(() => _activeFrameServerOnline = false);
-    } finally {
-      if (mounted) setState(() => _checkingFrameStatus = false);
+    final updated = Map<String, FrameStatus>.from(_frameStatuses);
+    for (final f in frames) {
+      final mac = _macForFrame(f);
+      if (mac == null) continue;
+      try {
+        final status = await _apiClient.fetchFrameStatus(mac: mac);
+        if (status != null) {
+          updated[f.deviceId] = status;
+        }
+      } catch (_) {}
     }
+    if (mounted) setState(() {
+      _frameStatuses = updated;
+      _checkingFrameStatus = false;
+    });
+  }
+
+  String? _macForFrame(PairedFrame f) {
+    return DeviceStore.instance.pairedFrameMac ??
+        FrameMacUtil.macFromBleName(f.bleNamePrefix ?? '') ??
+        FrameMacUtil.normalizeSlug(f.deviceId);
   }
 
   void _maybeShowCoachmark(AppSettings app) {
@@ -249,18 +260,21 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(s.myFramesTitle, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-            Text(s.myFramesSubtitle, style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, fontWeight: FontWeight.w400)),
+            Text(s.myFramesTitle, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87)),
+            const SizedBox(height: 2),
+            Text(s.myFramesSubtitle, style: const TextStyle(fontSize: 13, color: Colors.black54)),
           ],
         ),
         actions: [
           IconButton(
             key: _addKey,
             tooltip: s.pairBluetoothFrame,
-            icon: Icon(Icons.add_circle_outline, color: cs.primary, size: 28),
+            icon: Icon(Icons.add_circle_outline, color: const Color(0xFFE53935), size: 28),
             onPressed: () async {
               await AppSettingsScope.of(context).clearHomeAddFrameCoachmark();
               _removeCoach();
@@ -282,16 +296,23 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, _) {
           final frames = DeviceStore.instance.pairedFrames;
           final activeId = DeviceStore.instance.cached?.deviceId.trim();
+          bool isOnline(PairedFrame f) {
+            final st = _frameStatuses[f.deviceId];
+            if (st != null) return st.online;
+            return _frameLikelyOnline(f);
+          }
+
+          final total = frames.length;
           var onlineC = 0;
           for (final f in frames) {
-            if (_frameLikelyOnline(f)) onlineC++;
+            if (isOnline(f)) onlineC++;
           }
-          final total = frames.length;
           final offlineC = total - onlineC;
 
           final active = DeviceStore.instance.cached;
           final showOfflineBanner = active != null &&
-              _activeFrameServerOnline == false &&
+              _frameStatuses.isNotEmpty &&
+              onlineC == 0 &&
               !_checkingFrameStatus;
 
           return ListView(
@@ -322,13 +343,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Text(
-                    s.framesSummaryResolved(total, onlineC, offlineC),
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                  ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      total == 1 ? '1 ${s.statusFrame}' : '$total ${s.statusFrames}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87),
+                    ),
+                    Row(
+                      children: [
+                        Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFF4CAF50), shape: BoxShape.circle)),
+                        const SizedBox(width: 6),
+                        Text('$onlineC ${s.statusOnline}', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                        const SizedBox(width: 12),
+                        Text('·', style: TextStyle(color: Colors.grey.shade400)),
+                        const SizedBox(width: 12),
+                        Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.grey, shape: BoxShape.circle)),
+                        const SizedBox(width: 6),
+                        Text('$offlineC ${s.statusOffline}', style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
@@ -363,37 +407,41 @@ class _HomeScreenState extends State<HomeScreen> {
                 )
               else
                 ...frames.map((PairedFrame f) {
-                  final online = _frameLikelyOnline(f);
+                  final online = isOnline(f);
                   final isActive = activeId != null && activeId == f.deviceId.trim();
                   final titleText = f.listDisplayTitle(s);
                   final noCustomName = f.frameName == null || f.frameName!.trim().isEmpty;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: Colors.grey.shade200),
+                      ),
                       child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                         onTap: () async {
                           await DeviceStore.instance.setActiveFrameDeviceId(f.deviceId);
                           if (!mounted) return;
                           await Navigator.push<void>(
                             context,
-                            MaterialPageRoute<void>(builder: (_) => const FrameDetailScreen()),
+                            MaterialPageRoute<void>(builder: (_) => const DeviceDetailsScreen()),
                           );
                           await _load();
                         },
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 12, 4, 12),
+                          padding: const EdgeInsets.all(16),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: Container(
-                                  width: 56,
-                                  height: 56,
-                                  color: cs.primary.withValues(alpha: 0.12),
-                                  child: Icon(Icons.photo_size_select_actual_outlined, color: cs.primary, size: 32),
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE53935).withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
+                                child: const Icon(Icons.crop_original, color: Color(0xFFE53935), size: 28),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -406,18 +454,20 @@ class _HomeScreenState extends State<HomeScreen> {
                                         Expanded(
                                           child: Text(
                                             titleText,
-                                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         if (isActive) ...[
                                           const SizedBox(width: 8),
-                                          Chip(
-                                            visualDensity: VisualDensity.compact,
-                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                            labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-                                            label: Text(s.activeFrameLabel, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFDE8E8),
+                                              borderRadius: BorderRadius.circular(10),
+                                            ),
+                                            child: Text(s.activeFrameLabel, style: const TextStyle(color: Color(0xFFE53935), fontSize: 11, fontWeight: FontWeight.bold)),
                                           ),
                                         ],
                                       ],
@@ -426,25 +476,23 @@ class _HomeScreenState extends State<HomeScreen> {
                                       const SizedBox(height: 4),
                                       Text(
                                         BleDisplayName.fallbackTitle(f.bleRemoteId ?? f.deviceId),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: cs.onSurfaceVariant,
-                                          fontFamily: 'monospace',
-                                        ),
+                                        style: const TextStyle(fontSize: 12, color: Colors.grey, fontFamily: 'monospace'),
                                       ),
                                     ],
                                     const SizedBox(height: 6),
                                     Text(
                                       '${s.frameModelDefault} · ${online ? s.statusOnline : s.statusOffline}',
-                                      style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                                      style: const TextStyle(fontSize: 13, color: Colors.grey),
                                     ),
                                     if (_metrics?.lastPhotoAt != null) ...[
                                       const SizedBox(height: 2),
                                       Text(
                                         s.lastPhotoDynamic(_relative(_metrics!.lastPhotoAt!, s)),
-                                        style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                                        style: const TextStyle(fontSize: 12, color: Colors.grey),
                                       ),
                                     ],
+                                    const SizedBox(height: 8),
+                                    _FrameMetricsRow(status: _frameStatuses[f.deviceId]),
                                   ],
                                 ),
                               ),
@@ -454,13 +502,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                   IconButton(
                                     tooltip: s.shareToFamily,
                                     onPressed: () => unawaited(_shareInvite(s)),
-                                    icon: Icon(Icons.ios_share_rounded, color: cs.primary, size: 22),
+                                    icon: const Icon(Icons.ios_share, color: Color(0xFFE53935), size: 20),
                                   ),
                                   PopupMenuButton<String>(
                                     tooltip: s.remove,
                                     onSelected: (value) {
                                       if (value == 'remove') unawaited(_confirmRemoveFrame(s, f));
                                     },
+                                    icon: const Icon(Icons.more_horiz, color: Colors.grey, size: 20),
                                     itemBuilder: (ctx) => [
                                       PopupMenuItem<String>(
                                         value: 'remove',
@@ -490,5 +539,65 @@ class _HomeScreenState extends State<HomeScreen> {
     if (d.inMinutes < 60) return s.minutesAgo(d.inMinutes);
     if (d.inHours < 48) return s.hoursAgo(d.inHours);
     return s.daysAgo(d.inDays);
+  }
+}
+
+class _FrameMetricsRow extends StatelessWidget {
+  const _FrameMetricsRow({this.status});
+
+  final FrameStatus? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final st = status;
+    if (st == null) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Icon(Icons.battery_std_outlined, size: 16, color: const Color(0xFF4CAF50)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: st.batteryFraction,
+                  minHeight: 6,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    st.battery > 20 ? const Color(0xFF4CAF50) : Colors.redAccent,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text('${st.battery}%', style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Icon(Icons.sd_storage, size: 16, color: const Color(0xFFE53935)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: st.storageFraction,
+                  minHeight: 6,
+                  backgroundColor: Colors.grey.shade200,
+                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFE53935)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text('${st.storageUsedFormatted} / ${st.storageTotalFormatted}',
+                style: const TextStyle(fontSize: 12, color: Colors.black54)),
+          ],
+        ),
+      ],
+    );
   }
 }

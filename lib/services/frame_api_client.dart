@@ -9,6 +9,78 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
 
+class FrameStatus {
+  FrameStatus({
+    required this.deviceId,
+    required this.online,
+    this.sleeping = false,
+    this.status = 'unknown',
+    this.battery = 100,
+    this.wifiSsid = '',
+    this.storageUsedMb = 0,
+    this.storageTotalMb = 32000,
+    this.photoCount = 0,
+    this.mqttConnected = false,
+    this.lastSeenMs,
+    this.lastUploadMs,
+    this.firmwareVersion,
+  });
+
+  final String deviceId;
+  final bool online;
+  final bool sleeping;
+  final String status;
+  final int battery;
+  final String wifiSsid;
+  final int storageUsedMb;
+  final int storageTotalMb;
+  final int photoCount;
+  final bool mqttConnected;
+  final int? lastSeenMs;
+  final int? lastUploadMs;
+  final String? firmwareVersion;
+
+  double get batteryFraction => (battery / 100).clamp(0.0, 1.0);
+  double get storageFraction => storageTotalMb > 0
+      ? (storageUsedMb / storageTotalMb).clamp(0.0, 1.0)
+      : 0.0;
+  String get storageUsedFormatted =>
+      '${(storageUsedMb / 1024).toStringAsFixed(1)} GB';
+  String get storageTotalFormatted =>
+      '${(storageTotalMb / 1024).toStringAsFixed(1)} GB';
+
+  String? get lastSeenFormatted {
+    final ms = lastSeenMs;
+    if (ms == null || ms <= 0) return null;
+    final dt =
+        DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inSeconds < 60) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  factory FrameStatus.fromJson(Map<String, dynamic> json) {
+    return FrameStatus(
+      deviceId: json['device_id'] as String? ?? '',
+      online: json['online'] == true,
+      sleeping: json['sleeping'] == true,
+      status: json['status'] as String? ?? 'unknown',
+      battery: json['battery'] as int? ?? 100,
+      wifiSsid: json['wifi'] as String? ?? '',
+      storageUsedMb: json['storage_used_mb'] as int? ?? 0,
+      storageTotalMb: json['storage_total_mb'] as int? ?? 32000,
+      photoCount: json['photo_count'] as int? ?? 0,
+      mqttConnected: json['mqtt_connected'] == true,
+      lastSeenMs: json['last_seen_ms'] as int?,
+      lastUploadMs: json['last_upload_ms'] as int?,
+      firmwareVersion: json['firmwareVersion'] as String?,
+    );
+  }
+}
+
 class FrameApiClient {
   FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 90)})
       : _http = httpClient ?? http.Client();
@@ -137,6 +209,40 @@ class FrameApiClient {
     throw Exception('Status check failed after retries: $lastErr');
   }
 
+  /// GET `/api/frames/:mac/status` — full device metrics (battery, storage, wifi, etc.).
+  Future<FrameStatus?> fetchFrameStatus({
+    required String mac,
+    String? baseUrlOverride,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length < 12) return null;
+    final slug = cleanMac.substring(cleanMac.length - 12);
+    final t = timeout ?? const Duration(seconds: 8);
+    final bases = _frameStatusCandidateBases(baseUrlOverride);
+    for (final base in bases) {
+      try {
+        final uri = Uri.parse('$base/api/frames/$slug/status');
+        final res = await _http
+            .get(
+              uri,
+              headers: pairingToken != null && pairingToken.trim().isNotEmpty
+                  ? {'x-pairing-token': pairingToken.trim()}
+                  : null,
+            )
+            .timeout(t);
+        if (res.statusCode != 200) return null;
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        if (json['ok'] != true) return null;
+        return FrameStatus.fromJson(json);
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
   /// GET `/api/frames/:mac/status` — MQTT/display confirmation (works when
   /// `delivery-status` never flips `delivered_to_frame` on iOS uploads).
   Future<FrameCastStatusResponse> getFrameCastStatus({
@@ -261,6 +367,66 @@ class FrameApiClient {
     if (lastErr is TimeoutException) throw lastErr;
     if (lastErr is SocketException) throw lastErr;
     throw Exception('Republish failed after retries: $lastErr');
+  }
+
+  /// GET `/api/frames` — frames accessible to the authenticated user (own + family).
+  Future<List<Map<String, dynamic>>> fetchFrames({
+    String? baseUrlOverride,
+    String? bearerToken,
+    Duration? timeout,
+  }) async {
+    final t = timeout ?? const Duration(seconds: 10);
+    final base = _base(baseUrlOverride);
+    try {
+      final uri = Uri.parse('$base/api/frames');
+      final headers = <String, String>{
+        'accept': 'application/json',
+      };
+      final tok = bearerToken?.trim() ?? '';
+      if (tok.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $tok';
+      }
+      final res = await _http.get(uri, headers: headers).timeout(t);
+      if (res.statusCode != 200) return [];
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      if (json['ok'] != true) return [];
+      final raw = json['frames'] as List<dynamic>?;
+      if (raw == null) return [];
+      return raw.cast<Map<String, dynamic>>();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// DELETE `/api/frames/{mac}` — unbind frame from user account server-side.
+  Future<bool> deleteFrame({
+    required String mac,
+    String? baseUrlOverride,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length < 12) return false;
+    final slug = cleanMac.substring(cleanMac.length - 12);
+    final t = timeout ?? const Duration(seconds: 10);
+    final bases = _candidateBases(baseUrlOverride);
+    for (final base in bases) {
+      try {
+        final uri = Uri.parse('$base/api/frames/$slug');
+        final res = await _http
+            .delete(
+              uri,
+              headers: pairingToken != null && pairingToken.trim().isNotEmpty
+                  ? {'x-pairing-token': pairingToken.trim()}
+                  : null,
+            )
+            .timeout(t);
+        return res.statusCode == 200;
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
   }
 
   void close() => _http.close();

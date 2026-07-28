@@ -30,9 +30,10 @@ class SlideshowRemoteApi {
     final bt = bearerToken?.trim() ?? '';
     if (bt.isNotEmpty) {
       headers['Authorization'] = 'Bearer $bt';
-    } else {
-      final pt = pairingToken?.trim() ?? '';
-      if (pt.isNotEmpty) headers['x-pairing-token'] = pt;
+    }
+    final pt = pairingToken?.trim() ?? '';
+    if (pt.isNotEmpty) {
+      headers['x-pairing-token'] = pt;
     }
     final body = <String, dynamic>{
       'imageIds': imageIds,

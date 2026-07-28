@@ -13,6 +13,14 @@ class PersonalGalleryStore {
   static final PersonalGalleryStore instance = PersonalGalleryStore._();
 
   static const _kPaths = 'personal_gallery_file_paths_v1';
+  static const _kAuthUserId = 'settings_auth_user_id';
+
+  static Future<String> _scopedKey() async {
+    final p = await SharedPreferences.getInstance();
+    final uid = p.getString(_kAuthUserId) ?? 'guest';
+    return '${_kPaths}_$uid';
+  }
+
   List<String> _paths = [];
 
   /// Bumped when paths change so [GalleryScreen] can refresh while kept alive.
@@ -22,7 +30,8 @@ class PersonalGalleryStore {
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
-    final raw = p.getString(_kPaths);
+    final key = await _scopedKey();
+    final raw = p.getString(key);
     if (raw == null || raw.isEmpty) {
       _paths = [];
       return;
@@ -114,6 +123,7 @@ class PersonalGalleryStore {
 
   Future<void> _persist() async {
     final p = await SharedPreferences.getInstance();
-    await p.setString(_kPaths, jsonEncode(_paths));
+    final key = await _scopedKey();
+    await p.setString(key, jsonEncode(_paths));
   }
 }

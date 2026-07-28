@@ -6,6 +6,7 @@ import 'package:app_settings/app_settings.dart' as app_os;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../utils/platform_share.dart';
@@ -19,17 +20,21 @@ import '../widgets/ai_content_notice.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import '../services/ble_frame_device_transport.dart';
 import '../services/device_store.dart';
+import '../services/frame_ble_mac_slug.dart';
+import '../services/frame_cloud_cast_service.dart';
+import '../services/frame_forget_service.dart';
 import '../services/frame_guest_invite_service.dart';
 import '../services/frame_recovery_service.dart';
-import '../services/device_transport.dart' show FrameConnectionState;
-import '../widgets/frame_picker_sheet.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
+import '../services/device_transport.dart';
+import 'create_playlist_screen.dart';
 import '../services/permission_gate.dart';
 import '../widgets/send_album_settings_sheet.dart';
 import '../widgets/shell_navigation.dart';
+import '../widgets/frame_picker_sheet.dart';
 import '../models/pairing_nav_result.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../models/send_overlay_options.dart';
@@ -109,6 +114,18 @@ class _SendScreenState extends State<SendScreen> {
   Future<void> _openCameraPermissionSettings() =>
       app_os.AppSettings.openAppSettings(type: app_os.AppSettingsType.settings);
 
+  void _showCameraDeniedSnackBar(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: const Text('Camera permission denied. Use Gallery below or enable Camera in Settings.'),
+        action: SnackBarAction(label: 'Settings', onPressed: _openCameraPermissionSettings),
+      ),
+    );
+  }
+
   Future<void> _shareGuestUploadLink(BuildContext context) async {
     final s = AppStrings.of(context);
     await DeviceStore.instance.load();
@@ -168,12 +185,16 @@ class _SendScreenState extends State<SendScreen> {
 
     final frameName = paired.frameName?.trim();
     final label = frameName != null && frameName.isNotEmpty ? frameName : 'my frame';
+
+    // Force Chinese on the hosted invite page.
+    final shareUrl = '${invite.inviteUrl}${invite.inviteUrl.contains('?') ? '&' : '?'}lang=zh';
+
     await platformShareText(
       context,
-      text: 'Send a photo to $label — open this link, pick a photo, and it goes to the frame:\n${invite.inviteUrl}',
-      subject: 'Upload a photo to $label',
+      text: '邀请您为「$label」上传照片！\n点击链接或扫描二维码直接发送：\n$shareUrl',
+      subject: '上传照片至 $label',
     );
-    AppDiagLog.log('[ShareLink] shared ${invite.inviteUrl}');
+    AppDiagLog.log('[ShareLink] shared $shareUrl');
   }
 
   Future<void> _startFlow(BuildContext context, _SendSource source) async {
@@ -199,9 +220,25 @@ class _SendScreenState extends State<SendScreen> {
       await _startAiGenerate(context);
       return;
     }
+    // Camera flow — uses the same ImageEditorScreen as gallery picks.
     Uint8List? bytes;
+    String? cameraPath;
     try {
-      bytes = await _resolveImageBytes(source);
+      if (!context.mounted) return;
+      final cam = await PermissionGate.camera();
+      if (!cam.isGranted) {
+        if (context.mounted) _showCameraDeniedSnackBar(context);
+        return;
+      }
+      final x = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (x == null) return; // user cancelled
+      cameraPath = x.path;
+      bytes = await _ensureJpeg(await x.readAsBytes());
     } on PlatformException catch (e) {
       if (!context.mounted) return;
       final msg = e.code == 'camera_access_denied' || e.code == 'camera_access_denied_android'
@@ -219,34 +256,23 @@ class _SendScreenState extends State<SendScreen> {
       return;
     }
     if (bytes == null) {
-      if (context.mounted) {
-        final msgNoCam = source == _SendSource.camera
-            ? 'Camera permission denied. Use Gallery below or enable Camera in Settings.'
-            : AppStrings.of(context).noImageSelected;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            content: Text(msgNoCam),
-            action:
-                source == _SendSource.camera
-                    ? SnackBarAction(label: 'Settings', onPressed: _openCameraPermissionSettings)
-                    : null,
-          ),
-        );
-      }
+      if (context.mounted) _showCameraDeniedSnackBar(context);
       return;
     }
     if (!context.mounted) return;
-    final Uint8List imageBytes = bytes;
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
+
+    // Persist the camera file so the editor can use a stable path for SD export etc.
+    final persistPaths = cameraPath != null
+        ? await GalleryImageCache.persistPaths([cameraPath])
+        : <String>[];
 
     final sent = await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(
         builder: (_) => ImageEditorScreen(
-          imageBytes: imageBytes,
+          imageBytes: bytes!,
+          galleryPersistPath: persistPaths.isNotEmpty ? persistPaths.first : null,
           slideshow: slideshow,
         ),
       ),
@@ -421,6 +447,16 @@ class _SendScreenState extends State<SendScreen> {
       return;
     }
 
+    if (paths.length > 1) {
+      unawaited(Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CreatePlaylistScreen(imagePaths: paths),
+        ),
+      ));
+      return;
+    }
+
     final fileBytes = <Uint8List>[];
     for (final path in paths) {
       try {
@@ -461,7 +497,6 @@ class _SendScreenState extends State<SendScreen> {
     final overlay = sheet?.overlay ?? const SendOverlayOptions();
     final locationLine = sheet?.locationLine;
     final displaySeconds = sheet?.displaySeconds ?? 10;
-    final total = fileBytes.length;
 
     for (var i = 0; i < fileBytes.length; i++) {
       if (!context.mounted) return;
@@ -476,12 +511,10 @@ class _SendScreenState extends State<SendScreen> {
             overlayLocationOverride: locationLine,
             displaySeconds: displaySeconds,
             queueIndex: i + 1,
-            queueTotal: total,
           ),
         ),
       );
       if (sent == true) {
-        if (i + 1 < fileBytes.length) {
           if (!context.mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -508,7 +541,6 @@ class _SendScreenState extends State<SendScreen> {
           });
           return;
         }
-      }
     }
   }
 
@@ -539,6 +571,45 @@ class _SendScreenState extends State<SendScreen> {
     }
   }
 
+  /// Picks and returns camera bytes as JPEG. Returns `null` if user cancels.
+  Future<({Uint8List bytes, String? path})?> _resolveCameraCapture() async {
+    final cam = await PermissionGate.camera();
+    if (!cam.isGranted) return null;
+    final x = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
+      maxWidth: 1920,
+      maxHeight: 1920,
+    );
+    if (x == null) return null;
+    final path = x.path;
+    final raw = await x.readAsBytes();
+    final bytes = await _ensureJpeg(raw);
+    return (bytes: bytes, path: path);
+  }
+
+  /// Re-encodes as JPEG if the [image] package cannot decode the raw bytes
+  /// (e.g. HEIC from iOS camera).
+  Future<Uint8List> _ensureJpeg(Uint8List raw) async {
+    try {
+      final decoded = img.decodeImage(raw);
+      if (decoded != null) return raw;
+    } catch (_) {}
+    // HEIC or other unsupported format — convert via the image_picker's own
+    // JPEG export by re-picking from the file.  If that also fails, fall back
+    // to the raw bytes and let the editor surface the error.
+    try {
+      final repick = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (repick != null) return await repick.readAsBytes();
+    } catch (_) {}
+    return raw;
+  }
+
   Future<Uint8List?> _resolveImageBytes(_SendSource source) async {
     final picker = ImagePicker();
     switch (source) {
@@ -547,14 +618,8 @@ class _SendScreenState extends State<SendScreen> {
       case _SendSource.gallery:
         throw StateError('Gallery uses _startFromGalleryWithQueue / _pickFromGallery');
       case _SendSource.camera:
-        final cam = await PermissionGate.camera();
-        if (!cam.isGranted) return null;
-        final x = await picker.pickImage(
-          source: ImageSource.camera,
-          maxWidth: 4096,
-          maxHeight: 4096,
-        );
-        return x == null ? null : x.readAsBytes();
+        final r = await _resolveCameraCapture();
+        return r?.bytes;
       case _SendSource.ai:
         throw StateError('AI uses _startAiGenerate');
     }

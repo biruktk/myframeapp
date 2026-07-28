@@ -11,7 +11,8 @@ class SettingsDisplayScreen extends StatefulWidget {
 }
 
 class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
-  int _refreshMinutes = 30;
+  static const _hours = [6, 12, 24, 48, 72];
+  int _currentStepIndex = 0;
   var _showDetails = false;
 
   @override
@@ -53,14 +54,17 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
                 ListTile(
                   leading: const Icon(Icons.refresh),
                   title: Text(s.displayAutoRefreshTitle),
-                  subtitle: Text(s.displayAutoRefreshSubtitle(_refreshMinutes)),
+                  subtitle: Text('Every ${_hours[_currentStepIndex]} hours'),
                 ),
                 Slider(
-                  min: 5,
-                  max: 120,
-                  divisions: 23,
-                  value: _refreshMinutes.toDouble(),
-                  onChanged: (v) => setState(() => _refreshMinutes = v.round()),
+                  value: _currentStepIndex.toDouble(),
+                  min: 0,
+                  max: (_hours.length - 1).toDouble(),
+                  divisions: _hours.length - 1,
+                  activeColor: Colors.red,
+                  onChanged: (v) {
+                    setState(() => _currentStepIndex = v.round());
+                  },
                 ),
               ],
             ),

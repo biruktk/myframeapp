@@ -10,6 +10,7 @@ import '../l10n/app_strings.dart';
 import '../models/pairing_nav_result.dart';
 import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
+import '../services/frame_mac_util.dart';
 import '../services/wifi_credential_cache.dart';
 import 'frame_profile_setup_screen.dart';
 import '../services/permission_gate.dart';
@@ -223,6 +224,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   }
 
   Future<void> _connect() async {
+    FocusScope.of(context).unfocus();
     try {
       await _connectInner();
     } catch (e, st) {
@@ -362,10 +364,14 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     final s = AppStrings.of(context);
     final cs = Theme.of(context).colorScheme;
     final paired = DeviceStore.instance.cached;
-    final mac = _frameMac ?? paired?.deviceId ?? '';
+    final rawMac = _frameMac ?? paired?.deviceId ?? '';
+    final mac = rawMac.isNotEmpty ? FrameMacUtil.normalizeSlug(rawMac) ?? rawMac : '';
 
     return DebugSlogOverlay(
-      child: Scaffold(
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.opaque,
+        child: Scaffold(
         backgroundColor: cs.surface,
         appBar: AppBar(
           title: Text(s.wifiSetupTitle, style: const TextStyle(fontWeight: FontWeight.w700)),
@@ -720,6 +726,8 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                               TextField(
                                 controller: _passCtrl,
                                 obscureText: _hide,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) => _connect(),
                                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                                 decoration: InputDecoration(
                                   hintText: s.wifiPasswordRequired,
@@ -874,6 +882,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

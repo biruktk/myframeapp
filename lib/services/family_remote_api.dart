@@ -67,6 +67,11 @@ class FamilyRemoteApi {
     _throwUnlessOk(res);
   }
 
+  Future<void> removeMember(String userId) async {
+    final res = await http.delete(_u('/api/family/members/$userId'), headers: _hdr);
+    _throwUnlessOk(res);
+  }
+
   Future<String> rotateInviteCode() async {
     final res = await http.post(_u('/api/family/invite/rotate'), headers: _hdr);
     _throwUnlessOk(res);

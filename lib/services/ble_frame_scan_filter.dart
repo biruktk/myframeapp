@@ -38,59 +38,26 @@ class BleFrameScanFilter {
     return false;
   }
 
-  /// True if [rawName] matches any allowed frame BLE name pattern.
+  /// True if [rawName] matches MyFrame / MY / IJ frame BLE name pattern.
   static bool matchesAdvertisedName(String rawName) {
     final t = rawName.trim();
     if (t.isEmpty) return false;
     final lower = t.toLowerCase();
-    if (lower.startsWith('lj_')) return true;
-    if (lower.startsWith('ij_')) return true;
+    if (lower.startsWith('myframe')) return true;
+    if (lower.startsWith('my_frame')) return true;
+    if (lower == 'my') return true;
     if (lower.startsWith('my_')) return true;
-    if (lower.startsWith('mf_')) return true;
-    if (lower.startsWith('yx_')) return true;
-    if (lower.startsWith('yf_')) return true;
-    if (lower.startsWith('ep_')) return true;
-    if (lower.startsWith('eink_')) return true;
-    if (lower.startsWith('frame_')) return true;
-    if (lower.startsWith('inkjoy')) return true;
-    if (lower.contains('myframe')) return true;
-    if (lower.startsWith('3837')) return true;
-    if (lower.startsWith('blufi')) return true;
-    if (lower.startsWith('esp32')) return true;
-    if (lower.startsWith('esp_')) return true;
-    if (lower.contains('ink_joy')) return true;
-    if (lower.contains('ink') &&
-        lower.contains('joy') &&
-        lower.contains('frame')) {
-      return true;
-    }
-    if (lower.contains('eink') || lower.contains('e-ink')) return true;
-    if (lower.contains('epaper') || lower.contains('e-paper')) return true;
-    if (lower.contains('photo') && lower.contains('frame')) return true;
-    if (lower.contains('digital') && lower.contains('frame')) return true;
+    if (lower.startsWith('ij_')) return true;
     return false;
   }
 
-  /// Combined rule: allowed name, known service UUID (FlutterBluePlus + optional native parser),
-  /// or companion-style numeric prefix.
+  /// Combined rule: allowed name only — strictly hides non-MyFrame devices.
   static bool isDiscoverableEntry({
     required String effectiveName,
     required Iterable<Guid> serviceUuids,
     List<String>? nativeServiceUuidStrings,
   }) {
     final name = effectiveName.trim();
-    if (matchesAdvertisedName(name)) return true;
-    if (matchesServiceUuids(serviceUuids)) return true;
-    if (nativeServiceUuidStrings != null) {
-      for (final s in nativeServiceUuidStrings) {
-        if (_uuidMatchesKnown(s)) return true;
-      }
-    }
-    // Unnamed (no GAP name): still list when the radio clearly advertises a frame service UUID.
-    if (name.isEmpty) {
-      return matchesServiceUuids(serviceUuids) ||
-          (nativeServiceUuidStrings?.any(_uuidMatchesKnown) ?? false);
-    }
-    return false;
+    return matchesAdvertisedName(name);
   }
 }

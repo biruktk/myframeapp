@@ -10,6 +10,7 @@ import '../services/personal_gallery_store.dart';
 import '../services/user_gallery_cloud_service.dart';
 import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
+import '../widgets/custom_segmented_toggle.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
 import 'image_editor_screen.dart';
@@ -139,19 +140,13 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
           preferredSize: const Size.fromHeight(48),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: SegmentedButton<int>(
-              segments: [
-                ButtonSegment(
-                  value: 0,
-                  label: Text('${s.galleryPersonalTab} · ${paths.length}'),
-                ),
-                ButtonSegment(
-                  value: 1,
-                  label: Text('${s.galleryAlbumsTab} · ${albums.length}'),
-                ),
-              ],
-              selected: {_tab},
-              onSelectionChanged: (v) => setState(() => _tab = v.first),
+            child: CustomSegmentedToggle(
+              selectedIndex: _tab,
+              onTabChanged: (v) => setState(() => _tab = v),
+              leftLabel: s.galleryPersonalTab,
+              leftCount: paths.length,
+              rightLabel: s.galleryAlbumsTab,
+              rightCount: albums.length,
             ),
           ),
         ),
@@ -230,25 +225,27 @@ class _AlbumsGrid extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
-              crossAxisSpacing: 10,
-              mainAxisSpacing: 10,
-              childAspectRatio: 0.88,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.35,
             ),
             itemCount: albums.length + 1,
             itemBuilder: (context, index) {
               if (index == albums.length) {
-                return Material(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(14),
+                return Container(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14),
                     onTap: onCreateAlbum,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.add_circle_outline, size: 40, color: colorScheme.primary),
-                        const SizedBox(height: 8),
-                        Text(strings.createNewAlbum, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, color: colorScheme.primary)),
+                        Icon(Icons.add_circle_outline, size: 36, color: colorScheme.primary),
+                        const SizedBox(height: 6),
+                        Text(strings.createNewAlbum, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: colorScheme.primary)),
                       ],
                     ),
                   ),
@@ -256,77 +253,88 @@ class _AlbumsGrid extends StatelessWidget {
               }
               final a = albums[index];
               final preview = previewFor(a);
-              return Material(
-                color: colorScheme.surface,
-                borderRadius: BorderRadius.circular(14),
+              return Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
+                ),
                 clipBehavior: Clip.antiAlias,
-                elevation: 1,
-                shadowColor: Colors.black26,
-                child: InkWell(
-                  onTap: () => onAlbumTap(a),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      if (preview != null)
-                        Image.file(File(preview), fit: BoxFit.cover)
-                      else
-                        ColoredBox(
-                          color: colorScheme.surfaceContainerHighest,
-                          child: Icon(Icons.photo_outlined, size: 48, color: colorScheme.outline),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => onAlbumTap(a),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: Stack(
+                            children: [
+                              if (preview != null)
+                                Image.file(File(preview), fit: BoxFit.cover, width: double.infinity, height: double.infinity)
+                              else
+                                Container(
+                                  color: const Color(0xFFFFF0F0),
+                                  child: const Center(
+                                    child: Icon(Icons.collections_outlined, color: Color(0xFFE53935), size: 28),
+                                  ),
+                                ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: GestureDetector(
+                                  onTap: () => onDeleteAlbum(a),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black38,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 14),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: DecoratedBox(
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               begin: Alignment.topCenter,
                               end: Alignment.bottomCenter,
                               colors: [
                                 Colors.transparent,
-                                Colors.black.withValues(alpha: 0.65),
+                                Colors.black.withValues(alpha: 0.08),
                               ],
                             ),
                           ),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 28, 10, 10),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  a.name,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14, height: 1.2),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      a.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, height: 1.2),
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      strings.photosCount(a.paths.length),
+                                      style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  strings.photosCount(a.paths.length),
-                                  style: const TextStyle(color: Color(0xE6FFFFFF), fontSize: 12),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: Material(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(8),
-                          child: InkWell(
-                            onTap: () => onDeleteAlbum(a),
-                            borderRadius: BorderRadius.circular(8),
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.delete_outline, color: Colors.white, size: 16),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );

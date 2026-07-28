@@ -7,6 +7,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/account_sync_service.dart';
 import '../services/auth_api_service.dart';
 import '../utils/validators.dart';
 import '../services/google_sign_in_factory.dart';
@@ -20,7 +21,9 @@ import '../services/fcm_service.dart';
 import '../widgets/animated_splash_screen.dart';
 import '../widgets/main_shell.dart';
 import '../widgets/myframe_branding_lockup.dart';
+import '../theme/app_theme.dart';
 import 'forgot_password_screen.dart';
+import 'language_selection_modal.dart';
 import 'reset_password_screen.dart';
 
 class AppEntryScreen extends StatefulWidget {
@@ -119,15 +122,12 @@ class _AppEntryScreenState extends State<AppEntryScreen> with WidgetsBindingObse
           return AnimatedSplashScreen(onComplete: _onSplashComplete);
         }
         if (!app.onboardingDone) {
-          return Localizations.override(
-            context: context,
-            locale: const Locale('en'),
-            child: _OnboardingScreen(
-              onDone: () async {
-                await app.setOnboardingDone(true);
-                await app.setSignedIn(value: false);
-              },
-            ),
+          return _OnboardingScreen(
+            key: const ValueKey('onboarding'),
+            onDone: () async {
+              await app.setOnboardingDone(true);
+              await app.setSignedIn(value: false);
+            },
           );
         }
         if (!app.hasAuthenticatedSession) {
@@ -140,7 +140,7 @@ class _AppEntryScreenState extends State<AppEntryScreen> with WidgetsBindingObse
 }
 
 class _OnboardingScreen extends StatefulWidget {
-  const _OnboardingScreen({required this.onDone});
+  const _OnboardingScreen({super.key, required this.onDone});
 
   final Future<void> Function() onDone;
 
@@ -149,42 +149,62 @@ class _OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<_OnboardingScreen> {
+  static const _red = Color(0xFFE53935);
+  static const _neutralBg = Color(0xFFF5F5F5);
+  static const _cardRadius = 24.0;
+
+  var _shownLanguagePicker = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _showLanguageModal());
+  }
+
+  Future<void> _showLanguageModal() async {
+    if (_shownLanguagePicker) return;
+    _shownLanguagePicker = true;
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const LanguageSelectionModal(),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _finish() async {
     await widget.onDone();
     if (!mounted) return;
     setState(() {});
   }
 
-  static const _cardRadius = 24.0;
-
-  /// Light pink icon wells (matches product welcome mockup).
-  static const _wellPink = Color(0xFFFFE4E8);
-
-  Widget _heroIllustration(ColorScheme cs, {required double scale}) {
+  Widget _heroIllustration({required double scale}) {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 12 * scale, vertical: 14 * scale),
       decoration: BoxDecoration(
-        color: _wellPink,
+        color: _neutralBg,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.person_outline_rounded, size: 28 * scale, color: cs.primary),
+          Icon(Icons.person_outline_rounded, size: 28 * scale, color: _red),
           SizedBox(width: 8 * scale),
-          Icon(Icons.wifi_rounded, size: 24 * scale, color: cs.primary),
+          Icon(Icons.wifi_rounded, size: 24 * scale, color: _red),
           SizedBox(width: 6 * scale),
           Icon(
             Icons.arrow_forward_rounded,
             size: 18 * scale,
-            color: cs.primary.withValues(alpha: 0.65),
+            color: Colors.grey,
           ),
           SizedBox(width: 6 * scale),
           Icon(
             Icons.photo_size_select_actual_rounded,
             size: 26 * scale,
-            color: cs.primary,
+            color: _red,
           ),
         ],
       ),
@@ -209,8 +229,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
     );
   }
 
-  Widget _stepRow(
-    BuildContext context, {
+  Widget _stepRow({
     required int n,
     required IconData icon,
     required String title,
@@ -218,7 +237,6 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
     required bool showDivider,
     required double scale,
   }) {
-    final cs = Theme.of(context).colorScheme;
     return Column(
       children: [
         Padding(
@@ -230,10 +248,10 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                 width: 36 * scale,
                 height: 36 * scale,
                 decoration: BoxDecoration(
-                  color: _wellPink,
+                  color: _neutralBg,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, color: cs.primary, size: 18 * scale),
+                child: Icon(icon, color: _red, size: 18 * scale),
               ),
               SizedBox(width: 10 * scale),
               Expanded(
@@ -257,7 +275,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12 * scale,
-                        color: cs.onSurfaceVariant,
+                        color: Colors.grey,
                         height: 1.2,
                       ),
                     ),
@@ -269,7 +287,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                 height: 24 * scale,
                 alignment: Alignment.center,
                 decoration: const BoxDecoration(
-                  color: _wellPink,
+                  color: _neutralBg,
                   shape: BoxShape.circle,
                 ),
                 child: Text(
@@ -277,7 +295,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 11 * scale,
-                    color: cs.primary,
+                    color: _red,
                   ),
                 ),
               ),
@@ -285,10 +303,10 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
           ),
         ),
         if (showDivider)
-          Divider(
+          const Divider(
             height: 1,
             thickness: 1,
-            color: cs.outlineVariant.withValues(alpha: 0.5),
+            color: Color(0xFFF0F0F0),
           ),
       ],
     );
@@ -296,11 +314,10 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final s = AppStrings.of(context);
     final app = AppSettingsScope.of(context);
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8F9FA),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -318,7 +335,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                       tooltip: s.onboardingLanguageHint,
                       icon: Icon(
                         Icons.language_rounded,
-                        color: cs.onSurfaceVariant,
+                        color: Colors.black54,
                         size: 22 * scale,
                       ),
                       onSelected: (code) async {
@@ -353,7 +370,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                             ),
                             child: Column(
                               children: [
-                                _heroIllustration(cs, scale: scale),
+                                _heroIllustration(scale: scale),
                                 SizedBox(height: 12 * scale),
                                 Text(
                                   s.welcomeInkTitle,
@@ -363,7 +380,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                                   style: TextStyle(
                                     fontSize: 18 * scale,
                                     fontWeight: FontWeight.w800,
-                                    color: cs.onSurface,
+                                    color: Colors.black87,
                                     height: 1.2,
                                   ),
                                 ),
@@ -375,7 +392,7 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 13 * scale,
-                                    color: cs.onSurfaceVariant,
+                                    color: Colors.grey,
                                     height: 1.3,
                                   ),
                                 ),
@@ -388,7 +405,6 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                           child: Column(
                             children: [
                               _stepRow(
-                                context,
                                 n: 1,
                                 icon: Icons.power_settings_new_rounded,
                                 title: s.onboardStepPowerTitle,
@@ -397,7 +413,6 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                                 scale: scale,
                               ),
                               _stepRow(
-                                context,
                                 n: 2,
                                 icon: Icons.add_rounded,
                                 title: s.onboardStepPairTitle,
@@ -406,7 +421,6 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                                 scale: scale,
                               ),
                               _stepRow(
-                                context,
                                 n: 3,
                                 icon: Icons.send_rounded,
                                 title: s.onboardStepSendTitle,
@@ -442,9 +456,9 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                     style: OutlinedButton.styleFrom(
                       minimumSize: Size.fromHeight(btnH),
                       backgroundColor: Colors.white,
-                      foregroundColor: cs.onSurfaceVariant,
+                      foregroundColor: Colors.black54,
                       side: BorderSide(
-                        color: cs.outline.withValues(alpha: 0.35),
+                        color: Colors.grey.shade300,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
@@ -534,6 +548,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       userId: data.user.id,
       provider: provider,
     );
+    unawaited(AccountSyncService.instance.syncAccountState());
     unawaited(UserGalleryCloudService.instance.syncFromServer(data.token));
     unawaited(_saveFcmTokenAfterLogin());
     if (!mounted) return;
@@ -680,7 +695,29 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       await _finishAuthSession(r);
       return;
     }
-    if (r is AuthApiFailure) _showAuthMessage(_failureMessage(r, s));
+    if (r is AuthApiFailure) {
+      if (r.errorKey == 'email_not_verified') {
+        _showEmailNotVerified(r, s);
+        return;
+      }
+      _showAuthMessage(_failureMessage(r, s));
+    }
+  }
+
+  void _showEmailNotVerified(AuthApiFailure f, AppStrings s) {
+    final message = f.message?.isNotEmpty == true
+        ? f.message!
+        : s.authErrorEmailNotVerified;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _EmailNotVerifiedDialog(
+        email: _email.text,
+        message: message,
+        auth: _auth,
+        s: s,
+      ),
+    );
   }
 
   Future<void> _submitRegister() async {
@@ -704,30 +741,25 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       if (r.token.isNotEmpty) {
         await _finishAuthSession(r);
       } else {
-        _showVerificationSent();
+        _switchToLoginAfterRegistration();
       }
       return;
     }
     if (r is AuthApiFailure) _showAuthMessage(_failureMessage(r, s));
   }
 
-  void _showVerificationSent() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: Text(AppStrings.of(context).verifyEmailTitle),
-        content: Text(AppStrings.of(context).verifyEmailSent),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-            },
-            child: Text(AppStrings.of(context).coachGotIt),
-          ),
-        ],
+  void _switchToLoginAfterRegistration() {
+    final s = AppStrings.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(s.verifyEmailSent),
+        duration: const Duration(seconds: 4),
       ),
     );
+    setState(() {
+      _authTab = 0;
+      _email.text = _regEmail.text;
+    });
   }
 
   Future<void> _onAppleTap() async {
@@ -929,30 +961,70 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     }
   }
 
-  InputDecoration _underlineField(
-    ColorScheme cs,
-    String label, {
-    String? hint,
+  Widget _modernField({
+    required String label,
+    required IconData icon,
+    required TextEditingController controller,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    TextInputAction textInputAction = TextInputAction.next,
+    TextCapitalization textCapitalization = TextCapitalization.none,
+    VoidCallback? onSubmitted,
+    Widget? suffixIcon,
+    bool enabled = true,
   }) {
-    final subtle = cs.onSurface.withValues(alpha: 0.28);
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      labelStyle: TextStyle(color: cs.onSurfaceVariant),
-      hintStyle: TextStyle(color: cs.onSurfaceVariant.withValues(alpha: 0.75)),
-      floatingLabelStyle: TextStyle(color: cs.primary),
-      floatingLabelBehavior: FloatingLabelBehavior.auto,
-      isDense: true,
-      contentPadding: const EdgeInsets.only(top: 12, bottom: 14),
-      border: UnderlineInputBorder(borderSide: BorderSide(color: subtle)),
-      enabledBorder: UnderlineInputBorder(
-        borderSide: BorderSide(color: subtle),
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      textInputAction: textInputAction,
+      textCapitalization: textCapitalization,
+      onSubmitted: (_) => onSubmitted?.call(),
+      enabled: enabled,
+      style: const TextStyle(fontSize: 15),
+      decoration: AppAuthTheme.inputStyle(
+        label: label,
+        icon: icon,
+        suffixIcon: suffixIcon,
       ),
-      focusedBorder: UnderlineInputBorder(
-        borderSide: BorderSide(color: cs.primary, width: 2),
-      ),
-      disabledBorder: UnderlineInputBorder(
-        borderSide: BorderSide(color: subtle.withValues(alpha: 0.5)),
+    );
+  }
+
+  Widget _buildPrimaryButton({
+    required String text,
+    required VoidCallback? onPressed,
+    bool isLoading = false,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppAuthTheme.primaryRed,
+          foregroundColor: Colors.white,
+          elevation: 2,
+          shadowColor: AppAuthTheme.primaryRed.withOpacity(0.3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: isLoading
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : Text(
+                text,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
       ),
     );
   }
@@ -1068,9 +1140,8 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
+        color: Colors.grey.shade100,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: cs.outlineVariant),
       ),
       child: Row(
         children: [
@@ -1107,38 +1178,33 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     required VoidCallback onTap,
     required ColorScheme cs,
   }) {
-    return Material(
-      color: Colors.transparent,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: selected ? Colors.white : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: selected ? cs.surface : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: selected
-                ? Border.all(color: cs.outlineVariant.withValues(alpha: 0.65))
-                : null,
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: cs.shadow.withValues(alpha: 0.08),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                fontSize: 15,
-                color: selected ? cs.primary : cs.onSurfaceVariant,
-              ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 15,
+              color: selected ? AppAuthTheme.primaryRed : Colors.black54,
             ),
           ),
         ),
@@ -1151,7 +1217,7 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       children: [
         Row(
           children: [
-            Expanded(child: Divider(color: cs.outline.withValues(alpha: 0.25))),
+            Expanded(child: Divider(color: Colors.grey.shade300)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
@@ -1159,37 +1225,46 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: cs.onSurfaceVariant,
+                  color: Colors.grey.shade600,
                   letterSpacing: 0.2,
                 ),
               ),
             ),
-            Expanded(child: Divider(color: cs.outline.withValues(alpha: 0.25))),
+            Expanded(child: Divider(color: Colors.grey.shade300)),
           ],
         ),
         const SizedBox(height: 18),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             if (Platform.isIOS)
-              _socialCircle(
-                tooltip: s.continueApple,
-                onTap: _busy ? null : _onAppleTap,
-                color: Colors.black,
-                child: const Icon(Icons.apple, color: Colors.white, size: 26),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: _socialCircle(
+                  tooltip: s.continueApple,
+                  onTap: _busy ? null : _onAppleTap,
+                  color: Colors.black,
+                  child: const Icon(Icons.apple, color: Colors.white, size: 22),
+                ),
               ),
-            _socialCircle(
-              tooltip: s.continueGoogle,
-              onTap: _busy ? null : _googleSignInFlow,
-              color: Colors.white,
-              borderColor: cs.outline.withValues(alpha: 0.35),
-              child: const _GoogleLogoMark(size: 26),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _socialCircle(
+                tooltip: s.continueGoogle,
+                onTap: _busy ? null : _googleSignInFlow,
+                color: Colors.white,
+                borderColor: Colors.grey.shade300,
+                child: const _GoogleLogoMark(size: 22),
+              ),
             ),
-            _socialCircle(
-              tooltip: s.continueWeChat,
-              onTap: _busy ? null : () => unawaited(_weChatTap()),
-              color: _weChatGreen,
-              child: const _WeChatLogoMark(size: 26),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _socialCircle(
+                tooltip: s.continueWeChat,
+                onTap: _busy ? null : () => unawaited(_weChatTap()),
+                color: _weChatGreen,
+                child: const _WeChatLogoMark(size: 22),
+              ),
             ),
           ],
         ),
@@ -1206,25 +1281,30 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
   }) {
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: color,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        elevation: onTap == null ? 0 : 1,
-        shadowColor: Colors.black26,
-        child: InkWell(
-          onTap: onTap,
-          child: Container(
-            width: 56,
-            height: 56,
-            alignment: Alignment.center,
-            decoration: borderColor != null
-                ? BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: borderColor),
-                  )
-                : null,
-            child: child,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: borderColor != null ? Border.all(color: borderColor) : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              alignment: Alignment.center,
+              child: child,
+            ),
           ),
         ),
       ),
@@ -1240,37 +1320,37 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       backgroundColor: scaffoldBg,
       body: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
               child: Column(
                 children: [
-                  const Center(child: MyFrameBrandingLockup(width: 260)),
-                  const SizedBox(height: 12),
+                  const Center(child: MyFrameBrandingLockup(width: 220)),
+                  const SizedBox(height: 8),
                   Text(
                     s.authScreenTagline,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
                       height: 1.35,
-                      color: cs.onSurfaceVariant,
+                      color: Colors.grey.shade600,
                     ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 8),
             Expanded(
               child: Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: cs.surface,
+                  color: Colors.white,
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(28),
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: cs.shadow.withValues(alpha: 0.12),
+                      color: Colors.black.withOpacity(0.08),
                       blurRadius: 24,
                       offset: const Offset(0, -4),
                     ),
@@ -1280,150 +1360,123 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(28),
                   ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
-                            child: _languageSwitcher(s, cs),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
-                            child: _segmentedTabs(s, cs),
-                          ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                        child: _languageSwitcher(s, cs),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 2, 20, 8),
+                        child: _segmentedTabs(s, cs),
+                      ),
                       Expanded(
                         child: Stack(
                           children: [
                             IndexedStack(
                               index: _authTab,
                               children: [
-                                _authScroll(
-                                  s,
-                                  cs,
-                                  children: [
-                                    TextField(
-                                      controller: _email,
-                                      keyboardType: TextInputType.emailAddress,
-                                      textInputAction: TextInputAction.next,
-                                      style: TextStyle(color: cs.onSurface),
-                                      decoration: _underlineField(cs, s.emailLabel),
-                                      enabled: !_busy,
-                                    ),
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _password,
-                                      obscureText: true,
-                                      textInputAction: TextInputAction.done,
-                                      onSubmitted: (_) => _submitLogin(),
-                                      style: TextStyle(color: cs.onSurface),
-                                      decoration: _underlineField(
-                                        cs,
-                                        s.passwordLabel,
+                                SingleChildScrollView(
+                                  padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+                                  keyboardDismissBehavior:
+                                      ScrollViewKeyboardDismissBehavior.onDrag,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      _modernField(
+                                        label: s.emailLabel,
+                                        icon: Icons.email_outlined,
+                                        controller: _email,
+                                        keyboardType: TextInputType.emailAddress,
+                                        textInputAction: TextInputAction.next,
+                                        enabled: !_busy,
                                       ),
-                                      enabled: !_busy,
-                                    ),
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton(
-                                        onPressed: _busy
-                                            ? null
-                                            : () => Navigator.of(context).push(
-                                                  MaterialPageRoute(
-                                                    builder: (_) =>
-                                                        const ForgotPasswordScreen(),
+                                      const SizedBox(height: 18),
+                                      _modernField(
+                                        label: s.passwordLabel,
+                                        icon: Icons.lock_outline,
+                                        controller: _password,
+                                        obscureText: true,
+                                        textInputAction: TextInputAction.done,
+                                        onSubmitted: _submitLogin,
+                                        enabled: !_busy,
+                                      ),
+                                      Align(
+                                        alignment: Alignment.centerRight,
+                                        child: TextButton(
+                                          onPressed: _busy
+                                              ? null
+                                              : () => Navigator.of(context).push(
+                                                    MaterialPageRoute(
+                                                      builder: (_) =>
+                                                          const ForgotPasswordScreen(),
+                                                    ),
                                                   ),
-                                                ),
-                                        child: Text(
-                                          s.forgotPasswordLink,
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: cs.primary,
+                                          child: Text(
+                                            s.forgotPasswordLink,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: AppAuthTheme.primaryRed,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    SizedBox(
-                                      height: 52,
-                                      child: FilledButton(
-                                        onPressed: _busy ? null : _submitLogin,
-                                        style: FilledButton.styleFrom(
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(16),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          s.loginLabel,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 16,
-                                          ),
-                                        ),
+                                      const SizedBox(height: 4),
+                                      _buildPrimaryButton(
+                                        text: s.loginLabel,
+                                        onPressed: _submitLogin,
+                                        isLoading: _busy,
                                       ),
-                                    ),
-                                    const SizedBox(height: 28),
-                                    _socialRow(s, cs),
-                                  ],
+                                      const SizedBox(height: 28),
+                                      _socialRow(s, cs),
+                                    ],
+                                  ),
                                 ),
-                                _authScroll(
-                                  s,
-                                  cs,
-                                  children: [
-                                    TextField(
-                                      controller: _regName,
-                                      textInputAction: TextInputAction.next,
-                                      textCapitalization: TextCapitalization.words,
-                                      style: TextStyle(color: cs.onSurface),
-                                      decoration: _underlineField(
-                                        cs,
-                                        s.authUsernameLabel,
+                                SingleChildScrollView(
+                                  padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
+                                  keyboardDismissBehavior:
+                                      ScrollViewKeyboardDismissBehavior.onDrag,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      _modernField(
+                                        label: s.authUsernameLabel,
+                                        icon: Icons.person_outline,
+                                        controller: _regName,
+                                        textInputAction: TextInputAction.next,
+                                        textCapitalization:
+                                            TextCapitalization.words,
+                                        enabled: !_busy,
                                       ),
-                                      enabled: !_busy,
-                                    ),
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _regEmail,
-                                      keyboardType: TextInputType.emailAddress,
-                                      textInputAction: TextInputAction.next,
-                                      style: TextStyle(color: cs.onSurface),
-                                      decoration: _underlineField(cs, s.emailLabel),
-                                      enabled: !_busy,
-                                    ),
-                                    const SizedBox(height: 20),
-                                    TextField(
-                                      controller: _regPassword,
-                                      obscureText: true,
-                                      textInputAction: TextInputAction.done,
-                                      onSubmitted: (_) => _submitRegister(),
-                                      style: TextStyle(color: cs.onSurface),
-                                      decoration: _underlineField(
-                                        cs,
-                                        s.passwordLabel,
+                                      const SizedBox(height: 18),
+                                      _modernField(
+                                        label: s.emailLabel,
+                                        icon: Icons.email_outlined,
+                                        controller: _regEmail,
+                                        keyboardType: TextInputType.emailAddress,
+                                        textInputAction: TextInputAction.next,
+                                        enabled: !_busy,
                                       ),
-                                      enabled: !_busy,
-                                    ),
-                                    const SizedBox(height: 28),
-                                    SizedBox(
-                                      height: 52,
-                                      child: FilledButton(
-                                        onPressed: _busy ? null : _submitRegister,
-                                        style: FilledButton.styleFrom(
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(16),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          s.registerLabel,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 16,
-                                          ),
-                                        ),
+                                      const SizedBox(height: 18),
+                                      _modernField(
+                                        label: s.passwordLabel,
+                                        icon: Icons.lock_outline,
+                                        controller: _regPassword,
+                                        obscureText: true,
+                                        textInputAction: TextInputAction.done,
+                                        onSubmitted: _submitRegister,
+                                        enabled: !_busy,
                                       ),
-                                    ),
-                                    const SizedBox(height: 28),
-                                    _socialRow(s, cs),
-                                  ],
+                                      const SizedBox(height: 24),
+                                      _buildPrimaryButton(
+                                        text: s.registerLabel,
+                                        onPressed: _submitRegister,
+                                        isLoading: _busy,
+                                      ),
+                                      const SizedBox(height: 28),
+                                      _socialRow(s, cs),
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
@@ -1431,19 +1484,28 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
                               Positioned.fill(
                                 child: Center(
                                   child: Container(
-                                    width: 40,
-                                    height: 40,
+                                    width: 44,
+                                    height: 44,
                                     decoration: BoxDecoration(
-                                      color: Colors.red,
-                                      borderRadius: BorderRadius.circular(8),
+                                      color: AppAuthTheme.primaryRed,
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppAuthTheme.primaryRed
+                                              .withOpacity(0.3),
+                                          blurRadius: 12,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
                                     ),
                                     alignment: Alignment.center,
                                     child: const SizedBox(
-                                      width: 20,
-                                      height: 20,
+                                      width: 22,
+                                      height: 22,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2.5,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                            Colors.white),
                                       ),
                                     ),
                                   ),
@@ -1460,18 +1522,6 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _authScroll(
-    AppStrings s,
-    ColorScheme cs, {
-    required List<Widget> children,
-  }) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      children: children,
     );
   }
 }
@@ -1560,4 +1610,61 @@ class _WeChatLogoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _EmailNotVerifiedDialog extends StatefulWidget {
+  const _EmailNotVerifiedDialog({
+    required this.email,
+    required this.message,
+    required this.auth,
+    required this.s,
+  });
+
+  final String email;
+  final String message;
+  final AuthApiService auth;
+  final AppStrings s;
+
+  @override
+  State<_EmailNotVerifiedDialog> createState() => _EmailNotVerifiedDialogState();
+}
+
+class _EmailNotVerifiedDialogState extends State<_EmailNotVerifiedDialog> {
+  var _busy = false;
+  var _sent = false;
+
+  Future<void> _resend() async {
+    setState(() => _busy = true);
+    final r = await widget.auth.resendVerificationEmail(email: widget.email);
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _sent = r is AuthApiSuccess;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.s.verifyEmailTitle),
+      content: Text(_sent ? widget.s.verifyEmailSent : widget.message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_sent ? widget.s.coachGotIt : widget.s.cancel),
+        ),
+        if (!_sent)
+          TextButton(
+            onPressed: _busy ? null : _resend,
+            child: _busy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(widget.s.coachResend),
+          ),
+      ],
+    );
+  }
 }

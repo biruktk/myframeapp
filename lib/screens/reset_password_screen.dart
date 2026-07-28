@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/auth_api_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/validators.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
@@ -20,6 +21,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   var _busy = false;
   var _done = false;
   var _tokenValid = true;
+  var _obscurePassword = true;
+  var _obscureConfirm = true;
 
   @override
   void initState() {
@@ -83,98 +86,177 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text(s.resetPasswordTitle)),
+      backgroundColor: AppAuthTheme.bgLight,
+      appBar: AppBar(
+        title: Text(s.resetPasswordTitle),
+        backgroundColor: Colors.white,
+      ),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: _tokenValid
-              ? (_done ? _doneView(s, cs) : _formView(s, cs))
-              : _invalidView(s, cs),
+              ? (_done ? _doneView(s) : _formView(s))
+              : _invalidView(s),
         ),
       ),
     );
   }
 
-  Widget _formView(AppStrings s, ColorScheme cs) {
+  Widget _formView(AppStrings s) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        const SizedBox(height: 12),
         Text(
           s.resetPasswordDescription,
-          style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.4,
+            color: Colors.grey.shade600,
+          ),
         ),
         const SizedBox(height: 24),
         TextField(
           controller: _password,
-          obscureText: true,
+          obscureText: _obscurePassword,
           textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
-            labelText: s.passwordLabel,
-            border: const OutlineInputBorder(),
-          ),
           enabled: !_busy,
+          style: const TextStyle(fontSize: 15),
+          decoration: AppAuthTheme.inputStyle(
+            label: s.passwordLabel,
+            icon: Icons.lock_outline,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                color: Colors.grey.shade600,
+                size: 20,
+              ),
+              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            ),
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         TextField(
           controller: _confirm,
-          obscureText: true,
+          obscureText: _obscureConfirm,
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _submit(),
-          decoration: InputDecoration(
-            labelText: s.resetPasswordConfirm,
-            border: const OutlineInputBorder(),
-          ),
           enabled: !_busy,
-        ),
-        const SizedBox(height: 24),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          style: const TextStyle(fontSize: 15),
+          decoration: AppAuthTheme.inputStyle(
+            label: s.resetPasswordConfirm,
+            icon: Icons.lock_outline,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                color: Colors.grey.shade600,
+                size: 20,
+              ),
+              onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+            ),
           ),
-          child: Text(_busy ? s.authBusyLabel : s.resetPasswordSubmit),
+        ),
+        const SizedBox(height: 28),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: _busy ? null : _submit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppAuthTheme.primaryRed,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              shadowColor: AppAuthTheme.primaryRed.withOpacity(0.3),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: _busy
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : Text(
+                    s.resetPasswordSubmit,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _doneView(AppStrings s, ColorScheme cs) {
+  Widget _doneView(AppStrings s) {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.check_circle_outline, size: 64, color: cs.primary),
-        const SizedBox(height: 16),
+        const SizedBox(height: 48),
+        Icon(
+          Icons.check_circle_outline,
+          size: 72,
+          color: AppAuthTheme.primaryRed,
+        ),
+        const SizedBox(height: 20),
         Text(
           s.resetPasswordSuccess,
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: cs.onSurface),
-        ),
-        const SizedBox(height: 24),
-        FilledButton(
-          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
-          style: FilledButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
           ),
-          child: Text(s.resetPasswordGoToLogin),
+        ),
+        const SizedBox(height: 32),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppAuthTheme.primaryRed,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              shadowColor: AppAuthTheme.primaryRed.withOpacity(0.3),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(
+              s.resetPasswordGoToLogin,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _invalidView(AppStrings s, ColorScheme cs) {
+  Widget _invalidView(AppStrings s) {
     return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(Icons.error_outline, size: 64, color: cs.error),
-        const SizedBox(height: 16),
+        const SizedBox(height: 48),
+        Icon(
+          Icons.error_outline,
+          size: 72,
+          color: Colors.redAccent,
+        ),
+        const SizedBox(height: 20),
         Text(
           s.resetPasswordInvalidToken,
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 16, color: cs.onSurface),
+          style: const TextStyle(
+            fontSize: 18,
+            color: Colors.black87,
+          ),
         ),
       ],
     );

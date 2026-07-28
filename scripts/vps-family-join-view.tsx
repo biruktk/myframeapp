@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import type { Locale } from "@/lib/i18n";
 
@@ -36,11 +36,15 @@ const copy: Record<
   },
   zh: {
     title: "加入 MyFrame 家庭",
-    lead: "有人邀请你加入他们的家庭组并共享照片。",
+    lead: "有人邀请您加入家庭共享相册。",
     openApp: "在 MyFrame 应用中打开",
     download: "下载应用",
     codeLabel: "邀请码",
-    steps: ["如未安装请先下载 MyFrame。", "打开应用并登录。", "进入「家庭」→「加入家庭」并输入下方邀请码。"],
+    steps: [
+      "如果您尚未安装 MyFrame，请先下载安装。",
+      "打开应用并登录您的账号。",
+      "进入「家庭」页面 ➔ 点击「使用邀请码加入」，输入下方邀请码。",
+    ],
     invalid: "此邀请链接缺少有效的 8 位邀请码。",
   },
   es: {
@@ -97,21 +101,65 @@ const copy: Record<
   },
 };
 
-export function FamilyJoinView({ locale, code }: Props) {
-  const t = copy[locale] ?? copy.en;
+function detectLocale(serverLocale: Locale): Locale {
+  if (typeof window === "undefined") return serverLocale;
+  const params = new URLSearchParams(window.location.search);
+  const lang = params.get("lang");
+  if (lang === "zh" || lang === "en") return lang;
+  const browserLang = (navigator.language || "").toLowerCase();
+  if (browserLang.startsWith("zh")) return "zh";
+  return serverLocale;
+}
+
+export function FamilyJoinView({ locale: serverLocale, code }: Props) {
+  const [effectiveLocale, setEffectiveLocale] = useState<Locale>(serverLocale);
+  useEffect(() => {
+    setEffectiveLocale(detectLocale(serverLocale));
+  }, [serverLocale]);
+
+  const t = copy[effectiveLocale] ?? copy.en;
   const valid = code.length === 8;
+  const [toast, setToast] = useState(false);
+
+  const appDeepLink = valid ? `myframe://join?code=${encodeURIComponent(code)}` : "#";
+  const downloadHref = `/${effectiveLocale}/download`;
+
+  async function copyCode() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setToast(true);
+      setTimeout(() => setToast(false), 2000);
+    } catch {
+      // fallback for older browsers
+      const ta = document.createElement("textarea");
+      ta.value = code;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setToast(true);
+      setTimeout(() => setToast(false), 2000);
+    }
+  }
+
+  function openAppWithCode() {
+    const startedAt = Date.now();
+    window.location.href = appDeepLink;
+    setTimeout(() => {
+      if (!document.hidden) {
+        copyCode();
+        alert(t.openApp + "\n\n" + t.codeLabel + ": " + code);
+      }
+    }, 1500);
+  }
 
   useEffect(() => {
     if (!valid || typeof window === "undefined") return;
-    const deep = `myframe://join?code=${encodeURIComponent(code)}`;
     const timer = window.setTimeout(() => {
-      window.location.href = deep;
+      openAppWithCode();
     }, 400);
     return () => window.clearTimeout(timer);
   }, [code, valid]);
-
-  const appDeepLink = valid ? `myframe://join?code=${encodeURIComponent(code)}` : "#";
-  const downloadHref = `/${locale}/download`;
 
   return (
     <main
@@ -120,8 +168,30 @@ export function FamilyJoinView({ locale, code }: Props) {
         background: "#f5f5f5",
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
         padding: "32px 16px",
+        position: "relative",
       }}
     >
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#333",
+            color: "#fff",
+            padding: "10px 20px",
+            borderRadius: 8,
+            fontSize: 14,
+            fontWeight: 500,
+            zIndex: 1000,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+          }}
+        >
+          Copied to clipboard!
+        </div>
+      )}
+
       <div style={{ maxWidth: 420, margin: "0 auto" }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 8px", color: "#111" }}>{t.title}</h1>
         <p style={{ margin: "0 0 20px", color: "#666", fontSize: 15, lineHeight: 1.5 }}>{t.lead}</p>
@@ -133,6 +203,7 @@ export function FamilyJoinView({ locale, code }: Props) {
         {valid && (
           <>
             <div
+              onClick={copyCode}
               style={{
                 background: "#fff",
                 borderRadius: 12,
@@ -140,7 +211,12 @@ export function FamilyJoinView({ locale, code }: Props) {
                 marginBottom: 16,
                 boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
                 textAlign: "center",
+                cursor: "pointer",
+                userSelect: "none",
+                transition: "box-shadow 0.2s",
               }}
+              onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)")}
+              onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.08)")}
             >
               <p style={{ margin: 0, fontSize: 13, color: "#888" }}>{t.codeLabel}</p>
               <p
@@ -156,22 +232,25 @@ export function FamilyJoinView({ locale, code }: Props) {
               </p>
             </div>
 
-            <a
-              href={appDeepLink}
+            <button
+              onClick={openAppWithCode}
               style={{
                 display: "block",
+                width: "100%",
                 textAlign: "center",
                 background: "#dc2626",
                 color: "#fff",
                 padding: "14px 20px",
                 borderRadius: 10,
                 fontWeight: 600,
-                textDecoration: "none",
+                fontSize: 16,
+                border: "none",
+                cursor: "pointer",
                 marginBottom: 12,
               }}
             >
               {t.openApp}
-            </a>
+            </button>
 
             <a
               href={downloadHref}

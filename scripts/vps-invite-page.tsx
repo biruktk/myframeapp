@@ -3,6 +3,7 @@ import { defaultLocale, isLocale, type Locale } from "@/lib/i18n";
 
 type Props = {
   params: Promise<{ locale: string; code: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default async function InviteGuestPage({ params }: Props) {
@@ -16,8 +17,8 @@ export default async function InviteGuestPage({ params }: Props) {
   if (code.length !== 8) {
     return (
       <main style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
-        <h1>Invalid invite link</h1>
-        <p lang={locale}>This invite code is not valid.</p>
+        <h1>{locale === "zh" ? "无效的邀请链接" : "Invalid invite link"}</h1>
+        <p lang={locale}>{locale === "zh" ? "此邀请码无效。" : "This invite code is not valid."}</p>
       </main>
     );
   }

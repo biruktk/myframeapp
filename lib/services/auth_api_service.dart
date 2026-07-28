@@ -277,6 +277,27 @@ class AuthApiService {
     }
   }
 
+  Future<AuthApiResult> resendVerificationEmail({required String email}) async {
+    final uri = _u('/api/auth/resend-verification');
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'email': email.trim()}),
+          )
+          .timeout(_requestTimeout);
+      AppDiagLog.verbose('resend-verification response: ${res.statusCode} ${res.body}');
+      return _parseSimple(res.statusCode, res.body);
+    } catch (e, st) {
+      AppDiagLog.verbose('resend-verification exception: $e\n$st');
+      return _failureFromCatch(e, 'POST /api/auth/resend-verification', uri);
+    }
+  }
+
   Future<AuthApiResult> registerFcmToken({required String token, required String authToken}) async {
     final uri = _u('/api/auth/fcm-token');
     try {
@@ -479,6 +500,13 @@ class AuthApiService {
       return AuthApiFailure(
           statusCode: status,
           errorKey: err,
+          message: msg,
+          fieldErrors: fieldErrs);
+    }
+    if (err == 'email_not_verified') {
+      return AuthApiFailure(
+          statusCode: status,
+          errorKey: 'email_not_verified',
           message: msg,
           fieldErrors: fieldErrs);
     }

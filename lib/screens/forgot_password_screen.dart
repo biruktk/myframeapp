@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/auth_api_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/validators.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
@@ -58,18 +59,26 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: Text(s.forgotPasswordTitle)),
+      backgroundColor: AppAuthTheme.bgLight,
+      appBar: AppBar(
+        title: Text(s.forgotPasswordTitle),
+        backgroundColor: Colors.white,
+      ),
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const SizedBox(height: 12),
               Text(
                 s.forgotPasswordDescription,
-                style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.4,
+                  color: Colors.grey.shade600,
+                ),
               ),
               const SizedBox(height: 24),
               TextField(
@@ -77,33 +86,66 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _submit(),
-                decoration: InputDecoration(
-                  labelText: s.emailLabel,
-                  border: const OutlineInputBorder(),
-                ),
                 enabled: !_busy && !_sent,
+                style: const TextStyle(fontSize: 15),
+                decoration: AppAuthTheme.inputStyle(
+                  label: s.emailLabel,
+                  icon: Icons.email_outlined,
+                ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               if (_sent)
                 Column(
                   children: [
-                    Icon(Icons.check_circle_outline, size: 48, color: cs.primary),
-                    const SizedBox(height: 12),
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 56,
+                      color: AppAuthTheme.primaryRed,
+                    ),
+                    const SizedBox(height: 16),
                     Text(
                       s.forgotPasswordSent,
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, color: cs.onSurfaceVariant),
+                      style: TextStyle(
+                        fontSize: 15,
+                        height: 1.4,
+                        color: Colors.grey.shade700,
+                      ),
                     ),
                   ],
                 )
               else
-                FilledButton(
-                  onPressed: _busy ? null : _submit,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: _busy ? null : _submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppAuthTheme.primaryRed,
+                      foregroundColor: Colors.white,
+                      elevation: 2,
+                      shadowColor: AppAuthTheme.primaryRed.withOpacity(0.3),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: _busy
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            s.forgotPasswordSend,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
-                  child: Text(_busy ? s.authBusyLabel : s.forgotPasswordSend),
                 ),
             ],
           ),

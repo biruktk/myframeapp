@@ -6,6 +6,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'permission_gate.dart';
 
+const int kMaxMultiPick = 10;
+
 /// Shared gallery multi-pick; avoids reopening picker on iOS cancel.
 class GalleryPhotoPicker {
   GalleryPhotoPicker._();
@@ -21,15 +23,32 @@ class GalleryPhotoPicker {
         if (!next.isGranted && !next.isLimited) return [];
       }
       final picker = ImagePicker();
-      var list = await picker.pickMultiImage();
+      var list = await picker.pickMultiImage(
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1080,
+      );
       // iOS returns [] when user cancels — do not open single-image picker.
       if (list.isEmpty && Platform.isAndroid) {
         final one = await picker.pickImage(
           source: ImageSource.gallery,
-          maxWidth: 4096,
-          maxHeight: 4096,
+          imageQuality: 85,
+          maxWidth: 1920,
+          maxHeight: 1080,
         );
         if (one != null) list = [one];
+      }
+      if (list.length > kMaxMultiPick) {
+        list = list.sublist(0, kMaxMultiPick);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text('Max 10 images can be selected at a time.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
       }
       return list;
     } finally {

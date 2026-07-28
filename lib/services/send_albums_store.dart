@@ -26,13 +26,22 @@ class SendAlbumsStore {
   static final SendAlbumsStore instance = SendAlbumsStore._();
 
   static const _k = 'send_albums_v1';
+  static const _kAuthUserId = 'settings_auth_user_id';
+
+  static Future<String> _scopedKey() async {
+    final p = await SharedPreferences.getInstance();
+    final uid = p.getString(_kAuthUserId) ?? 'guest';
+    return '${_k}_$uid';
+  }
+
   List<SendAlbumEntry> _albums = [];
 
   List<SendAlbumEntry> get albums => List.unmodifiable(_albums);
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
-    final raw = p.getString(_k);
+    final key = await _scopedKey();
+    final raw = p.getString(key);
     if (raw == null || raw.isEmpty) {
       _albums = [];
       return;
@@ -118,6 +127,7 @@ class SendAlbumsStore {
 
   Future<void> _persist() async {
     final p = await SharedPreferences.getInstance();
-    await p.setString(_k, jsonEncode(_albums.map((e) => e.toJson()).toList()));
+    final key = await _scopedKey();
+    await p.setString(key, jsonEncode(_albums.map((e) => e.toJson()).toList()));
   }
 }

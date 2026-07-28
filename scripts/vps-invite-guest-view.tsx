@@ -14,12 +14,59 @@ type Props = {
   code: string;
 };
 
+type Lang = "zh" | "en";
+
+const COPY: Record<Lang, Record<string, string>> = {
+  zh: {
+    title: "发送照片",
+    subtitle: "您收到一个照片发送邀请，请选择并上传照片至艺术相框。",
+    frameLabel: "相框设备",
+    loading: "正在加载邀请信息…",
+    invalid: "此邀请链接无效或已过期。",
+    loadError: "无法加载邀请信息，请检查网络连接。",
+    uploadBtn: "选择照片并发送",
+    sending: "发送中…",
+    successDelivered: "照片已成功发送！稍后将显示在相框上。",
+    successReceived: "照片已接收！相框在线后将立即显示。",
+    uploadError: "上传失败，请重试。",
+    qrAlt: "邀请二维码",
+  },
+  en: {
+    title: "Send a photo",
+    subtitle: "You were invited to send a picture to a MyFrame device. Choose a photo below.",
+    frameLabel: "Frame",
+    loading: "Loading invite…",
+    invalid: "This invite link is invalid or expired.",
+    loadError: "Could not load invite. Check your connection.",
+    uploadBtn: "Choose photo & send",
+    sending: "Sending…",
+    successDelivered: "Photo sent! It should appear on the frame shortly.",
+    successReceived: "Photo received! The frame will show it when online.",
+    uploadError: "Upload failed. Please try again.",
+    qrAlt: "Invite QR code",
+  },
+};
+
+function detectLocale(): Lang {
+  if (typeof window === "undefined") return "zh";
+  const params = new URLSearchParams(window.location.search);
+  const lang = params.get("lang");
+  if (lang === "zh") return "zh";
+  if (lang === "en") return "en";
+  const browserLang = (navigator.language || "").toLowerCase();
+  if (browserLang.startsWith("zh")) return "zh";
+  return "zh";
+}
+
 const API_BASE =
   typeof window !== "undefined" && window.location.hostname === "myframe.ink"
     ? "https://myframe.ink"
     : "http://128.241.231.234:3001";
 
 export function InviteGuestView({ code }: Props) {
+  const lang = detectLocale();
+  const t = (key: string) => COPY[lang][key] ?? COPY.en[key] ?? key;
+
   const [info, setInfo] = useState<InviteInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -34,13 +81,13 @@ export function InviteGuestView({ code }: Props) {
         const data = (await res.json()) as InviteInfo;
         if (!cancelled) {
           if (!res.ok || !data.ok) {
-            setError("This invite link is invalid or expired.");
+            setError(t("invalid"));
           } else {
             setInfo(data);
           }
         }
       } catch {
-        if (!cancelled) setError("Could not load invite. Check your connection.");
+        if (!cancelled) setError(t("loadError"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -48,7 +95,7 @@ export function InviteGuestView({ code }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [code]);
+  }, [code, t]);
 
   const onPickPhoto = useCallback(
     async (file: File | null) => {
@@ -65,21 +112,17 @@ export function InviteGuestView({ code }: Props) {
         });
         const data = (await res.json()) as { ok?: boolean; error?: string; delivered_to_frame?: boolean };
         if (!res.ok || !data.ok) {
-          setError(data.error || "Upload failed. Please try again.");
+          setError(data.error || t("uploadError"));
           return;
         }
-        setMessage(
-          data.delivered_to_frame
-            ? "Photo sent! It should appear on the frame shortly."
-            : "Photo received! The frame will show it when online.",
-        );
+        setMessage(data.delivered_to_frame ? t("successDelivered") : t("successReceived"));
       } catch {
-        setError("Upload failed. Please try again.");
+        setError(t("uploadError"));
       } finally {
         setUploading(false);
       }
     },
-    [code, info?.ok],
+    [code, info?.ok, t],
   );
 
   const qrSrc = `${API_BASE}/api/invite/${encodeURIComponent(code)}/qr`;
@@ -95,13 +138,13 @@ export function InviteGuestView({ code }: Props) {
     >
       <div style={{ maxWidth: 420, margin: "0 auto" }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 8px", color: "#111" }}>
-          Send a photo
+          {t("title")}
         </h1>
         <p style={{ margin: "0 0 20px", color: "#666", fontSize: 14, lineHeight: 1.5 }}>
-          You were invited to send a picture to a MyFrame device. Choose a photo below.
+          {t("subtitle")}
         </p>
 
-        {loading && <p style={{ color: "#666" }}>Loading invite…</p>}
+        {loading && <p style={{ color: "#666" }}>{t("loading")}</p>}
 
         {!loading && error && (
           <p style={{ color: "#dc2626", background: "#fef2f2", padding: 12, borderRadius: 8 }}>{error}</p>
@@ -118,7 +161,7 @@ export function InviteGuestView({ code }: Props) {
                 boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
               }}
             >
-              <p style={{ margin: 0, fontSize: 13, color: "#888" }}>Frame</p>
+              <p style={{ margin: 0, fontSize: 13, color: "#888" }}>{t("frameLabel")}</p>
               <p style={{ margin: "4px 0 0", fontWeight: 700, fontSize: 16 }}>
                 {info.frameName || info.frameMac}
               </p>
@@ -134,7 +177,7 @@ export function InviteGuestView({ code }: Props) {
                 boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
               }}
             >
-              <img src={qrSrc} alt="Invite QR code" width={200} height={200} style={{ display: "block", margin: "0 auto" }} />
+              <img src={qrSrc} alt={t("qrAlt")} width={200} height={200} style={{ display: "block", margin: "0 auto" }} />
               <p style={{ fontSize: 12, color: "#888", marginTop: 12, wordBreak: "break-all" }}>{info.inviteUrl}</p>
             </div>
 
@@ -152,7 +195,7 @@ export function InviteGuestView({ code }: Props) {
                 opacity: uploading ? 0.7 : 1,
               }}
             >
-              {uploading ? "Sending…" : "Choose photo & send"}
+              {uploading ? t("sending") : t("uploadBtn")}
               <input
                 type="file"
                 accept="image/*"

@@ -128,12 +128,12 @@ class BlufiProvisioningService {
           await _connectWithRetry(remote);
           _d('connected state=${remote.isConnected} mtu=${remote.mtuNow}');
           _d('discoverServices (timeout 12s)…');
-          final services = await remote.discoverServices(timeout: 12);
+          var services = await remote.discoverServices(timeout: 12);
           _d(
             'discovered ${services.length} primary service(s): '
             '${services.map((s) => s.uuid.str).join(", ")}',
           );
-          final picked = _pickProvisionGatt(services, paired);
+          var picked = _pickProvisionGatt(services, paired);
           if (picked == null) {
             _d(
               'no provisioning write char on ${remote.remoteId.str} — try next candidate',
@@ -169,14 +169,39 @@ class BlufiProvisioningService {
           }
 
           _d('starting BluFi Wi‑Fi provisioning flow');
-          final ack = await _sendBlufiStaFrames(
-            writeChar: picked.write,
-            services: services,
-            preferredNotify: picked.notifyGuid,
-            ssid: ssid,
-            password: password,
-            startSeq: blufiStaStartSeq,
-          );
+          var ack = false;
+          for (var retry = 1; retry <= 3; retry++) {
+            if (retry > 1) {
+              _d('wi‑fi send retry=$retry — reconnecting');
+              await Future<void>.delayed(const Duration(seconds: 1) * retry);
+              try {
+                await remote.disconnect();
+              } catch (_) {}
+              await _connectWithRetry(remote);
+              final s = await remote.discoverServices(timeout: 12);
+              final p = _pickProvisionGatt(s, paired);
+              if (p == null) break;
+              picked = p;
+              services = s;
+              if (sendMqttFirst) {
+                blufiStaStartSeq = await deliverMqttConfig(
+                  services: services,
+                  fallbackWrite: picked!.write,
+                  cfg: selfHostedMqtt!,
+                );
+              }
+            }
+            ack = await _sendBlufiStaFrames(
+              writeChar: picked!.write,
+              services: services,
+              preferredNotify: picked!.notifyGuid,
+              ssid: ssid,
+              password: password,
+              startSeq: blufiStaStartSeq,
+            );
+            if (ack) break;
+            _d('wi‑fi send attempt $retry failed, retrying…');
+          }
           // EspBluFi order: mqtt_config only before Wi‑Fi (scan / manual config session), never after STA connect.
           if (ack && serverConfigAlreadySent) {
             _d(

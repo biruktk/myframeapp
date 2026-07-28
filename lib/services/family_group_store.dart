@@ -247,25 +247,21 @@ class FamilyGroupStore {
     }
   }
 
-  Future<void> addMemberByName(String displayName) async {
-    final name = displayName.trim();
-    if (name.isEmpty) return;
-    members.add(FamilyMember(
-      id: 'm_${DateTime.now().millisecondsSinceEpoch}',
-      displayName: name,
-      role: FamilyRoles.member,
-    ));
-    await _persistOwn();
-  }
+  Future<void> removeMember(String id, {String? apiOrigin, String? token}) async {
+    final idx = members.indexWhere((e) => e.id == id);
+    if (idx < 0) return;
+    if (members[idx].role == FamilyRoles.owner) return;
 
-  Future<void> removeMember(String id) async {
-    if (id.startsWith('m_')) {
-      final idx = members.indexWhere((e) => e.id == id);
-      if (idx < 0) return;
-      if (members[idx].role == FamilyRoles.owner) return;
-      members.removeAt(idx);
-      await _persistOwn();
+    if (cloudSynced && (apiOrigin?.isNotEmpty ?? false) && (token?.isNotEmpty ?? false)) {
+      try {
+        await FamilyRemoteApi(baseUrl: apiOrigin!, token: token!).removeMember(id);
+      } catch (_) {
+        // fall through — still remove locally
+      }
     }
+
+    members.removeAt(idx);
+    await _persistOwn();
   }
 
   Future<JoinFamilyResult> joinWithCode(

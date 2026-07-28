@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'wifi_credential_cache.dart';
+import 'frame_api_client.dart';
 
 import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
@@ -48,6 +49,7 @@ class DeviceStore {
   static const kPairedFrameMac = 'pairedFrameMac';
 
   List<PairedFrame> _frames = [];
+  List<Map<String, dynamic>> _serverFrames = [];
   String? _pairedFrameMac;
   String? _activeDeviceId;
 
@@ -58,6 +60,20 @@ class DeviceStore {
 
   /// Frames shown on **My Frames** (order preserved).
   List<PairedFrame> get pairedFrames => List.unmodifiable(_frames);
+
+  /// Server-synced frames (shared via family, not BLE-paired locally).
+  List<Map<String, dynamic>> get serverFrames => List.unmodifiable(_serverFrames);
+
+  /// Sync frames from `GET /api/frames` into [serverFrames].
+  Future<void> syncServerFrames({String? bearerToken}) async {
+    try {
+      final api = FrameApiClient();
+      final frames = await api.fetchFrames(bearerToken: bearerToken);
+      _serverFrames = frames;
+    } catch (_) {
+      _serverFrames = [];
+    }
+  }
 
   /// 12-hex MAC from BLE name (`IJ_…`) for `/api/frames/:mac/*` — never hardcode.
   String? get pairedFrameMac => _pairedFrameMac?.trim().isNotEmpty == true

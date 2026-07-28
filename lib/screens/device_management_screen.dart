@@ -6,7 +6,6 @@ import '../navigation/pairing_flow_nav.dart';
 import '../services/device_store.dart';
 import '../services/usage_metrics_store.dart';
 import '../services/app_release_guard.dart';
-import '../widgets/firmware_update_panel.dart';
 import 'device_discovery_screen.dart';
 import 'frame_profile_setup_screen.dart';
 
@@ -110,7 +109,6 @@ class _DeviceManagementScreenState extends State<DeviceManagementScreen> {
           Card(
             child: Column(
               children: [
-                _detailTile(context, icon: Icons.tag, title: 'Device ID', value: p?.deviceId ?? '--'),
                 ListTile(
                   leading: Icon(Icons.edit_outlined, color: cs.primary),
                   title: Text(s.frameNameLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -145,31 +143,16 @@ class _DeviceManagementScreenState extends State<DeviceManagementScreen> {
                           if (mounted) await _load();
                         },
                 ),
-                _detailTile(context, icon: Icons.link, title: 'API URL', value: p?.apiUrl ?? '--'),
-                _detailTile(context, icon: Icons.wifi, title: 'Wi-Fi SSID', value: p?.wifiSsid ?? '--'),
-                _detailTile(context, icon: Icons.person_outline, title: 'Wi-Fi user', value: p?.wifiUsername ?? '--'),
-                _detailTile(context, icon: Icons.memory, title: 'BLE Service', value: p?.bleServiceUuid ?? '--'),
-                _detailTile(context, icon: Icons.settings_ethernet, title: 'BLE Data Char', value: p?.bleDataCharUuid ?? '--'),
+
               ],
             ),
           ),
           const SizedBox(height: 12),
-          Text(s.deviceSectionFirmware, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          const FirmwareUpdatePanel(compact: true),
         ],
       ),
     );
   }
 
-  Widget _detailTile(BuildContext context, {required IconData icon, required String title, required String value}) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(icon, color: cs.primary),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: Text(value, style: const TextStyle(fontFamily: 'monospace')),
-    );
-  }
 }
 
 class _Metric extends StatelessWidget {

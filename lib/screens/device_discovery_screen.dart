@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
+
 
 import 'package:app_settings/app_settings.dart';
 import 'package:flutter/material.dart';
@@ -75,14 +75,10 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
   StreamSubscription<BluetoothConnectionState>? _connSub;
   StreamSubscription<List<int>>? _notifySub;
   Timer? _scanRetryTimer;
-  DateTime? _lastRxAt;
   late final AnimationController _sweepCtrl;
   late final AnimationController _pulseCtrl;
-  String? _lastDetectedId;
   BluetoothDevice? _connectedDevice;
-  String? _connectedDeviceId;
   String? _connectingDeviceId;
-  int _receivedBytes = 0;
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
   bool _scanning = false;
   bool _startingScan = false;
@@ -321,7 +317,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
           _found[key] = r;
           changed = true;
           if (firstSeen) {
-            _lastDetectedId = key;
             _pulseCtrl
               ..stop()
               ..forward(from: 0);
@@ -386,11 +381,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     await Future<void>.delayed(const Duration(milliseconds: 400));
     if (!mounted || _scanSuspended) return;
     await _startUserBleScan(clearList: true);
-  }
-
-  Future<void> _manualStopScan() async {
-    await _stopUserScan();
-    if (mounted) setState(() => _scanning = false);
   }
 
   Future<void> _selectRow(_BleTileRow row) async {
@@ -494,7 +484,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     try {
       setState(() {
         _connectedDevice = device;
-        _connectedDeviceId = device.remoteId.str;
       });
       AppDiagLog.verbose('[BLE] GATT connect (15s timeout)…');
       await device.connect(timeout: const Duration(seconds: 15));
@@ -507,12 +496,10 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         if (state == BluetoothConnectionState.disconnected) {
           setState(() {
             _connectedDevice = null;
-            _connectedDeviceId = null;
           });
         } else {
           setState(() {
             _connectedDevice = device;
-            _connectedDeviceId = device.remoteId.str;
           });
         }
       });
@@ -539,10 +526,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
             if (!mounted) return;
             if (data.isEmpty) return;
             AppDiagLog.verbose('[BLE] notify rx ${data.length} bytes');
-            setState(() {
-              _lastRxAt = DateTime.now();
-              _receivedBytes += data.length;
-            });
+            // data received
           });
         } catch (e) {
           AppDiagLog.verbose(
@@ -559,7 +543,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
       if (!mounted) return false;
       setState(() {
         _connectedDevice = null;
-        _connectedDeviceId = null;
       });
       try {
         if (device.isConnected) await device.disconnect();
@@ -575,7 +558,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     _connSub = null;
     final d = _connectedDevice;
     _connectedDevice = null;
-    _connectedDeviceId = null;
     if (d != null) {
       try {
         if (d.isConnected) {
@@ -601,19 +583,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     final cs = Theme.of(context).colorScheme;
     final items = _buildRows();
     final perm = _permOutcome;
-    final isBtOn = _adapterState == BluetoothAdapterState.on;
-    final receiving = _lastRxAt != null &&
-        DateTime.now().difference(_lastRxAt!) < const Duration(seconds: 3);
-    final connected = _connectedDevice?.isConnected == true;
-    final liveStatus = !isBtOn
-        ? 'Bluetooth Off'
-        : receiving
-            ? 'Receiving Data'
-            : connected
-                ? 'Connected'
-                : _scanning
-                    ? s.bleScanningEllipsis
-                    : 'Idle';
     final permissionTitle = Platform.isIOS
         ? 'Bluetooth access required on iPhone'
         : s.blePermissionNearbyTitle;
@@ -694,120 +663,87 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
             ),
             const SizedBox(height: 12),
           ],
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  cs.primary.withValues(alpha: 0.12),
-                  cs.surfaceContainerHighest,
+          // Circular Radar Sweep with "MY" Center Badge
+          Center(
+            child: SizedBox(
+              height: 200,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  RotationTransition(
+                    turns: _sweepCtrl,
+                    child: Container(
+                      width: 200,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: const SweepGradient(
+                          colors: [
+                            Color(0xFFE53935),
+                            Colors.transparent,
+                          ],
+                          stops: [0.0, 0.4],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 150,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFE53935).withOpacity(0.15),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFFE53935).withOpacity(0.25),
+                        width: 1.5,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Text(
+                        "MY",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              border: Border.all(color: cs.primary.withValues(alpha: 0.28)),
             ),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 190,
-                  child: AnimatedBuilder(
-                    animation: Listenable.merge([_sweepCtrl, _pulseCtrl]),
-                    builder: (context, _) {
-                      return _RadarScanner(
-                        sweepT: _sweepCtrl.value,
-                        pulseT: _pulseCtrl.value,
-                        active: _scanning,
-                        color: cs.primary,
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (_scanning) ...[
-                      const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 10),
-                    ],
-                    Text(
-                      liveStatus,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w800, fontSize: 16),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  s.scanDeviceBody,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: cs.onSurfaceVariant, fontSize: 12, height: 1.35),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: (_startingScan || _scanSuspended)
-                          ? null
-                          : () => unawaited(_manualStopScan()),
-                      icon: const Icon(Icons.stop_circle_outlined),
-                      label: Text(s.bleStopScan),
-                    ),
-                    FilledButton.tonalIcon(
-                      onPressed: (_startingScan || _scanSuspended)
-                          ? null
-                          : () => unawaited(_manualRestartScan()),
-                      icon: const Icon(Icons.restart_alt),
-                      label: Text(s.bleRestartScan),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _chip(context,
-                        icon: Icons.bluetooth_searching,
-                        text: _scanning ? s.bleScanningEllipsis : 'Scan idle'),
-                    _chip(context,
-                        icon: Icons.devices, text: '${items.length} nearby'),
-                    if (_lastDetectedId != null)
-                      _chip(context,
-                          icon: Icons.check_circle, text: 'Detected'),
-                    if (connected)
-                      _chip(context, icon: Icons.link, text: 'Connected'),
-                    if (receiving)
-                      _chip(context, icon: Icons.sync, text: 'Receiving'),
-                  ],
-                ),
-                if (AppDiagLog.isDebugEnabled && perm != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Adapter: ${_adapterState.name} · Perms granted: ${perm.allGranted}',
-                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 11),
-                  ),
-                ],
-                if (AppDiagLog.isDebugEnabled && _connectedDeviceId != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Device: $_connectedDeviceId · Rx $_receivedBytes B',
-                    style: TextStyle(color: cs.onSurfaceVariant, fontSize: 12),
-                  ),
-                ],
-              ],
+          ),
+          const SizedBox(height: 28),
+          Text(
+            _scanning ? "正在扫描附近相框" : "扫描完成",
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
             ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            "正在搜索 MyFrame 蓝牙相框",
+            style: TextStyle(fontSize: 14, color: Colors.grey),
           ),
           const SizedBox(height: 12),
           if (_scanning) const LinearProgressIndicator(minHeight: 3),
@@ -861,12 +797,47 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
           if (!_scanning &&
               items.isEmpty &&
               (_permOutcome?.allGranted ?? false) &&
-              _error == null)
-            ListTile(
-              leading: const Icon(Icons.bluetooth_searching),
-              title: Text(s.noDeviceFoundTitle),
-              subtitle: Text(s.noDeviceFoundBody),
+              _error == null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                "未找到相框，请确认相框处于配对模式。长按按钮 3 秒，直到指示灯闪烁。",
+                style: TextStyle(
+                  color: Color(0xFFE53935),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
             ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton(
+                onPressed: _manualRestartScan,
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  side: BorderSide(color: Colors.grey.shade300),
+                ),
+                child: const Text(
+                  "重新扫描",
+                  style: TextStyle(
+                    color: Colors.black87,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
           for (final row in items)
             Card(
               child: Padding(
@@ -947,29 +918,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     );
   }
 
-  Widget _chip(BuildContext context,
-      {required IconData icon, required String text}) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: cs.primary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: cs.primary),
-          const SizedBox(width: 6),
-          Text(text,
-              style: TextStyle(
-                  color: cs.primary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12)),
-        ],
-      ),
-    );
-  }
 }
 
 class _RssiStrengthBar extends StatelessWidget {
@@ -1000,107 +948,5 @@ class _RssiStrengthBar extends StatelessWidget {
         );
       }),
     );
-  }
-}
-
-class _RadarScanner extends StatelessWidget {
-  const _RadarScanner({
-    required this.sweepT,
-    required this.pulseT,
-    required this.active,
-    required this.color,
-  });
-
-  final double sweepT;
-  final double pulseT;
-  final bool active;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final sweepAngle = sweepT * 2 * math.pi;
-    final pulseScale = 1 + (0.06 * Curves.easeOut.transform(pulseT));
-    return Center(
-      child: Transform.scale(
-        scale: pulseScale,
-        child: SizedBox(
-          width: 188,
-          height: 188,
-          child: CustomPaint(
-            painter: _RadarPainter(
-              color: color,
-              sweepAngle: sweepAngle,
-              pulse: pulseT,
-              active: active,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RadarPainter extends CustomPainter {
-  _RadarPainter({
-    required this.color,
-    required this.sweepAngle,
-    required this.pulse,
-    required this.active,
-  });
-
-  final Color color;
-  final double sweepAngle;
-  final double pulse;
-  final bool active;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = Offset(size.width / 2, size.height / 2);
-    final r = size.width / 2;
-    final base = Paint()
-      ..style = PaintingStyle.stroke
-      ..color = color.withValues(alpha: 0.22)
-      ..strokeWidth = 1.2;
-    canvas.drawCircle(c, r, base);
-    canvas.drawCircle(c, r * 0.74, base);
-    canvas.drawCircle(c, r * 0.48, base);
-    canvas.drawCircle(c, r * 0.22, base);
-
-    final axis = Paint()
-      ..color = color.withValues(alpha: 0.16)
-      ..strokeWidth = 1;
-    canvas.drawLine(Offset(c.dx - r, c.dy), Offset(c.dx + r, c.dy), axis);
-    canvas.drawLine(Offset(c.dx, c.dy - r), Offset(c.dx, c.dy + r), axis);
-
-    final sweepRect = Rect.fromCircle(center: c, radius: r);
-    final sweep = Paint()
-      ..style = PaintingStyle.fill
-      ..shader = SweepGradient(
-        startAngle: sweepAngle - 0.9,
-        endAngle: sweepAngle + 0.28,
-        colors: [
-          color.withValues(alpha: 0.00),
-          color.withValues(alpha: active ? 0.12 : 0.04),
-          color.withValues(alpha: active ? 0.48 : 0.12),
-        ],
-      ).createShader(sweepRect);
-    canvas.drawCircle(c, r, sweep);
-
-    final pingPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = color.withValues(alpha: (1 - pulse) * 0.45);
-    canvas.drawCircle(c, r * (0.18 + pulse * 0.72), pingPaint);
-
-    final dot = Paint()..color = color.withValues(alpha: active ? 1 : 0.5);
-    canvas.drawCircle(c, 4, dot);
-  }
-
-  @override
-  bool shouldRepaint(covariant _RadarPainter oldDelegate) {
-    return oldDelegate.sweepAngle != sweepAngle ||
-        oldDelegate.pulse != pulse ||
-        oldDelegate.active != active ||
-        oldDelegate.color != color;
   }
 }

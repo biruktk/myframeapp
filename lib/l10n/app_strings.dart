@@ -560,12 +560,12 @@ class AppStrings {
     ja: '電源',
   );
   String get onboardStepPowerBody => _l6(
-    en: 'Hold power 3 seconds.',
-    zh: '长按电源 3 秒。',
-    es: 'Mantén encendido 3 s.',
-    fr: 'Maintenez power 3 s.',
-    de: 'Power 3 s halten.',
-    ja: '電源を 3 秒長押し。',
+    en: 'Hold power 5 seconds.',
+    zh: '长按电源 5 秒。',
+    es: 'Mantén encendido 5 s.',
+    fr: 'Maintenez power 5 s.',
+    de: 'Power 5 s halten.',
+    ja: '電源を 5 秒長押し。',
   );
   String get onboardStepPairTitle => _l6(
     en: 'Pairing',
@@ -639,6 +639,14 @@ class AppStrings {
     de: 'Alles klar',
     ja: '了解',
   );
+  String get coachResend => _l6(
+    en: 'Resend Email',
+    zh: '重新发送',
+    es: 'Reenviar correo',
+    fr: 'Renvoyer l\'e-mail',
+    de: 'E-Mail erneut senden',
+    ja: '再送信',
+  );
 
   String get myFramesTitle => _l6(
     en: 'My Frames',
@@ -649,12 +657,12 @@ class AppStrings {
     ja: 'マイフレーム',
   );
   String get myFramesSubtitle => _l6(
-    en: 'Manage your AI Ink-Screen Photo Frames.',
-    zh: '管理您的 AI 墨水屏相框。',
-    es: 'Gestiona tus marcos de tinta con IA.',
-    fr: 'Gérez vos cadres encre IA.',
-    de: 'Verwalten Sie Ihre KI‑Tintenrahmen.',
-    ja: 'AI 電子ペーパーのフォトフレームを管理します。',
+    en: 'Manage your AI artistic photo frames.',
+    zh: '管理您的 AI 艺术相框。',
+    es: 'Gestiona tus marcos artísticos con IA.',
+    fr: 'Gérez vos cadres artistiques IA.',
+    de: 'Verwalten Sie Ihre KI-Kunstbilderrahmen.',
+    ja: 'AI アートフォトフレームを管理します。',
   );
   String get activeFrameLabel => _l6(
     en: 'Active',
@@ -679,12 +687,28 @@ class AppStrings {
           .replaceAll('{online}', '$online')
           .replaceAll('{offline}', '$offline');
   String get frameModelDefault => _l6(
-    en: 'InkFrame 10',
-    zh: 'InkFrame 10',
-    es: 'InkFrame 10',
-    fr: 'InkFrame 10',
-    de: 'InkFrame 10',
-    ja: 'InkFrame 10',
+    en: 'artistic frame',
+    zh: '艺术相框',
+    es: 'marco artístico',
+    fr: 'cadre artistique',
+    de: 'Kunstbilderrahmen',
+    ja: 'アートフレーム',
+  );
+  String get statusFrame => _l6(
+    en: 'Frame',
+    zh: '台相框',
+    es: 'marco',
+    fr: 'cadre',
+    de: 'Rahmen',
+    ja: '台',
+  );
+  String get statusFrames => _l6(
+    en: 'Frames',
+    zh: '台相框',
+    es: 'marcos',
+    fr: 'cadres',
+    de: 'Rahmen',
+    ja: '台',
   );
   String get statusOnline => _l6(
     en: 'Online',

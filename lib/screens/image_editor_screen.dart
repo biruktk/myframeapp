@@ -12,6 +12,7 @@ import 'package:image/image.dart' as img;
 import '../config/api_config.dart';
 import 'package:path/path.dart' as p;
 
+import '../services/account_sync_service.dart';
 import '../services/device_store.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/personal_gallery_store.dart';
@@ -51,12 +52,12 @@ class _PerImageState {
   img.Image? decoded;
   final Uint8List originalBytes;
   int quarterTurns = 0;
-  double brightness = 0, contrast = 0, saturation = 0;
+  double brightness = 0, contrast = 30, saturation = 0;
   FrameImageFilter filter = FrameImageFilter.none;
   bool oDate = false, oLocation = false, oGreeting = false, oWeather = false;
   String overlayText = '';
   int textColor = 1;
-  double textSize = 38;
+  double textSize = 24;
   String? selectedSticker;
   double stickerAlignX = 0.35, stickerAlignY = -0.15, stickerSize = 28;
   String cropAspect = '3:4';
@@ -293,6 +294,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       _castProgress = 1;
       _castProgressIndeterminate = false;
     });
+    unawaited(AccountSyncService.instance.afterUpload());
     unawaited(UsageMetricsStore.instance.markPhotoSentNow());
     unawaited(
       InAppNotificationStore.instance.photoSent(
@@ -310,13 +312,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       );
     }
 
-    // Show beautiful success overlay, then go Home
+    // Show beautiful success overlay, then switch to Send tab
     await _showSendSuccessOverlay(status);
     if (!mounted) return;
 
     _leaveEditorAfterSend();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ShellNavigation.goToTab(0);
+      ShellNavigation.switchToSend();
     });
   }
 
@@ -365,17 +367,17 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                   const Text(
                     'Sent Successfully!',
                     style: TextStyle(
-                      fontSize: 24,
+                      fontSize: 20,
                       fontWeight: FontWeight.w700,
                       color: Color(0xFF1C1C1E),
-                      letterSpacing: -0.4,
+                      letterSpacing: -0.3,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     'to $frameName',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w500,
                       color: Colors.grey.shade600,
                     ),
@@ -475,7 +477,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   void _leaveEditorAfterSend() {
     if (!mounted) return;
-    Navigator.of(context).pop(true);
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   @override
@@ -486,6 +488,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     _slideshow = cached?.slideshow ?? widget.slideshow;
     _overlayText = TextEditingController();
     _overlayText.addListener(_onOverlayTextChanged);
+
+    if (widget.displaySeconds >= 60) {
+      _playlistIntervalMinutes = widget.displaySeconds ~/ 60;
+    }
 
     if (_isPlaylist) {
       _perStates = [];
@@ -506,7 +512,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       _oWeather = false;
       _weatherLine = '';
       _brightness = 0;
-      _contrast = 0;
+      _contrast = 30;
       _saturation = 0;
       _filter = FrameImageFilter.none;
       _quarterTurns = 0;
@@ -708,9 +714,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     final ov = _currentOverlay;
     return {
       'quarterTurns': _quarterTurns,
-      'brightness': 1.0 + _brightness * 0.35,
-      'contrast': 1.0 + _contrast * 0.45,
-      'saturation': 1.0 + _saturation * 0.45,
+      'brightness': 1.0 + (_brightness / 100) * 0.35,
+      'contrast': 1.0 + (_contrast / 100) * 0.45,
+      'saturation': 1.0 + (_saturation / 100) * 0.45,
       'filter': _filter.name,
       'flipH': _flipH,
       'flipV': _flipV,
@@ -764,9 +770,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     final locationTxt = paired?.frameName?.trim() ?? _strings?.frameDefaultDisplayName ?? '';
     return jsonEncode({
       'quarterTurns': s.quarterTurns,
-      'brightness': 1.0 + s.brightness * 0.35,
-      'contrast': 1.0 + s.contrast * 0.45,
-      'saturation': 1.0 + s.saturation * 0.45,
+      'brightness': 1.0 + (s.brightness / 100) * 0.35,
+      'contrast': 1.0 + (s.contrast / 100) * 0.45,
+      'saturation': 1.0 + (s.saturation / 100) * 0.45,
       'filter': s.filter.name,
       'flipH': s.flipH,
       'flipV': s.flipV,
@@ -896,9 +902,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           final previewArgs = FrameProcessOnlyArgs(
             imageBytes: state.originalBytes,
             quarterTurns: _quarterTurns,
-            brightness: 1.0 + _brightness * 0.35,
-            contrast: 1.0 + _contrast * 0.45,
-            saturation: 1.0 + _saturation * 0.45,
+            brightness: 1.0 + (_brightness / 100) * 0.35,
+            contrast: 1.0 + (_contrast / 100) * 0.45,
+            saturation: 1.0 + (_saturation / 100) * 0.45,
             filterIndex: _filter.index,
             overlay: _currentOverlay,
             locationText: _overlayLocationValue,
@@ -965,8 +971,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           );
         } on SlideshowPublishException catch (e) {
           AppDiagLog.verbose('[Playlist] VPS publish failed ${e.statusCode}: ${e.body}');
+          if (mounted) {
+            setState(() => _status = 'Slideshow publish returned ${e.statusCode}. Playlist will not auto-advance. ${e.body}');
+          }
         } catch (e) {
           AppDiagLog.verbose('[Playlist] VPS publish: $e');
+          if (mounted) {
+            setState(() => _status = 'Slideshow publish error: $e');
+          }
         }
 
         final albumId = widget.albumId?.trim();
@@ -1228,43 +1240,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               ? Center(child: Text(_status ?? s.noImage))
               : Column(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                      child: Row(
-                        children: [
-                          CupertinoButton(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            color: _einkPreviewOn ? _kEditorRed.withValues(alpha: 0.12) : const Color(0xFFF3F4F6),
-                            borderRadius: BorderRadius.circular(10),
-                            onPressed: () {
-                              setState(() => _einkPreviewOn = true);
-                              _showFastRealPreview();
-                            },
-                            child: Text(
-                              s.einkPreviewLabel,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: _einkPreviewOn ? _kEditorRed : const Color(0xFF374151),
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          CupertinoButton(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            onPressed: _clearEditorOverlays,
-                            child: Text(
-                              s.deleteAction,
-                              style: TextStyle(
-                                color: _kEditorRed,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+
                     if (_isPlaylist && _perStates != null && _perStates!.length > 1)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -1272,7 +1248,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SizedBox(
-                              height: 120,
+                              height: 160,
                               child: PageView.builder(
                                 controller: _pageController,
                                 onPageChanged: _onPageChanged,
@@ -1309,9 +1285,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                           builder: (context, constraints) {
                             final screenH = MediaQuery.sizeOf(context).height;
                             final maxH = keyboardOpen
-                                ? math.min(120.0, screenH * 0.16)
-                                : screenH * 0.30;
-                            final height = maxH.clamp(100.0, 280.0);
+                                ? math.min(160.0, screenH * 0.20)
+                                : screenH * 0.40;
+                            final height = maxH.clamp(140.0, 400.0);
                             return Center(
                               child: SizedBox(
                                 width: height * 3 / 4,
@@ -1344,6 +1320,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   // ─── Tool tab state ──────────────────────────────────────────────
   String _activeTool = 'filters';
+  bool _adjustmentsExpanded = false;
   bool _einkPreviewOn = true;
   final TransformationController _previewTransform = TransformationController();
 
@@ -1381,9 +1358,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     return FrameProcessOnlyArgs(
       imageBytes: _currentBytes,
       quarterTurns: _quarterTurns,
-      brightness: 1.0 + _brightness * 0.35,
-      contrast: 1.0 + _contrast * 0.45,
-      saturation: 1.0 + _saturation * 0.45,
+      brightness: 1.0 + (_brightness / 100) * 0.35,
+      contrast: 1.0 + (_contrast / 100) * 0.45,
+      saturation: 1.0 + (_saturation / 100) * 0.45,
       filterIndex: _filter.index,
       overlay: _currentOverlay,
       locationText: _overlayLocationValue,
@@ -1400,9 +1377,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     return ComposeUploadIsolateArgs(
       imageBytes: widget.imageBytes,
       quarterTurns: _quarterTurns,
-      brightness: 1.0 + _brightness * 0.35,
-      contrast: 1.0 + _contrast * 0.45,
-      saturation: 1.0 + _saturation * 0.45,
+      brightness: 1.0 + (_brightness / 100) * 0.35,
+      contrast: 1.0 + (_contrast / 100) * 0.45,
+      saturation: 1.0 + (_saturation / 100) * 0.45,
       filterIndex: _filter.index,
       overlay: _currentOverlay,
       locationText: _overlayLocationValue,
@@ -1440,9 +1417,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     return ComposeUploadIsolateArgs(
       imageBytes: s.originalBytes,
       quarterTurns: s.quarterTurns,
-      brightness: 1.0 + s.brightness * 0.35,
-      contrast: 1.0 + s.contrast * 0.45,
-      saturation: 1.0 + s.saturation * 0.45,
+      brightness: 1.0 + (s.brightness / 100) * 0.35,
+      contrast: 1.0 + (s.contrast / 100) * 0.45,
+      saturation: 1.0 + (s.saturation / 100) * 0.45,
       filterIndex: s.filter.index,
       overlay: ovr,
       locationText: locationTxt,
@@ -1457,7 +1434,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   // ─── Text state ───────────────────────────────────────────────────
   final _textController = TextEditingController();
-  double _textSize = 38;
+  double _textSize = 24;
   int _textColor = 1; // white
   bool _textBold = false;
   double _textRotation = 0;
@@ -1667,8 +1644,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     }
     final idx = _filter.index.clamp(0, _filterPreviewMatrices.length - 1);
     final matrix = _filterPreviewMatrices[idx];
-    final b = 1.0 + _brightness * 0.35;
-    final c = 1.0 + _contrast * 0.45;
+    final b = 1.0 + (_brightness / 100) * 0.35;
+    final c = 1.0 + (_contrast / 100) * 0.45;
     final t = (1.0 - c) * 128.0;
     final grade = ColorFilter.matrix(<double>[
       c, 0, 0, 0, t + (b - 1) * 40,
@@ -1889,7 +1866,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     );
   }
 
-  Widget _slider({
+  Widget _adjustmentSlider({
     required String label,
     required double value,
     required ValueChanged<double> onChanged,
@@ -1901,13 +1878,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
-            Text(value.toStringAsFixed(2)),
+            Text('${value.toInt()}'),
           ],
         ),
         Slider(
-          min: -1,
-          max: 1,
-          value: value.clamp(-1.0, 1.0),
+          min: -100,
+          max: 100,
+          value: value.clamp(-100.0, 100.0),
           onChanged: onChanged,
         ),
       ],
@@ -1923,25 +1900,20 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   ) {
     return Column(
       children: [
-        // Horizontal tool tabs
         SizedBox(
           height: 44,
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             children: [
-              _toolTab(s.filterLabel, 'filters', Icons.tune, cs),
-              _toolTab(s.cropLabel, 'crop', Icons.crop, cs),
-              _toolTab(s.weatherLabel, 'weather', Icons.wb_sunny_outlined, cs),
+              _toolTab('Filter', 'filters', Icons.filter, cs),
               _toolTab(s.dateLabel, 'date', Icons.date_range, cs),
               _toolTab(s.textLabel, 'text', Icons.text_fields, cs),
-              _toolTab(s.stickerLabel, 'stickers', Icons.emoji_emotions_outlined, cs),
               _toolTab(s.borderLabel, 'border', Icons.border_style, cs),
             ],
           ),
         ),
         const Divider(height: 1),
-        // Active tool panel
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1987,16 +1959,10 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   Widget _buildActiveToolPanel(AppStrings s, ColorScheme cs, Color primary) {
     switch (_activeTool) {
-      case 'crop':
-        return _buildCropPanel(s, cs, primary);
-      case 'weather':
-        return _buildWeatherPanel(s, cs);
       case 'date':
         return _buildDatePanel(s, cs);
       case 'text':
         return _buildTextPanel(s, cs, primary);
-      case 'stickers':
-        return _buildStickerPanel(s, cs);
       case 'border':
         return _buildBorderPanel(s, cs);
       default:
@@ -2005,6 +1971,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 
   Widget _buildFilterPanel(AppStrings s, ColorScheme cs, Color primary) {
+    const presetFilters = [
+      FrameImageFilter.none,
+      FrameImageFilter.contrast,
+      FrameImageFilter.cool,
+      FrameImageFilter.vivid,
+      FrameImageFilter.grayscale,
+    ];
+    const presetLabels = ['Original', 'Contrast', 'Cool', 'Vivid', 'B/W'];
     final matrices = _filterPreviewMatrices;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2013,12 +1987,12 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           height: 108,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: FrameImageFilter.values.length,
+            itemCount: presetFilters.length,
             separatorBuilder: (_, __) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              final f = FrameImageFilter.values[index];
+              final f = presetFilters[index];
               final sel = _filter == f;
-              final matrix = matrices[index];
+              final matrix = matrices[f.index];
               Widget thumb = Image.memory(
                 _currentBytes,
                 fit: BoxFit.cover,
@@ -2054,7 +2028,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        _filterLabel(f, s),
+                        presetLabels[index],
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -2070,37 +2044,65 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
             },
           ),
         ),
-        const SizedBox(height: 10),
-        _slider(
-          label: s.brightness,
-          value: _brightness,
-          onChanged: (v) {
-            setState(() {
-              _brightness = v;
-              _invalidateProcessCache();
-            });
-          },
+        const SizedBox(height: 12),
+        InkWell(
+          onTap: () => setState(() => _adjustmentsExpanded = !_adjustmentsExpanded),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Text(
+                  'Adjustments',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: cs.onSurface,
+                  ),
+                ),
+                const Spacer(),
+                Icon(
+                  _adjustmentsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                  size: 20,
+                  color: cs.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
         ),
-        _slider(
-          label: s.contrast,
-          value: _contrast,
-          onChanged: (v) {
-            setState(() {
-              _contrast = v;
-              _invalidateProcessCache();
-            });
-          },
-        ),
-        _slider(
-          label: s.saturation,
-          value: _saturation,
-          onChanged: (v) {
-            setState(() {
-              _saturation = v;
-              _invalidateProcessCache();
-            });
-          },
-        ),
+        if (_adjustmentsExpanded) ...[
+          const SizedBox(height: 4),
+          _adjustmentSlider(
+            label: 'Brightness',
+            value: _brightness,
+            onChanged: (v) {
+              setState(() {
+                _brightness = v;
+                _invalidateProcessCache();
+              });
+            },
+          ),
+          _adjustmentSlider(
+            label: 'Contrast',
+            value: _contrast,
+            onChanged: (v) {
+              setState(() {
+                _contrast = v;
+                _invalidateProcessCache();
+              });
+            },
+          ),
+          _adjustmentSlider(
+            label: 'Saturation',
+            value: _saturation,
+            onChanged: (v) {
+              setState(() {
+                _saturation = v;
+                _invalidateProcessCache();
+              });
+            },
+          ),
+        ],
       ],
     );
   }
@@ -2355,14 +2357,17 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               _invalidateProcessCache();
             });
           },
-          title: Text(s.showDateTimeLabel),
+          title: Text('Date'),
           contentPadding: EdgeInsets.zero,
           dense: true,
           activeTrackColor: _kEditorRed,
         ),
-        Text(
-          s.dateTimeHint,
-          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+        Padding(
+          padding: const EdgeInsets.only(left: 16),
+          child: Text(
+            'When on, the current date and time are added at the bottom of the frame.',
+            style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+          ),
         ),
       ],
     );
@@ -2391,7 +2396,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                 maxLines: 3,
                 style: const TextStyle(fontSize: 15),
                 decoration: InputDecoration(
-                  hintText: s.textHint,
+                  hintText: 'Happy BirthDay',
                   isDense: true,
                   border: const OutlineInputBorder(),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -2421,13 +2426,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                   _invalidateProcessCache();
                 });
               },
-              child: Text(s.addTextButton, style: const TextStyle(fontSize: 13)),
+              child: Text('Add Text', style: const TextStyle(fontSize: 13)),
             ),
           ],
         ),
         Row(
           children: [
-            Text(s.textSizePixels(_textSize.toInt()), style: const TextStyle(fontSize: 12)),
+            Text('${_textSize.toInt()}px', style: const TextStyle(fontSize: 12)),
             Expanded(
               child: Slider(
                 value: _textSize,
@@ -2486,27 +2491,6 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            ChoiceChip(
-              label: Text(s.boldLabel),
-              selected: _textBold,
-              onSelected: (v) => setState(() => _textBold = v),
-              selectedColor: _kEditorRed,
-              labelStyle: TextStyle(color: _textBold ? Colors.white : cs.onSurface),
-              showCheckmark: false,
-            ),
-            const SizedBox(width: 8),
-            _iconAction(Icons.rotate_left, '', () => setState(() => _textRotation -= 15)),
-            _iconAction(Icons.rotate_right, '', () => setState(() => _textRotation += 15)),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          s.textDragHint,
-          style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
         ),
       ],
     );
@@ -2950,18 +2934,18 @@ class _AnimatedCheckmarkState extends State<_AnimatedCheckmark>
             width: widget.size,
             height: widget.size,
             decoration: BoxDecoration(
-              gradient: const SweepGradient(
+              gradient: SweepGradient(
                 colors: [
-                  Color(0xFF34C759),
-                  Color(0xFF30D158),
-                  Color(0xFF28A745),
-                  Color(0xFF34C759),
+                  _kEditorRed,
+                  _kEditorRed.withValues(alpha: 0.85),
+                  _kEditorRed.withValues(alpha: 0.7),
+                  _kEditorRed,
                 ],
               ),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF34C759).withValues(alpha: 0.35),
+                  color: _kEditorRed.withValues(alpha: 0.35),
                   blurRadius: widget.size * 0.3,
                   offset: const Offset(0, 4),
                 ),
