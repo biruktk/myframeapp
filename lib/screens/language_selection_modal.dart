@@ -12,8 +12,6 @@ class LanguageSelectionModal extends StatefulWidget {
 class _LanguageSelectionModalState extends State<LanguageSelectionModal> {
   String _selectedCode = 'system';
 
-  static const _red = Color(0xFFE53935);
-
   final List<_LangItem> _languages = const [
     _LangItem('system', 'System Default (English)', '🌐'),
     _LangItem('zh', '简体中文 (Chinese)', '🇨🇳'),
@@ -27,31 +25,32 @@ class _LanguageSelectionModalState extends State<LanguageSelectionModal> {
   @override
   Widget build(BuildContext context) {
     final app = AppSettingsScope.of(context);
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Select Language / 选择语言',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: cs.onSurface),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Choose your preferred language to continue',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
           Flexible(
             child: ListView.separated(
               shrinkWrap: true,
               itemCount: _languages.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFEEEEEE)),
+              separatorBuilder: (_, __) => Divider(height: 1, color: cs.outlineVariant),
               itemBuilder: (context, index) {
                 final item = _languages[index];
                 final isSelected = _selectedCode == item.code;
@@ -63,12 +62,12 @@ class _LanguageSelectionModalState extends State<LanguageSelectionModal> {
                     item.name,
                     style: TextStyle(
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected ? _red : Colors.black87,
+                      color: isSelected ? cs.primary : cs.onSurface,
                       fontSize: 15,
                     ),
                   ),
                   trailing: isSelected
-                      ? const Icon(Icons.check_circle, color: _red, size: 20)
+                      ? Icon(Icons.check_circle, color: cs.primary, size: 20)
                       : null,
                   onTap: () async {
                     setState(() => _selectedCode = item.code);

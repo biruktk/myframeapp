@@ -3,7 +3,7 @@
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
 # Must be >= the Runner target in Xcode and >= each plugin's minimum (raise if `pod install` warns).
-platform :ios, '13.0'
+platform :ios, '15.0'
 
 project 'Runner', {
   'Debug' => :debug,
@@ -47,6 +47,7 @@ post_install do |installer|
       definitions << 'PERMISSION_CAMERA=1'
       definitions << 'PERMISSION_PHOTOS=1'
       definitions << 'PERMISSION_LOCATION=1'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
     end
   end
 end

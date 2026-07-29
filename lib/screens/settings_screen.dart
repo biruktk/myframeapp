@@ -171,18 +171,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7F9),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(s.settingsTitle, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black)),
+        title: Text(s.settingsTitle, style: TextStyle(fontWeight: FontWeight.bold, color: cs.onSurface)),
         backgroundColor: Colors.transparent,
         elevation: 0,
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
-          _sectionHeader(s.settingsSectionAccount),
-          _buildGroup([
+          _sectionHeader(s.settingsSectionAccount, cs),
+          _buildGroup(cs, [
             _tile(
+              context: context,
               icon: Icons.person_outline,
               title: s.account,
               subtitle: s.accountSub,
@@ -192,9 +193,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
           const SizedBox(height: 16),
-          _sectionHeader(s.settingsSectionFrame),
-          _buildGroup([
+          _sectionHeader(s.settingsSectionFrame, cs),
+          _buildGroup(cs, [
             _tile(
+              context: context,
               icon: Icons.bluetooth_connected,
               title: s.framePairing,
               subtitle: _pairingSubtitle(s),
@@ -205,8 +207,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await _load();
               },
             ),
-            _divider,
+            _divider(cs),
             _tile(
+              context: context,
               icon: Icons.playlist_play,
               title: s.playlist,
               subtitle: s.yourPlaylists,
@@ -214,8 +217,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const PlaylistScreen()),
               ),
             ),
-            _divider,
+            _divider(cs),
             _tile(
+              context: context,
               icon: Icons.bedtime_outlined,
               title: s.sleepMode,
               subtitle: _sleepSubtitle(s),
@@ -226,8 +230,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               onTap: _sleepEnabled ? _showSleepPicker : null,
             ),
-            _divider,
+            _divider(cs),
             _tile(
+              context: context,
               icon: Icons.system_update_alt,
               title: s.otaFirmwareUpdate,
               subtitle: _otaSubtitle(s),
@@ -240,9 +245,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
           const SizedBox(height: 16),
-          _sectionHeader(s.settingsSectionApplication),
-          _buildGroup([
+          _sectionHeader(s.settingsSectionApplication, cs),
+          _buildGroup(cs, [
             _tile(
+              context: context,
               icon: Icons.notifications_none,
               title: s.notifications,
               subtitle: s.notificationsSub,
@@ -250,8 +256,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const SettingsNotificationsScreen()),
               ),
             ),
-            _divider,
+            _divider(cs),
             _tile(
+              context: context,
               icon: Icons.language,
               title: s.language,
               subtitle: _languageSubtitle(app, s),
@@ -259,17 +266,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const SettingsLanguageScreen()),
               ),
             ),
-            // _divider,
-            // _tile(
-            //   icon: Icons.link,
-            //   title: s.integrations,
-            //   subtitle: s.integrationsSub,
-            //   onTap: () => Navigator.push<void>(
-            //     context, MaterialPageRoute<void>(builder: (_) => const SettingsIntegrationsScreen()),
-            //   ),
-            // ),
-            // _divider,
             _tile(
+              context: context,
               icon: Icons.tune,
               title: s.appPreferences,
               subtitle: s.appPreferencesSub,
@@ -277,8 +275,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const SettingsAppPreferencesScreen()),
               ),
             ),
-            _divider,
+            _divider(cs),
             _tile(
+              context: context,
               icon: Icons.auto_awesome,
               title: s.aiGenerateNavTitle,
               subtitle: s.aiGenerateSub,
@@ -288,9 +287,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
           const SizedBox(height: 16),
-          _sectionHeader(s.settingsSectionHelp),
-          _buildGroup([
+          _sectionHeader(s.settingsSectionHelp, cs),
+          _buildGroup(cs, [
             _tile(
+              context: context,
               icon: Icons.help_outline,
               title: s.helpSettingsTitle,
               subtitle: s.helpSettingsSub,
@@ -299,8 +299,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             if (app.debugModeEnabled) ...[
-              _divider,
+              _divider(cs),
               _tile(
+                context: context,
                 icon: Icons.receipt_long_outlined,
                 title: s.operationLog,
                 subtitle: s.operationLogSub,
@@ -331,13 +332,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-Widget _sectionHeader(String title) {
+Widget _sectionHeader(String title, ColorScheme cs) {
   return Padding(
     padding: const EdgeInsets.only(left: 4, bottom: 6),
     child: Text(
       title,
-      style: const TextStyle(
-        color: _red,
+      style: TextStyle(
+        color: cs.primary,
         fontWeight: FontWeight.bold,
         fontSize: 13,
       ),
@@ -345,51 +346,52 @@ Widget _sectionHeader(String title) {
   );
 }
 
-Widget _buildGroup(List<Widget> children) {
+Widget _buildGroup(ColorScheme cs, List<Widget> children) {
   return Container(
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: cs.surface,
       borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
+      border: Border.all(color: cs.outlineVariant, width: 0.5),
     ),
     child: Column(children: children),
   );
 }
 
 Widget _tile({
+  required BuildContext context,
   required IconData icon,
   required String title,
   required String subtitle,
   Widget? trailing,
   VoidCallback? onTap,
 }) {
+  final cs = Theme.of(context).colorScheme;
   return ListTile(
     dense: true,
     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
     leading: Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: _red.withValues(alpha: 0.08),
+        color: cs.primary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Icon(icon, color: _red, size: 18),
+      child: Icon(icon, color: cs.primary, size: 18),
     ),
     title: Text(
       title,
-      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black87),
+      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface),
     ),
     subtitle: Text(
       subtitle,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 11, color: Colors.grey),
+      style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
     ),
-    trailing: trailing ?? const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+    trailing: trailing ?? Icon(Icons.chevron_right, size: 18, color: cs.onSurfaceVariant),
     onTap: onTap,
   );
 }
 
-const _divider = Divider(height: 1, indent: 48, endIndent: 12, color: Color(0xFFEEEEEE));
-
+Widget _divider(ColorScheme cs) => Divider(height: 1, indent: 48, endIndent: 12, color: cs.outlineVariant);
 
 

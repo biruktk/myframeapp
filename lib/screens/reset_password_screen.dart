@@ -86,24 +86,24 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: AppAuthTheme.bgLight,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(s.resetPasswordTitle),
-        backgroundColor: Colors.white,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: _tokenValid
-              ? (_done ? _doneView(s) : _formView(s))
-              : _invalidView(s),
+              ? (_done ? _doneView(s, cs) : _formView(s, cs))
+              : _invalidView(s, cs),
         ),
       ),
     );
   }
 
-  Widget _formView(AppStrings s) {
+  Widget _formView(AppStrings s, ColorScheme cs) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -113,7 +113,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           style: TextStyle(
             fontSize: 14,
             height: 1.4,
-            color: Colors.grey.shade600,
+            color: cs.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 24),
@@ -122,14 +122,15 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           obscureText: _obscurePassword,
           textInputAction: TextInputAction.next,
           enabled: !_busy,
-          style: const TextStyle(fontSize: 15),
+          style: TextStyle(fontSize: 15, color: cs.onSurface),
           decoration: AppAuthTheme.inputStyle(
+            context: context,
             label: s.passwordLabel,
             icon: Icons.lock_outline,
             suffixIcon: IconButton(
               icon: Icon(
                 _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                color: Colors.grey.shade600,
+                color: cs.onSurfaceVariant,
                 size: 20,
               ),
               onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -143,14 +144,15 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           textInputAction: TextInputAction.done,
           onSubmitted: (_) => _submit(),
           enabled: !_busy,
-          style: const TextStyle(fontSize: 15),
+          style: TextStyle(fontSize: 15, color: cs.onSurface),
           decoration: AppAuthTheme.inputStyle(
+            context: context,
             label: s.resetPasswordConfirm,
             icon: Icons.lock_outline,
             suffixIcon: IconButton(
               icon: Icon(
                 _obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                color: Colors.grey.shade600,
+                color: cs.onSurfaceVariant,
                 size: 20,
               ),
               onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
@@ -164,20 +166,20 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           child: ElevatedButton(
             onPressed: _busy ? null : _submit,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppAuthTheme.primaryRed,
-              foregroundColor: Colors.white,
+              backgroundColor: cs.primary,
+              foregroundColor: cs.onPrimary,
               elevation: 2,
-              shadowColor: AppAuthTheme.primaryRed.withOpacity(0.3),
+              shadowColor: cs.primary.withOpacity(0.3),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
             child: _busy
-                ? const SizedBox(
+                ? SizedBox(
                     height: 20,
                     width: 20,
                     child: CircularProgressIndicator(
-                      color: Colors.white,
+                      color: cs.onPrimary,
                       strokeWidth: 2,
                     ),
                   )
@@ -194,22 +196,23 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     );
   }
 
-  Widget _doneView(AppStrings s) {
+  Widget _doneView(AppStrings s, ColorScheme cs) {
     return Column(
       children: [
         const SizedBox(height: 48),
         Icon(
           Icons.check_circle_outline,
           size: 72,
-          color: AppAuthTheme.primaryRed,
+          color: cs.primary,
         ),
         const SizedBox(height: 20),
         Text(
           s.resetPasswordSuccess,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
+            color: cs.onSurface,
           ),
         ),
         const SizedBox(height: 32),
@@ -219,10 +222,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
           child: ElevatedButton(
             onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppAuthTheme.primaryRed,
-              foregroundColor: Colors.white,
+              backgroundColor: cs.primary,
+              foregroundColor: cs.onPrimary,
               elevation: 2,
-              shadowColor: AppAuthTheme.primaryRed.withOpacity(0.3),
+              shadowColor: cs.primary.withOpacity(0.3),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -240,22 +243,22 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     );
   }
 
-  Widget _invalidView(AppStrings s) {
+  Widget _invalidView(AppStrings s, ColorScheme cs) {
     return Column(
       children: [
         const SizedBox(height: 48),
         Icon(
           Icons.error_outline,
           size: 72,
-          color: Colors.redAccent,
+          color: cs.error,
         ),
         const SizedBox(height: 20),
         Text(
           s.resetPasswordInvalidToken,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 18,
-            color: Colors.black87,
+            color: cs.onSurface,
           ),
         ),
       ],

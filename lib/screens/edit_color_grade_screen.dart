@@ -187,17 +187,18 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FA),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.black, size: 28),
+          icon: Icon(Icons.chevron_left, color: cs.onSurface, size: 28),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           s.multiImageCasting(_currentIndex + 1, widget.selectedImages.length),
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 16),
+          style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.bold, fontSize: 16),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -215,11 +216,13 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                     Container(
                       height: screenHeight * 0.35,
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: cs.surface,
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
+                            color: Colors.black.withValues(
+                              alpha: Theme.of(context).brightness == Brightness.dark ? 0.35 : 0.04,
+                            ),
                             blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
@@ -252,8 +255,8 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: i == _currentIndex
-                                    ? const Color(0xFFE53935)
-                                    : const Color(0xFFD0D0D0),
+                                    ? cs.primary
+                                    : cs.outlineVariant,
                               ),
                             );
                           }),
@@ -272,16 +275,16 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF0F0F0),
+                        color: cs.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.schedule, size: 14, color: Colors.black54),
+                          Icon(Icons.schedule, size: 14, color: cs.onSurfaceVariant),
                           const SizedBox(width: 6),
                           Text(
                             s.totalLoopTime(_config.estimatedLoopTime(widget.selectedImages.length)),
-                            style: const TextStyle(fontSize: 12, color: Colors.black54),
+                            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
                           ),
                         ],
                       ),
@@ -291,32 +294,36 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _isSending ? null : _handleSendPlaylist,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE53935),
-                    disabledBackgroundColor: const Color(0xFFE53935).withValues(alpha: 0.6),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: _isSending
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            Material(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _isSending ? null : _handleSendPlaylist,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: cs.primary,
+                      foregroundColor: cs.onPrimary,
+                      disabledBackgroundColor: cs.primary.withValues(alpha: 0.6),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _isSending
+                        ? SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(cs.onPrimary),
+                            ),
+                          )
+                        : Text(
+                            s.sendPlaylistN(widget.selectedImages.length),
+                            style: TextStyle(color: cs.onPrimary, fontWeight: FontWeight.bold, fontSize: 15),
                           ),
-                        )
-                      : Text(
-                          s.sendPlaylistN(widget.selectedImages.length),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                        ),
+                  ),
                 ),
               ),
             ),

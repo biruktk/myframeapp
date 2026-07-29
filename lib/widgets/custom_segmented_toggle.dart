@@ -20,23 +20,26 @@ class CustomSegmentedToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       height: 44,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F0F0),
+        color: cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(22),
       ),
       child: Row(
         children: [
-          Expanded(child: _tabItem(0, '$leftLabel · $leftCount')),
-          Expanded(child: _tabItem(1, '$rightLabel · $rightCount')),
+          Expanded(child: _tabItem(context, 0, '$leftLabel · $leftCount')),
+          Expanded(child: _tabItem(context, 1, '$rightLabel · $rightCount')),
         ],
       ),
     );
   }
 
-  Widget _tabItem(int index, String title) {
+  Widget _tabItem(BuildContext context, int index, String title) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isSelected = selectedIndex == index;
     return GestureDetector(
       onTap: () => onTabChanged(index),
@@ -45,10 +48,16 @@ class CustomSegmentedToggle extends StatelessWidget {
         duration: const Duration(milliseconds: 200),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected ? cs.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
           boxShadow: isSelected
-              ? [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 4, offset: const Offset(0, 2))]
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.28 : 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
               : [],
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -57,7 +66,7 @@ class CustomSegmentedToggle extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (isSelected) ...[
-              const Icon(Icons.check, size: 16, color: Color(0xFFE53935)),
+              Icon(Icons.check, size: 16, color: cs.primary),
               const SizedBox(width: 4),
             ],
             Text(
@@ -66,7 +75,7 @@ class CustomSegmentedToggle extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected ? const Color(0xFFE53935) : Colors.black87,
+                color: isSelected ? cs.primary : cs.onSurfaceVariant,
               ),
             ),
           ],

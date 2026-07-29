@@ -802,13 +802,13 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: cs.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
                 s.frameNotFoundHint,
-                style: const TextStyle(
-                  color: Color(0xFFE53935),
+                style: TextStyle(
+                  color: cs.primary,
                   fontSize: 13,
                   height: 1.4,
                 ),
@@ -825,7 +825,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(24),
                   ),
-                  side: BorderSide(color: Colors.grey.shade300),
+                  side: BorderSide(color: cs.outline),
                 ),
                 child: Text(
                   s.bleRestartScan,

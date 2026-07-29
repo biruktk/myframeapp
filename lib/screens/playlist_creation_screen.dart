@@ -20,7 +20,6 @@ class PlaylistCreationScreen extends StatefulWidget {
 
 class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
   static const _maxPhotos = 10;
-  static const _red = Color(0xFFE53935);
 
   final _nameController = TextEditingController(text: 'My New Playlist');
   var _selectedInterval = 10;
@@ -124,29 +123,30 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7F9),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Create Playlist',
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+          style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: Colors.black),
+          icon: Icon(Icons.close, color: cs.onSurface),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: _isUploading
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(color: _red),
-                  SizedBox(height: 16),
+                  CircularProgressIndicator(color: cs.primary),
+                  const SizedBox(height: 16),
                   Text('Preparing Playlist...',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                      style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurface)),
                 ],
               ),
             )
@@ -158,45 +158,51 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                   children: [
                     TextField(
                       controller: _nameController,
+                      style: TextStyle(color: cs.onSurface),
                       decoration: InputDecoration(
                         labelText: 'Playlist Name',
                         filled: true,
-                        fillColor: Colors.white,
+                        fillColor: cs.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                          borderSide: BorderSide(color: cs.outlineVariant),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: cs.outlineVariant),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: _red),
+                          borderSide: BorderSide(color: cs.primary),
                         ),
                       ),
                     ),
                     const SizedBox(height: 20),
-                    const Text(
+                    Text(
                       'Display Interval',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                        color: cs.onSurface,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: cs.surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE0E0E0)),
+                        border: Border.all(color: cs.outlineVariant),
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<int>(
                           value: _selectedInterval,
                           isExpanded: true,
+                          dropdownColor: cs.surface,
                           items: _intervalOptions.map((s) {
                             return DropdownMenuItem(
                               value: s,
-                              child: Text(_formatInterval(s)),
+                              child: Text(_formatInterval(s), style: TextStyle(color: cs.onSurface)),
                             );
                           }).toList(),
                           onChanged: (v) {
@@ -211,10 +217,10 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                       children: [
                         Text(
                           'Selected Photos (${_paths.length}/$_maxPhotos)',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: Colors.black87,
+                            color: cs.onSurface,
                           ),
                         ),
                         if (_paths.length < _maxPhotos)
@@ -222,8 +228,8 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                             icon: const Icon(Icons.add, size: 18),
                             label: const Text('Add More'),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.black,
-                              side: const BorderSide(color: Color(0xFFE53935), width: 1.5),
+                              foregroundColor: cs.onSurface,
+                              side: BorderSide(color: cs.primary, width: 1.5),
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
@@ -286,18 +292,19 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                       child: ElevatedButton(
                         onPressed: _submit,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _red,
+                          backgroundColor: cs.primary,
+                          foregroundColor: cs.onPrimary,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                           elevation: 0,
                         ),
-                        child: const Text(
+                        child: Text(
                           'Send Playlist to Frame',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: cs.onPrimary,
                           ),
                         ),
                       ),

@@ -30,16 +30,49 @@ class PlaylistControlsWidget extends StatelessWidget {
     {'seconds': 3600, 'label': '1h'},
   ];
 
+  Widget _chip({
+    required BuildContext context,
+    required String label,
+    required bool selected,
+    required VoidCallback onSelected,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    return ChoiceChip(
+      label: Text(
+        selected ? '✓ $label' : label,
+        style: TextStyle(
+          color: selected ? cs.onPrimary : cs.onSurface,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+      selected: selected,
+      selectedColor: cs.primary,
+      backgroundColor: cs.surface,
+      visualDensity: VisualDensity.compact,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(
+          color: selected ? cs.primary : cs.outlineVariant,
+        ),
+      ),
+      onSelected: (_) => onSelected(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final labelStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.bold,
+      color: cs.onSurface,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          s.intervalLabel,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
-        ),
+        Text(s.intervalLabel, style: labelStyle),
         const SizedBox(height: 6),
         Wrap(
           spacing: 6,
@@ -47,119 +80,51 @@ class PlaylistControlsWidget extends StatelessWidget {
           children: intervalPills.map((item) {
             final seconds = item['seconds'] as int;
             final label = item['label'] as String;
-            final isSelected = selectedIntervalSeconds == seconds;
-            return ChoiceChip(
-              label: Text(
-                isSelected ? '✓ $label' : label,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.black87,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-              selected: isSelected,
-              selectedColor: const Color(0xFFE53935),
-              backgroundColor: Colors.white,
-              visualDensity: VisualDensity.compact,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(
-                  color: isSelected ? const Color(0xFFE53935) : const Color(0xFFE0E0E0),
-                ),
-              ),
-              onSelected: (_) => onIntervalChanged(seconds),
+            return _chip(
+              context: context,
+              label: label,
+              selected: selectedIntervalSeconds == seconds,
+              onSelected: () => onIntervalChanged(seconds),
             );
           }).toList(),
         ),
         const SizedBox(height: 10),
-        Text(
-          s.playbackMode,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
-        ),
+        Text(s.playbackMode, style: labelStyle),
         const SizedBox(height: 6),
         Row(
           children: [
             Expanded(
-              child: ChoiceChip(
-                label: Text(
-                  selectedStrategy == 1 ? '✓ ${s.sequential}' : s.sequential,
-                  style: TextStyle(
-                    color: selectedStrategy == 1 ? Colors.white : Colors.black87,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
+              child: _chip(
+                context: context,
+                label: s.sequential,
                 selected: selectedStrategy == 1,
-                selectedColor: const Color(0xFFE53935),
-                backgroundColor: Colors.white,
-                visualDensity: VisualDensity.compact,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                    color: selectedStrategy == 1 ? const Color(0xFFE53935) : const Color(0xFFE0E0E0),
-                  ),
-                ),
-                onSelected: (_) => onStrategyChanged(1),
+                onSelected: () => onStrategyChanged(1),
               ),
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: ChoiceChip(
-                label: Text(
-                  selectedStrategy == 2 ? '✓ ${s.randomShuffle}' : s.randomShuffle,
-                  style: TextStyle(
-                    color: selectedStrategy == 2 ? Colors.white : Colors.black87,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
-                ),
+              child: _chip(
+                context: context,
+                label: s.randomShuffle,
                 selected: selectedStrategy == 2,
-                selectedColor: const Color(0xFFE53935),
-                backgroundColor: Colors.white,
-                visualDensity: VisualDensity.compact,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  side: BorderSide(
-                    color: selectedStrategy == 2 ? const Color(0xFFE53935) : const Color(0xFFE0E0E0),
-                  ),
-                ),
-                onSelected: (_) => onStrategyChanged(2),
+                onSelected: () => onStrategyChanged(2),
               ),
             ),
           ],
         ),
         const SizedBox(height: 10),
-        Text(
-          s.durationLabel,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
-        ),
+        Text(s.durationLabel, style: labelStyle),
         const SizedBox(height: 6),
         Wrap(
           spacing: 6,
           runSpacing: 6,
           children: PlaybackConfig.kDurationOptions.map((hours) {
             final label = hours == 0 ? s.unlimited : '${hours}h';
-            final isSelected = selectedDurationHours == hours;
-            return ChoiceChip(
-              label: Text(
-                isSelected ? '✓ $label' : label,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.black87,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
-              selected: isSelected,
-              selectedColor: const Color(0xFFE53935),
-              backgroundColor: Colors.white,
-              visualDensity: VisualDensity.compact,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(
-                  color: isSelected ? const Color(0xFFE53935) : const Color(0xFFE0E0E0),
-                ),
-              ),
-              onSelected: (_) => onDurationChanged(hours),
+            return _chip(
+              context: context,
+              label: label,
+              selected: selectedDurationHours == hours,
+              onSelected: () => onDurationChanged(hours),
             );
           }).toList(),
         ),

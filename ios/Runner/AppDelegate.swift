@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import NetworkExtension
+import FirebaseCore
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -8,6 +9,13 @@ import NetworkExtension
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    if FirebaseApp.app() == nil {
+      FirebaseApp.configure()
+    }
+    if #available(iOS 10.0, *) {
+      UNUserNotificationCenter.current().delegate = self
+    }
+    application.registerForRemoteNotifications()
     if let registrar = registrar(forPlugin: "ICloudPhotosPlugin") {
       ICloudPhotosPlugin.register(with: registrar)
     }

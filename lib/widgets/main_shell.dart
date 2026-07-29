@@ -8,6 +8,7 @@ import '../screens/gallery_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/send_screen.dart';
 import '../screens/settings_screen.dart';
+import '../services/fcm_service.dart';
 import '../services/share_incoming_service.dart';
 import '../services/user_gallery_cloud_service.dart';
 import '../settings/app_settings.dart';
@@ -36,6 +37,7 @@ class MainShellState extends State<MainShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _consumeSharedPaths();
       _syncCloudGalleryIfSignedIn();
+      _syncFcmTokenIfSignedIn();
     });
   }
 
@@ -44,6 +46,13 @@ class MainShellState extends State<MainShell> {
     final app = AppSettingsScope.of(context);
     if (!app.hasAuthenticatedSession) return;
     unawaited(UserGalleryCloudService.instance.syncFromServer(app.authToken));
+  }
+
+  void _syncFcmTokenIfSignedIn() {
+    if (!mounted) return;
+    final app = AppSettingsScope.of(context);
+    if (!app.hasAuthenticatedSession) return;
+    unawaited(FcmService.instance.syncTokenWithAuth(app));
   }
 
   @override

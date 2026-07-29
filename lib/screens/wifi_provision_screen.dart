@@ -732,7 +732,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                                 decoration: InputDecoration(
                                   hintText: s.wifiPasswordRequired,
                                   filled: true,
-                                  fillColor: Colors.white,
+                                  fillColor: cs.surface,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
                                     borderSide: BorderSide(color: cs.outlineVariant, width: 1.5),

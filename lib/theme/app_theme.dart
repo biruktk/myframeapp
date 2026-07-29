@@ -14,33 +14,47 @@ class AppAuthTheme {
   static const Color bgLight = Color(0xFFF8F9FA);
 
   static InputDecoration inputStyle({
+    required BuildContext context,
     required String label,
     required IconData icon,
     Widget? suffixIcon,
   }) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final fill = isDark ? cs.surfaceContainerHighest : Colors.grey.shade50;
+    final borderColor = cs.outlineVariant;
+    final enabledBorderColor = isDark ? cs.outline : Colors.grey.shade200;
+    final labelColor = cs.onSurfaceVariant;
+    final iconColor = cs.onSurfaceVariant;
+
     return InputDecoration(
       labelText: label,
-      labelStyle: const TextStyle(color: Colors.black54, fontSize: 14),
-      prefixIcon: Icon(icon, color: Colors.grey.shade600, size: 20),
+      labelStyle: TextStyle(color: labelColor, fontSize: 14),
+      prefixIcon: Icon(icon, color: iconColor, size: 20),
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: Colors.grey.shade50,
+      fillColor: fill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+        borderSide: BorderSide(color: borderColor),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade200),
+        borderSide: BorderSide(color: enabledBorderColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: primaryRed, width: 1.5),
+        borderSide: BorderSide(color: cs.primary, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.redAccent, width: 1),
+        borderSide: BorderSide(color: cs.error, width: 1),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: cs.error, width: 1.5),
       ),
     );
   }
@@ -69,6 +83,43 @@ class AppTheme {
   static Color seedDark(AppAccent accent) =>
       accent == AppAccent.green ? primaryGreenDark : primaryRedDark;
 
+  static InputDecorationTheme _inputDecoration({
+    required ColorScheme cs,
+    required bool dark,
+  }) {
+    final radius = BorderRadius.circular(12);
+    final fill = dark ? cs.surfaceContainerHighest : const Color(0xFFF9FAFB);
+    return InputDecorationTheme(
+      filled: true,
+      fillColor: fill,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      hintStyle: TextStyle(color: cs.onSurfaceVariant, fontSize: 14),
+      labelStyle: TextStyle(color: cs.onSurfaceVariant, fontSize: 14),
+      prefixIconColor: cs.onSurfaceVariant,
+      suffixIconColor: cs.onSurfaceVariant,
+      border: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: cs.outlineVariant),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: cs.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: cs.primary, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: cs.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: cs.error, width: 1.5),
+      ),
+    );
+  }
+
   static ThemeData light(AppAccent accent, {bool comfort = false}) {
     final primary = seed(accent);
     // Strong body text; secondary still passes WCAG-style contrast on off-white.
@@ -85,11 +136,12 @@ class AppTheme {
         surface: Colors.white,
         onSurface: onSurface,
         onSurfaceVariant: onSurfaceVariant,
-        outline: Color(0xFFD1D5DB),
-        outlineVariant: Color(0xFFE5E7EB),
+        outline: const Color(0xFFD1D5DB),
+        outlineVariant: const Color(0xFFE5E7EB),
       ),
       visualDensity: comfort ? VisualDensity.comfortable : VisualDensity.standard,
     );
+    final cs = base.colorScheme;
     final navH = comfort ? 76.0 : 68.0;
     final navLabel = comfort ? 13.0 : 11.0;
     final iconSz = comfort ? 26.0 : 22.0;
@@ -98,6 +150,30 @@ class AppTheme {
       hintColor: onSurfaceVariant,
       // Slightly snappier than [InkRipple] for list tiles and quick taps.
       splashFactory: InkSplash.splashFactory,
+      inputDecorationTheme: _inputDecoration(cs: cs, dark: false),
+      dialogTheme: DialogThemeData(
+        backgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: cs.surface,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: cs.surface,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: cs.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: cs.surface,
+        selectedColor: primary,
+        disabledColor: cs.surfaceContainerHighest,
+        side: BorderSide(color: cs.outlineVariant),
+        labelStyle: TextStyle(color: cs.onSurface),
+        secondaryLabelStyle: const TextStyle(color: Colors.white),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: Size(comfort ? 52 : 48, comfort ? 52 : 48),
@@ -177,10 +253,14 @@ class AppTheme {
         surface: surface,
         onSurface: onSurfaceD,
         onSurfaceVariant: onVarD,
-        outline: Color(0xFF4B5563),
-        outlineVariant: Color(0xFF374151),
+        outline: const Color(0xFF4B5563),
+        outlineVariant: const Color(0xFF374151),
+        surfaceContainerHighest: const Color(0xFF374151),
+        surfaceContainerHigh: const Color(0xFF2D3748),
+        surfaceContainerLow: const Color(0xFF1A2332),
       ),
     );
+    final cs = base.colorScheme;
     final navH = comfort ? 76.0 : 68.0;
     final navLabel = comfort ? 13.0 : 11.0;
     final iconSz = comfort ? 26.0 : 22.0;
@@ -189,6 +269,30 @@ class AppTheme {
       visualDensity: comfort ? VisualDensity.comfortable : VisualDensity.standard,
       hintColor: Colors.white70,
       splashFactory: InkSplash.splashFactory,
+      inputDecorationTheme: _inputDecoration(cs: cs, dark: true),
+      dialogTheme: DialogThemeData(
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: surface,
+        surfaceTintColor: Colors.transparent,
+        modalBackgroundColor: surface,
+      ),
+      popupMenuTheme: const PopupMenuThemeData(
+        color: surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: cs.surfaceContainerHighest,
+        selectedColor: primary,
+        disabledColor: cs.surfaceContainerLow,
+        side: BorderSide(color: cs.outline),
+        labelStyle: TextStyle(color: cs.onSurface),
+        secondaryLabelStyle: const TextStyle(color: Colors.white),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: Size(comfort ? 52 : 48, comfort ? 52 : 48),
@@ -201,6 +305,11 @@ class AppTheme {
         backgroundColor: surface,
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          color: onSurfaceD,
+        ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
@@ -209,6 +318,10 @@ class AppTheme {
           side: BorderSide(color: Colors.grey.shade800),
         ),
         color: surface,
+      ),
+      listTileTheme: const ListTileThemeData(
+        iconColor: onVarD,
+        textColor: onSurfaceD,
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: navH,

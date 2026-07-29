@@ -59,11 +59,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: AppAuthTheme.bgLight,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(s.forgotPasswordTitle),
-        backgroundColor: Colors.white,
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -77,7 +77,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 style: TextStyle(
                   fontSize: 14,
                   height: 1.4,
-                  color: Colors.grey.shade600,
+                  color: cs.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 24),
@@ -87,8 +87,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _submit(),
                 enabled: !_busy && !_sent,
-                style: const TextStyle(fontSize: 15),
+                style: TextStyle(fontSize: 15, color: cs.onSurface),
                 decoration: AppAuthTheme.inputStyle(
+                  context: context,
                   label: s.emailLabel,
                   icon: Icons.email_outlined,
                 ),
@@ -100,7 +101,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     Icon(
                       Icons.check_circle_outline,
                       size: 56,
-                      color: AppAuthTheme.primaryRed,
+                      color: cs.primary,
                     ),
                     const SizedBox(height: 16),
                     Text(
@@ -109,7 +110,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       style: TextStyle(
                         fontSize: 15,
                         height: 1.4,
-                        color: Colors.grey.shade700,
+                        color: cs.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -121,20 +122,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   child: ElevatedButton(
                     onPressed: _busy ? null : _submit,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppAuthTheme.primaryRed,
-                      foregroundColor: Colors.white,
+                      backgroundColor: cs.primary,
+                      foregroundColor: cs.onPrimary,
                       elevation: 2,
-                      shadowColor: AppAuthTheme.primaryRed.withOpacity(0.3),
+                      shadowColor: cs.primary.withOpacity(0.3),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                     child: _busy
-                        ? const SizedBox(
+                        ? SizedBox(
                             height: 20,
                             width: 20,
                             child: CircularProgressIndicator(
-                              color: Colors.white,
+                              color: cs.onPrimary,
                               strokeWidth: 2,
                             ),
                           )

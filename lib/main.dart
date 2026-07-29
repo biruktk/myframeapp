@@ -53,8 +53,11 @@ Future<void> main() async {
       ShareIncomingService.instance.bootstrap,
     );
     await _guardStartup('splash branding', SplashBranding.preload);
+    // FCM must not delay first frame; token sync runs after UI / when signed in.
     await _guardStartup('fcm', FcmService.instance.init);
     runApp(MyFrameApp(settings: settings));
+    // Fire-and-forget after UI is up.
+    unawaited(FcmService.instance.syncTokenWithAuth(settings));
   }, AppReleaseGuard.onUncaughtError);
 }
 
