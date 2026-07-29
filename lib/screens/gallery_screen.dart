@@ -8,6 +8,7 @@ import '../services/gallery_send_flow.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/user_gallery_cloud_service.dart';
+import '../services/frame_api_client.dart';
 import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
 import '../widgets/custom_segmented_toggle.dart';
@@ -68,6 +69,15 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     );
     if (ok != true || !mounted) return;
     await SendAlbumsStore.instance.deleteAlbum(album.id);
+    final tok = AppSettingsScope.of(context).authToken;
+    if (tok.trim().isNotEmpty) {
+      unawaited(
+        FrameApiClient().deleteUserAlbum(
+          bearerToken: tok,
+          albumId: album.id,
+        ),
+      );
+    }
     await _reload();
   }
 
@@ -158,7 +168,18 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
             paths: paths,
             onAdd: _addFromPicker,
             onRemove: (i) async {
+              final paths = PersonalGalleryStore.instance.paths;
+              final path = (i >= 0 && i < paths.length) ? paths[i] : null;
               await PersonalGalleryStore.instance.removeAt(i);
+              final tok = AppSettingsScope.of(context).authToken;
+              if (tok.trim().isNotEmpty && path != null) {
+                unawaited(
+                  UserGalleryCloudService.instance.deletePhoto(
+                    authToken: tok,
+                    localPath: path,
+                  ),
+                );
+              }
               await _reload();
             },
             onSendToFrame: (path) => sendGalleryPhotoToFrame(context, path: path),

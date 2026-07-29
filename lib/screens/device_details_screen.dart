@@ -72,14 +72,22 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       : (_paired?.listDisplayTitle(AppStrings(AppLocale.en)) ?? 'MyFrame');
 
   String get _macAddress {
+    // Use the hardware MAC (from BLE name or pairedFrameMac store), NOT the iOS
+    // CoreBluetooth peripheral UUID stored in deviceId — iOS never exposes the
+    // real BLE MAC to apps, so deviceId is a random UUID on iOS.
+    final hex = (_resolveMac ?? '').toUpperCase();
+    if (hex.length == 12) {
+      return '${hex.substring(0, 2)}:${hex.substring(2, 4)}:${hex.substring(4, 6)}:${hex.substring(6, 8)}:${hex.substring(8, 10)}:${hex.substring(10, 12)}';
+    }
+    // Fallback: try to extract 12 hex digits from deviceId (covers colon-separated or raw)
     final p = _paired;
     if (p == null) return '--';
-    final hex = p.deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
-    if (hex.length >= 12) {
-      final s = hex.substring(hex.length - 12);
+    final rawHex = p.deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (rawHex.length >= 12) {
+      final s = rawHex.substring(rawHex.length - 12);
       return '${s.substring(0, 2)}:${s.substring(2, 4)}:${s.substring(4, 6)}:${s.substring(6, 8)}:${s.substring(8, 10)}:${s.substring(10, 12)}';
     }
-    return p.deviceId;
+    return '--';
   }
 
   String get _wifiSsid {
@@ -148,7 +156,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     final s = AppStrings.of(context);
     final p = _paired;
     final st = _status;
-    final isOnline = st?.online ?? false;
+    final isOnline = st?.isEffectivelyOnline ?? false;
     final battery = st?.battery ?? 100;
     final storageRatio = st?.storageFraction ?? 0;
     final firmware = 'v0.5.0';

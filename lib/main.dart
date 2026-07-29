@@ -35,29 +35,26 @@ Future<void> main() async {
         FlutterError.presentError(details);
       }
     };
-    await _guardStartup(
-      'family invite deep links',
-      FamilyInviteDeepLink.bootstrap,
-    );
-    await _guardStartup('mobile auth deep links', MobileAuthDeepLink.bootstrap);
-    await _guardStartup(
-      'google photos prefs',
-      GooglePhotosService.instance.loadPrefs,
-    );
-    await _guardStartup(
-      'icloud photos prefs',
-      ICloudPhotosService.instance.loadPrefs,
-    );
-    await _guardStartup(
-      'share incoming service',
-      ShareIncomingService.instance.bootstrap,
-    );
-    await _guardStartup('splash branding', SplashBranding.preload);
-    // FCM must not delay first frame; token sync runs after UI / when signed in.
-    await _guardStartup('fcm', FcmService.instance.init);
+
+    // Critical path only — keep first frame fast.
+    await Future.wait([
+      _guardStartup('family invite deep links', FamilyInviteDeepLink.bootstrap),
+      _guardStartup('mobile auth deep links', MobileAuthDeepLink.bootstrap),
+      _guardStartup('share incoming service', ShareIncomingService.instance.bootstrap),
+      _guardStartup('splash branding', SplashBranding.preload),
+    ]);
+
     runApp(MyFrameApp(settings: settings));
-    // Fire-and-forget after UI is up.
-    unawaited(FcmService.instance.syncTokenWithAuth(settings));
+
+    // Defer non-critical / heavy work until after UI is up.
+    unawaited(() async {
+      await Future.wait([
+        _guardStartup('google photos prefs', GooglePhotosService.instance.loadPrefs),
+        _guardStartup('icloud photos prefs', ICloudPhotosService.instance.loadPrefs),
+        _guardStartup('fcm', FcmService.instance.init),
+      ]);
+      await FcmService.instance.syncTokenWithAuth(settings);
+    }());
   }, AppReleaseGuard.onUncaughtError);
 }
 

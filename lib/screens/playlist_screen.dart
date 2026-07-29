@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../services/device_store.dart';
 import '../services/frame_ble_mac_slug.dart';
+import '../services/frame_online_guard.dart';
 import '../services/send_albums_store.dart';
 import '../services/slideshow_photo_picker.dart';
 import '../services/slideshow_playlist_store.dart';
@@ -77,6 +78,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       );
       return;
     }
+    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: paired)) {
+      return;
+    }
 
     final title = await TextInputBottomSheet.show(
       context,
@@ -110,6 +114,9 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(s.connectFrameFirst)),
       );
+      return;
+    }
+    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: paired)) {
       return;
     }
     var paths = album.paths.where((p) {

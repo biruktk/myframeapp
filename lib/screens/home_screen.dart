@@ -298,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final activeId = DeviceStore.instance.cached?.deviceId.trim();
           bool isOnline(PairedFrame f) {
             final st = _frameStatuses[f.deviceId];
-            if (st != null) return st.online;
+            if (st != null) return st.isEffectivelyOnline;
             return _frameLikelyOnline(f);
           }
 

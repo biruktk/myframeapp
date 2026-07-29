@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import '../services/frame_online_guard.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/gallery_photo_picker.dart';
 import 'edit_color_grade_screen.dart';
@@ -238,8 +239,12 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
+                  onPressed: () async {
+                    if (!await FrameOnlineGuard.ensureOnlineForSend(context)) {
+                      return;
+                    }
+                    if (!context.mounted) return;
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => EditColorGradeScreen(

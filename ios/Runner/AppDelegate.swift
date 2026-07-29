@@ -5,25 +5,34 @@ import FirebaseCore
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  /// Must run before any Firebase* plugin registers (Messaging logs I-COR000003 otherwise).
+  private static func configureFirebaseIfNeeded() {
+    if FirebaseApp.app() == nil {
+      FirebaseApp.configure()
+    }
+  }
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    if FirebaseApp.app() == nil {
-      FirebaseApp.configure()
-    }
+    Self.configureFirebaseIfNeeded()
     if #available(iOS 10.0, *) {
       UNUserNotificationCenter.current().delegate = self
     }
+    // Register after Firebase is configured so Messaging can attach cleanly.
     application.registerForRemoteNotifications()
-    if let registrar = registrar(forPlugin: "ICloudPhotosPlugin") {
-      ICloudPhotosPlugin.register(with: registrar)
-    }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    // With FlutterImplicitEngineDelegate this can run before/during didFinishLaunching.
+    Self.configureFirebaseIfNeeded()
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    if let icloud = engineBridge.pluginRegistry.registrar(forPlugin: "ICloudPhotosPlugin") {
+      ICloudPhotosPlugin.register(with: icloud)
+    }
 
     let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NativeBlePlugin")!
     let channel = FlutterMethodChannel(

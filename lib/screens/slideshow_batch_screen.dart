@@ -13,6 +13,7 @@ import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
 import '../services/frame_cloud_cast_service.dart';
+import '../services/frame_online_guard.dart';
 import '../services/network_link.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_style.dart';
@@ -71,6 +72,9 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.connectFrameFirst)));
       }
+      return;
+    }
+    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: pFrame)) {
       return;
     }
 

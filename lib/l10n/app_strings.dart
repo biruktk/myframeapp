@@ -6868,12 +6868,22 @@ class AppStrings {
         ja: 'フレームオフライン',
       );
   String get frameOfflineReconnectBody => _l6(
-        en: 'Please make sure your phone is connected to WiFi, or remove the device and reconnect it again.',
-        zh: '请确保手机已连接 WiFi，或删除设备后重新连接。',
-        es: 'Asegúrate de que el teléfono esté conectado al WiFi, o elimina el dispositivo y vuelve a conectarlo.',
-        fr: 'Assurez-vous que le téléphone est connecté au WiFi, ou supprimez l\'appareil et reconnectez-le.',
-        de: 'Stellen Sie sicher, dass das Telefon mit WLAN verbunden ist, oder entfernen Sie das Gerät und verbinden Sie es erneut.',
-        ja: '電話がWiFiに接続されていることを確認するか、デバイスを削除して再接続してください。',
+        en: 'Please make sure your Frame is online and connected to Wi-Fi, or check your phone\'s Wi-Fi / connection, or try reconnecting your Frame.',
+        zh: '请确保相框在线并已连接 Wi-Fi，或检查手机的 Wi-Fi / 网络连接，或尝试重新连接相框。',
+        es: 'Asegúrate de que tu Frame esté en línea y conectado al Wi-Fi, o revisa el Wi-Fi / conexión de tu teléfono, o intenta reconectar tu Frame.',
+        fr: 'Assurez-vous que votre Frame est en ligne et connecté au Wi-Fi, ou vérifiez le Wi-Fi / la connexion de votre téléphone, ou reconnectez votre Frame.',
+        de: 'Stellen Sie sicher, dass Ihr Frame online und mit WLAN verbunden ist, prüfen Sie das WLAN / die Verbindung Ihres Telefons, oder verbinden Sie Ihren Frame erneut.',
+        ja: 'フレームがオンラインでWi-Fiに接続されているか、電話のWi-Fi/接続を確認するか、フレームを再接続してください。',
+      );
+
+  /// Shown when Send is tapped while the target frame is offline.
+  String get frameOfflineSendBlockedBody => _l6(
+        en: 'Please make sure your Frame is online and connected to Wi-Fi, or check your phone\'s Wi-Fi / connection, or try reconnecting your Frame.',
+        zh: '请确保相框在线并已连接 Wi-Fi，或检查手机的 Wi-Fi / 网络连接，或尝试重新连接相框。',
+        es: 'Asegúrate de que tu Frame esté en línea y conectado al Wi-Fi, o revisa el Wi-Fi / conexión de tu teléfono, o intenta reconectar tu Frame.',
+        fr: 'Assurez-vous que votre Frame est en ligne et connecté au Wi-Fi, ou vérifiez le Wi-Fi / la connexion de votre téléphone, ou reconnectez votre Frame.',
+        de: 'Stellen Sie sicher, dass Ihr Frame online und mit WLAN verbunden ist, prüfen Sie das WLAN / die Verbindung Ihres Telefons, oder verbinden Sie Ihren Frame erneut.',
+        ja: 'フレームがオンラインでWi-Fiに接続されているか、電話のWi-Fi/接続を確認するか、フレームを再接続してください。',
       );
 
   // —— Email Verification ——

@@ -43,11 +43,15 @@ class FcmService {
 
   FirebaseMessaging get _messaging => FirebaseMessaging.instance;
 
-  /// Lightweight bootstrap for [main] — must not hang or block first frame.
+  /// Lightweight bootstrap — safe to call after first frame.
   Future<void> init() async {
     if (_initialized) return;
     try {
-      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      // Native AppDelegate already calls FirebaseApp.configure(); Dart options
+      // still needed for FlutterFire. Tolerate already-initialized default app.
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      }
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
       await _initLocalNotifications();
       await _messaging.setForegroundNotificationPresentationOptions(

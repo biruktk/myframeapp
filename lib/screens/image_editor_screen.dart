@@ -33,11 +33,13 @@ import '../services/slideshow_style.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
 import '../services/frame_ble_mac_slug.dart';
+import '../services/frame_online_guard.dart';
 import '../services/user_playlist_remote_api.dart';
 import '../services/transport_kind.dart';
 import '../services/usage_metrics_store.dart';
 import '../services/weather_service.dart';
 import '../settings/app_settings.dart';
+import '../widgets/connect_frame_dialog.dart';
 import '../l10n/app_strings.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../models/pairing_nav_result.dart';
@@ -152,6 +154,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   bool _decodeFailed = false;
   ProcessedFrameResult? _cachedProcess;
   PairedFrame? _paired;
+  bool? _frameOnline;
 
   late TransportKind _transport;
   late SlideshowStyle _slideshow;
@@ -542,10 +545,17 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   Future<void> _loadPairing() async {
     await DeviceStore.instance.load();
     if (!mounted) return;
+    final paired = DeviceStore.instance.cached;
     setState(() {
-      _paired = DeviceStore.instance.cached;
+      _paired = paired;
       _transport = TransportKind.wifi;
     });
+    if (paired == null) {
+      if (mounted) setState(() => _frameOnline = null);
+      return;
+    }
+    final online = await FrameOnlineGuard.isFrameEffectivelyOnline(paired);
+    if (mounted) setState(() => _frameOnline = online);
   }
 
   void _saveCurrentPerState() {
@@ -851,6 +861,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       });
       return;
     }
+    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: frame)) {
+      if (mounted) setState(() => _frameOnline = false);
+      return;
+    }
+    if (mounted) setState(() => _frameOnline = true);
     var activePaired = frame;
     if (!activePaired.isWifiProvisioned) {
       if (!mounted) return;
@@ -2763,6 +2778,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                     s.pairingNeedsApiUrl,
                     style: TextStyle(fontSize: 11, color: cs.error),
                   ),
+                )
+              else if (_frameOnline == false)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    s.frameOfflineLabel,
+                    style: TextStyle(fontSize: 11, color: cs.error),
+                  ),
                 ),
               if (_isPlaylist && !_uploading) ...[
                 Padding(
@@ -2833,7 +2856,16 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                             borderRadius: BorderRadius.circular(14),
                           ),
                         ),
-                        onPressed: _uploading ? null : _send,
+                        onPressed: _uploading
+                            ? null
+                            : () async {
+                                if (_frameOnline == false) {
+                                  await showFrameOfflineSendDialog(context);
+                                  await _loadPairing();
+                                  return;
+                                }
+                                await _send();
+                              },
                         child: _uploading
                             ? const SizedBox(
                                 width: 22,

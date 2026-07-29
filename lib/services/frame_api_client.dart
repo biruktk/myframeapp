@@ -63,22 +63,35 @@ class FrameStatus {
   }
 
   factory FrameStatus.fromJson(Map<String, dynamic> json) {
+    final status = json['status'] as String? ?? 'unknown';
+    final sleeping = json['sleeping'] == true || status == 'sleeping';
+    // Prefer explicit online; also treat idle/sleeping as connected for UI.
+    final onlineRaw = json['online'] == true;
+    final reachable = json['reachable'] == true;
+    final online = onlineRaw ||
+        reachable ||
+        status == 'online' ||
+        status == 'idle' ||
+        status == 'sleeping';
     return FrameStatus(
       deviceId: json['device_id'] as String? ?? '',
-      online: json['online'] == true,
-      sleeping: json['sleeping'] == true,
-      status: json['status'] as String? ?? 'unknown',
+      online: online && status != 'offline',
+      sleeping: sleeping,
+      status: status,
       battery: json['battery'] as int? ?? 100,
       wifiSsid: json['wifi'] as String? ?? '',
       storageUsedMb: json['storage_used_mb'] as int? ?? 0,
       storageTotalMb: json['storage_total_mb'] as int? ?? 32000,
       photoCount: json['photo_count'] as int? ?? 0,
-      mqttConnected: json['mqtt_connected'] == true,
+      mqttConnected: json['mqtt_connected'] == true || reachable,
       lastSeenMs: json['last_seen_ms'] as int?,
       lastUploadMs: json['last_upload_ms'] as int?,
       firmwareVersion: json['firmwareVersion'] as String?,
     );
   }
+
+  /// User-facing connection label key.
+  bool get isEffectivelyOnline => online || sleeping || status == 'idle';
 }
 
 class FrameApiClient {
@@ -425,6 +438,144 @@ class FrameApiClient {
       } catch (_) {
         continue;
       }
+    }
+    return false;
+  }
+
+  /// GET `/api/v1/user/media` — personal upload history for the authenticated user.
+  ///
+  /// Falls back to `/api/user/gallery` for older server deployments.
+  /// Returns newest-first list of upload records.
+  Future<List<Map<String, dynamic>>> fetchUserMedia({
+    required String bearerToken,
+    Duration? timeout,
+  }) async {
+    final tok = bearerToken.trim();
+    if (tok.isEmpty) return const [];
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(null);
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'Authorization': 'Bearer $tok',
+    };
+
+    // Canonical v1 endpoint.
+    try {
+      final res = await _http
+          .get(Uri.parse('$base/api/v1/user/media'), headers: headers)
+          .timeout(t);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        if (json['ok'] == true) {
+          final raw =
+              (json['media'] ?? json['photos'] ?? json['items']) as List?;
+          if (raw != null) return raw.cast<Map<String, dynamic>>();
+        }
+      }
+    } catch (_) {}
+
+    // Fallback: existing /api/user/gallery route.
+    try {
+      final res = await _http
+          .get(Uri.parse('$base/api/user/gallery'), headers: headers)
+          .timeout(t);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        final raw = (json['photos'] ?? json['items']) as List?;
+        if (raw != null) return raw.cast<Map<String, dynamic>>();
+      }
+    } catch (_) {}
+
+    return const [];
+  }
+
+  /// GET `/api/v1/user/albums` — user-created photo albums for the authenticated user.
+  ///
+  /// Each record contains at minimum: `id`, `name`, `frame_id`,
+  /// `photo_count`, `cover_url`, `created_at`.
+  Future<List<Map<String, dynamic>>> fetchUserAlbums({
+    required String bearerToken,
+    Duration? timeout,
+  }) async {
+    final tok = bearerToken.trim();
+    if (tok.isEmpty) return const [];
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(null);
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'Authorization': 'Bearer $tok',
+    };
+
+    try {
+      final res = await _http
+          .get(Uri.parse('$base/api/v1/user/albums'), headers: headers)
+          .timeout(t);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        if (json['ok'] == true) {
+          final raw = (json['albums'] ?? json['items']) as List?;
+          if (raw != null) return raw.cast<Map<String, dynamic>>();
+        }
+      }
+    } catch (_) {}
+
+    return const [];
+  }
+
+  /// DELETE `/api/v1/user/media/:id` (fallback `/api/user/gallery/:id`).
+  Future<bool> deleteUserMedia({
+    required String bearerToken,
+    required String mediaId,
+    Duration? timeout,
+  }) async {
+    final tok = bearerToken.trim();
+    final id = mediaId.trim();
+    if (tok.isEmpty || id.isEmpty) return false;
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(null);
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'Authorization': 'Bearer $tok',
+    };
+    for (final path in [
+      '/api/v1/user/media/$id',
+      '/api/user/gallery/$id',
+    ]) {
+      try {
+        final res = await _http
+            .delete(Uri.parse('$base$path'), headers: headers)
+            .timeout(t);
+        if (res.statusCode == 200 || res.statusCode == 204) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  /// DELETE `/api/v1/user/albums/:id` (fallback `/api/user/playlists/:id`).
+  Future<bool> deleteUserAlbum({
+    required String bearerToken,
+    required String albumId,
+    Duration? timeout,
+  }) async {
+    final tok = bearerToken.trim();
+    final id = albumId.trim();
+    if (tok.isEmpty || id.isEmpty) return false;
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(null);
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'Authorization': 'Bearer $tok',
+    };
+    for (final path in [
+      '/api/v1/user/albums/$id',
+      '/api/user/playlists/$id',
+    ]) {
+      try {
+        final res = await _http
+            .delete(Uri.parse('$base$path'), headers: headers)
+            .timeout(t);
+        if (res.statusCode == 200 || res.statusCode == 204) return true;
+      } catch (_) {}
     }
     return false;
   }

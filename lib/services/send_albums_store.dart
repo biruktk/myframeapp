@@ -114,8 +114,25 @@ class SendAlbumsStore {
 
   Future<void> deleteAlbum(String albumId) async {
     await load();
-    _albums.removeWhere((a) => a.id == albumId);
+    final id = albumId.trim();
+    _albums.removeWhere((a) => a.id == id);
     await _persist();
+    // Tombstone so a later cloud sync cannot re-import this album.
+    if (id.isNotEmpty) {
+      final p = await SharedPreferences.getInstance();
+      final key = 'send_albums_deleted_ids_v1';
+      final deleted = List<String>.from(p.getStringList(key) ?? const []);
+      if (!deleted.contains(id)) {
+        deleted.insert(0, id);
+        await p.setStringList(key, deleted.take(200).toList());
+      }
+    }
+  }
+
+  /// IDs of albums deleted from this account — never re-import on sync.
+  Future<Set<String>> deletedAlbumIds() async {
+    final p = await SharedPreferences.getInstance();
+    return (p.getStringList('send_albums_deleted_ids_v1') ?? const []).toSet();
   }
 
   Future<void> renameAlbum(String albumId, String newName) async {

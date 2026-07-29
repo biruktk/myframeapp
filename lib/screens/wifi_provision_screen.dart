@@ -51,7 +51,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   bool _selectedIsOpen = false;
   String? _status;
   String? _error;
-  bool _didAutoLaunch = false;
   bool _wifiConfirmed = false;
   String? _currentWifiSsid;
   String? _frameMac;
@@ -61,24 +60,15 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     super.initState();
     final paired = DeviceStore.instance.cached;
     if (paired != null) {
+      // Prefill SSID only — never password; never auto-connect.
       _ssidCtrl.text = normalizeWifiSsid(paired.wifiSsid);
-      _passCtrl.text = paired.wifiPassword ?? '';
       _frameMac = paired.deviceId;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _seedPairedIntoCache();
+    _passCtrl.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      await _scanWifiNetworksThenAuto();
+      unawaited(_scanWifiNetworks());
     });
-  }
-
-  Future<void> _seedPairedIntoCache() async {
-    final p = DeviceStore.instance.cached;
-    final ssid = normalizeWifiSsid(p?.wifiSsid);
-    final pwd = p?.wifiPassword;
-    if (ssid.isNotEmpty && pwd != null && pwd.isNotEmpty) {
-      await WifiCredentialCache.instance.remember(ssid, pwd);
-    }
   }
 
   @override
@@ -87,31 +77,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     _ssidCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
-  }
-
-  Future<String?> _passwordForSsid(String ssid) async {
-    final key = normalizeWifiSsid(ssid);
-    if (key.isEmpty) return null;
-    final paired = DeviceStore.instance.cached;
-    if (wifiSsidEquals(paired?.wifiSsid, key) && (paired?.wifiPassword?.isNotEmpty ?? false)) {
-      return paired!.wifiPassword;
-    }
-    return WifiCredentialCache.instance.passwordFor(key);
-  }
-
-  Future<void> _scanWifiNetworksThenAuto() async {
-    await _scanWifiNetworks();
-    if (!mounted || _busy || _didAutoLaunch) return;
-    final ssid = _ssidCtrl.text;
-    if (normalizeWifiSsid(ssid).isEmpty) return;
-    final pass = await _passwordForSsid(ssid);
-    if (pass == null || pass.isEmpty) return;
-    _didAutoLaunch = true;
-    _passCtrl.text = pass;
-    if (!mounted) return;
-    final s = AppStrings.of(context);
-    setState(() => _status = s.wifiConnectingSavedPassword);
-    if (mounted) await _connect();
   }
 
   Future<void> _scanWifiNetworks() async {
@@ -198,9 +163,8 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       _error = null;
       _status = null;
     });
-    if (!secure) {
-      _passCtrl.clear();
-    }
+    // Never auto-fill password — user types it (or leaves blank for open Wi‑Fi).
+    _passCtrl.clear();
   }
 
   Widget _signalBar(int rssi) {
@@ -245,13 +209,11 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     final s = AppStrings.of(context);
     final paired = DeviceStore.instance.cached;
     final currentSsid = normalizeWifiSsid(_ssidCtrl.text);
-    final knownPass = paired?.wifiPassword ?? '';
-    final cached = await WifiCredentialCache.instance.passwordFor(currentSsid) ?? '';
-    final effectivePassword = _passCtrl.text.isNotEmpty
-        ? _passCtrl.text
-        : (knownPass.isNotEmpty ? knownPass : cached);
-
-    final secure = _wifiNetworks.any((n) => wifiSsidEquals(n.ssid, currentSsid) && n.secure);
+    // Password is only what the user typed — never cached/saved auto-fill.
+    final effectivePassword = _passCtrl.text;
+    final secure = _wifiNetworks.any(
+      (n) => wifiSsidEquals(n.ssid, currentSsid) && n.secure,
+    );
     if (currentSsid.isEmpty) {
       setState(() {
         _error = s.wifiSsidRequired;
@@ -499,7 +461,14 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                                   ),
                                 ),
                                 GestureDetector(
-                                  onTap: () => _onSelectNetwork(_currentWifiSsid!, true),
+                                  onTap: () {
+                                    final ssid = _currentWifiSsid!;
+                                    final match = _wifiNetworks.where(
+                                      (n) => wifiSsidEquals(n.ssid, ssid),
+                                    );
+                                    final secure = match.isEmpty ? false : match.first.secure;
+                                    _onSelectNetwork(ssid, secure);
+                                  },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                     decoration: BoxDecoration(

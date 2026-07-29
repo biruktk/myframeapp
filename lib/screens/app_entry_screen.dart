@@ -551,7 +551,9 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
       userId: data.user.id,
       provider: provider,
     );
-    unawaited(AccountSyncService.instance.syncAccountState());
+    // Full post-login hydration: frames (all bound), media, and albums in
+    // parallel — ensures cross-platform state is loaded immediately after auth.
+    unawaited(AccountSyncService.instance.hydrateAfterLogin(data.token));
     unawaited(UserGalleryCloudService.instance.syncFromServer(data.token));
     unawaited(_saveFcmTokenAfterLogin());
     if (!mounted) return;

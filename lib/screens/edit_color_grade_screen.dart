@@ -11,6 +11,7 @@ import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
 import '../services/frame_ble_mac_slug.dart';
 import '../services/frame_cloud_cast_service.dart';
+import '../services/frame_online_guard.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
 import '../settings/app_settings.dart';
@@ -73,6 +74,9 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
             SnackBar(content: Text(s.pleaseConnectFrame), backgroundColor: Colors.red),
           );
         }
+        return;
+      }
+      if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: activePaired)) {
         return;
       }
 

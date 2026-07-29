@@ -40,6 +40,7 @@ class UserGalleryCloudService {
 
   static const _requestTimeout = Duration(seconds: 30);
   static const _kSyncedIds = 'personal_gallery_cloud_ids_v1';
+  static const _kDeletedIds = 'personal_gallery_deleted_ids_v1';
 
   Uri _uri(String path) {
     final base = ApiConfig.baseUrl.replaceAll(RegExp(r'/+$'), '');
@@ -106,11 +107,15 @@ class UserGalleryCloudService {
   }
 
   /// Downloads cloud photos and merges into [PersonalGalleryStore] (newest first).
+  /// Skips any IDs in the local tombstone list (deleted on this or another client).
   Future<void> syncFromServer(String authToken) async {
     final photos = await fetchPhotos(authToken);
     if (photos.isEmpty) return;
 
     final prefs = await SharedPreferences.getInstance();
+    final deleted = prefs.getStringList(_kDeletedIds) ?? const <String>[];
+    final deletedSet = deleted.toSet();
+
     Map<String, String> idToPath = {};
     final rawMeta = prefs.getString(_kSyncedIds);
     if (rawMeta != null && rawMeta.isNotEmpty) {
@@ -122,23 +127,93 @@ class UserGalleryCloudService {
 
     final galleryDir = await GalleryImageCache.galleryDirForSync();
     final orderedLocal = <String>[];
+    final nextIdToPath = <String, String>{};
 
     for (final photo in photos) {
+      if (deletedSet.contains(photo.id)) continue;
       var local = idToPath[photo.id];
       if (local != null && local.isNotEmpty && await File(local).exists()) {
         orderedLocal.add(local);
+        nextIdToPath[photo.id] = local;
         continue;
       }
       local = await _downloadToDir(galleryDir, photo);
       if (local == null) continue;
-      idToPath[photo.id] = local;
+      nextIdToPath[photo.id] = local;
       orderedLocal.add(local);
     }
 
     if (orderedLocal.isEmpty) return;
 
     await PersonalGalleryStore.instance.replaceWithCloudPaths(orderedLocal);
-    await prefs.setString(_kSyncedIds, jsonEncode(idToPath));
+    await prefs.setString(_kSyncedIds, jsonEncode(nextIdToPath));
+  }
+
+  /// Permanently deletes a gallery photo from the account.
+  /// [photoId] is the cloud upload id; [localPath] is used to resolve id from cache.
+  Future<bool> deletePhoto({
+    required String authToken,
+    String? photoId,
+    String? localPath,
+  }) async {
+    final tok = authToken.trim();
+    var id = (photoId ?? '').trim();
+    final prefs = await SharedPreferences.getInstance();
+
+    if (id.isEmpty && localPath != null && localPath.isNotEmpty) {
+      final rawMeta = prefs.getString(_kSyncedIds);
+      if (rawMeta != null && rawMeta.isNotEmpty) {
+        try {
+          final m = jsonDecode(rawMeta) as Map<String, dynamic>;
+          for (final e in m.entries) {
+            if ('${e.value}' == localPath) {
+              id = e.key;
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+    }
+    if (id.isEmpty) return false;
+
+    // Tombstone first so a concurrent sync cannot re-add it.
+    final deleted = List<String>.from(prefs.getStringList(_kDeletedIds) ?? const []);
+    if (!deleted.contains(id)) {
+      deleted.insert(0, id);
+      await prefs.setStringList(_kDeletedIds, deleted.take(500).toList());
+    }
+
+    // Drop from local id→path map.
+    final rawMeta = prefs.getString(_kSyncedIds);
+    if (rawMeta != null && rawMeta.isNotEmpty) {
+      try {
+        final m = Map<String, dynamic>.from(jsonDecode(rawMeta) as Map);
+        m.remove(id);
+        await prefs.setString(_kSyncedIds, jsonEncode(m));
+      } catch (_) {}
+    }
+
+    if (tok.isEmpty) return true;
+
+    try {
+      var res = await http
+          .delete(
+            _uri('/api/v1/user/media/$id'),
+            headers: _authHeaders(tok),
+          )
+          .timeout(_requestTimeout);
+      if (res.statusCode == 200 || res.statusCode == 204) return true;
+      res = await http
+          .delete(
+            _uri('/api/user/gallery/$id'),
+            headers: _authHeaders(tok),
+          )
+          .timeout(_requestTimeout);
+      return res.statusCode == 200 || res.statusCode == 204;
+    } catch (e, st) {
+      AppDiagLog.verbose('[UserGallery] delete failed: $e\n$st');
+      return false;
+    }
   }
 
   Future<String?> _downloadToDir(Directory dir, CloudGalleryPhoto photo) async {

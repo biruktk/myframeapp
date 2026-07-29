@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/app_diag_log.dart';
+import '../services/device_store.dart';
+import '../services/in_app_notification_store.dart';
 import '../services/slideshow_style.dart';
 import '../theme/app_theme.dart';
 
@@ -451,6 +453,10 @@ class AppSettings extends ChangeNotifier {
     }
     if (!value) {
       await clearAuthJwt();
+      // Aggressive logout: clear all paired frame data and notification history,
+      // mirroring the mini-app's performLogout behaviour.
+      await DeviceStore.instance.clear();
+      await InAppNotificationStore.instance.clearAll();
     }
   }
 

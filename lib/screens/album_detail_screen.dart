@@ -8,6 +8,8 @@ import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
 import '../services/gallery_send_flow.dart';
+import '../services/frame_api_client.dart';
+import '../settings/app_settings.dart';
 import '../widgets/pick_personal_photos_dialog.dart';
 
 bool _localFileExists(String path) {
@@ -234,6 +236,15 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     );
     if (ok != true || !mounted) return;
     await SendAlbumsStore.instance.deleteAlbum(widget.albumId);
+    final tok = AppSettingsScope.of(context).authToken;
+    if (tok.trim().isNotEmpty) {
+      unawaited(
+        FrameApiClient().deleteUserAlbum(
+          bearerToken: tok,
+          albumId: widget.albumId,
+        ),
+      );
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
   }

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../services/device_store.dart';
+import '../services/frame_online_guard.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/send_albums_store.dart';
@@ -84,6 +85,9 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Please connect a frame first.')),
       );
+      return;
+    }
+    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: paired)) {
       return;
     }
 

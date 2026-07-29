@@ -9,6 +9,7 @@ import '../navigation/pairing_flow_nav.dart';
 import '../screens/device_discovery_screen.dart';
 import '../screens/image_editor_screen.dart';
 import '../services/device_store.dart';
+import '../services/frame_online_guard.dart';
 import '../settings/app_settings.dart';
 import '../widgets/frame_picker_sheet.dart';
 
@@ -61,7 +62,10 @@ Future<bool> sendGalleryPhotoToFrame(
   if (picked == null || !context.mounted) return false;
 
   await DeviceStore.instance.setActiveFrameDeviceId(picked.deviceId);
-
+  if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: picked)) {
+    return false;
+  }
+  if (!context.mounted) return false;
   late final Uint8List bytes;
   try {
     bytes = await file.readAsBytes();

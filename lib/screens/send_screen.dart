@@ -39,6 +39,7 @@ import '../models/pairing_nav_result.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../models/send_overlay_options.dart';
 import '../services/app_diag_log.dart';
+import '../services/frame_online_guard.dart';
 import 'device_discovery_screen.dart';
 import 'settings_ai_generate_screen.dart';
 
@@ -57,17 +58,42 @@ class SendScreen extends StatefulWidget {
   State<SendScreen> createState() => _SendScreenState();
 }
 
-class _SendScreenState extends State<SendScreen> {
+class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
   int _lastGalleryNonce = 0;
   List<String> _lastSharedPaths = const [];
   bool _sendFlowBusy = false;
   bool _pickerOpen = false;
 
+  /// `true` when the active frame is online; `false` when offline; `null` when unknown / no frame.
+  bool? _frameOnline;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.galleryPickNonce?.addListener(_onGalleryNonce);
     widget.sharedPathsNonce?.addListener(_onSharedPathsNonce);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshFrameOnlineStatus());
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshFrameOnlineStatus());
+    }
+  }
+
+  Future<void> _refreshFrameOnlineStatus() async {
+    await DeviceStore.instance.load();
+    final paired = DeviceStore.instance.cached;
+    if (paired == null) {
+      if (mounted) setState(() => _frameOnline = null);
+      return;
+    }
+    final online = await FrameOnlineGuard.isFrameEffectivelyOnline(paired);
+    if (mounted) setState(() => _frameOnline = online);
   }
 
   @override
@@ -85,9 +111,20 @@ class _SendScreenState extends State<SendScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.galleryPickNonce?.removeListener(_onGalleryNonce);
     widget.sharedPathsNonce?.removeListener(_onSharedPathsNonce);
     super.dispose();
+  }
+
+  Future<void> _onSendEntryTap(BuildContext context, VoidCallback action) async {
+    if (_frameOnline == false) {
+      // Fast path: warn immediately; live check still runs if status flipped online.
+      final ok = await FrameOnlineGuard.ensureCanStartSendFlow(context);
+      if (mounted) unawaited(_refreshFrameOnlineStatus());
+      if (!ok) return;
+    }
+    action();
   }
 
   void _onGalleryNonce() {
@@ -214,6 +251,10 @@ class _SendScreenState extends State<SendScreen> {
       await _shareGuestUploadLink(context);
       return;
     }
+    if (!await FrameOnlineGuard.ensureCanStartSendFlow(context)) {
+      if (mounted) unawaited(_refreshFrameOnlineStatus());
+      return;
+    }
     if (source == _SendSource.gallery) {
       await _startFromGalleryWithQueue(context);
       return;
@@ -290,6 +331,11 @@ class _SendScreenState extends State<SendScreen> {
   /// Images shared from another app (Gallery share sheet → MyFrame).
   Future<void> _startFromSharedPaths(BuildContext context, List<String> paths) async {
     final s = AppStrings.of(context);
+    if (!context.mounted) return;
+    if (!await FrameOnlineGuard.ensureCanStartSendFlow(context)) {
+      if (mounted) unawaited(_refreshFrameOnlineStatus());
+      return;
+    }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -431,6 +477,10 @@ class _SendScreenState extends State<SendScreen> {
       final picked = await showFramePickerSheet(context, frames: frames);
       if (picked == null || !context.mounted) return;
       await DeviceStore.instance.setActiveFrameDeviceId(picked.deviceId);
+      if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: picked)) {
+        if (mounted) unawaited(_refreshFrameOnlineStatus());
+        return;
+      }
     }
 
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
@@ -757,19 +807,30 @@ class _SendScreenState extends State<SendScreen> {
             s: s,
             primary: primary,
             colorScheme: cs,
-            onPickGallery: () => _startFlow(context, _SendSource.gallery),
+            enabled: _frameOnline != false,
+            onPickGallery: () => _onSendEntryTap(
+              context,
+              () => _startFlow(context, _SendSource.gallery),
+            ),
           ),
           _SendRow(
             icon: Icons.view_carousel_outlined,
             title: s.navPlaylist,
             subtitle: s.sendSlideshowOpensPlaylist,
-            onTap: () async {
+            enabled: _frameOnline != false,
+            onTap: () => _onSendEntryTap(context, () async {
+              if (!context.mounted) return;
+              if (!await FrameOnlineGuard.ensureCanStartSendFlow(context)) {
+                if (mounted) unawaited(_refreshFrameOnlineStatus());
+                return;
+              }
               if (!context.mounted) return;
               await Navigator.push<void>(
                 context,
                 MaterialPageRoute<void>(builder: (_) => const PlaylistScreen()),
               );
-            },
+              if (mounted) unawaited(_refreshFrameOnlineStatus());
+            }),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 6, 4, 10),
@@ -787,7 +848,11 @@ class _SendScreenState extends State<SendScreen> {
             icon: Icons.photo_camera_outlined,
             title: s.takePhoto,
             subtitle: s.takePhotoSub,
-            onTap: () => _startFlow(context, _SendSource.camera),
+            enabled: _frameOnline != false,
+            onTap: () => _onSendEntryTap(
+              context,
+              () => _startFlow(context, _SendSource.camera),
+            ),
           ),
           _SendRow(
             icon: Icons.share_outlined,
@@ -800,7 +865,11 @@ class _SendScreenState extends State<SendScreen> {
             title: s.aiGenerate,
             subtitle: s.aiGenerateSub,
             highlighted: true,
-            onTap: () => _startFlow(context, _SendSource.ai),
+            enabled: _frameOnline != false,
+            onTap: () => _onSendEntryTap(
+              context,
+              () => _startFlow(context, _SendSource.ai),
+            ),
           ),
           const Padding(
             padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
@@ -819,83 +888,89 @@ class _SendHeroCard extends StatelessWidget {
     required this.primary,
     required this.colorScheme,
     required this.onPickGallery,
+    this.enabled = true,
   });
 
   final AppStrings s;
   final Color primary;
   final ColorScheme colorScheme;
   final VoidCallback onPickGallery;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    final accent = enabled ? primary : colorScheme.onSurfaceVariant;
     return Semantics(
       container: true,
       label: s.gallery,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              primary.withValues(alpha: 0.11),
-              colorScheme.surface,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.72,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: 0.11),
+                colorScheme.surface,
+              ],
+            ),
+            border: Border.all(color: accent.withValues(alpha: 0.22)),
+            boxShadow: [
+              BoxShadow(
+                color: accent.withValues(alpha: 0.08),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
             ],
           ),
-          border: Border.all(color: primary.withValues(alpha: 0.22)),
-          boxShadow: [
-            BoxShadow(
-              color: primary.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: accent.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(Icons.photo_library_rounded, color: accent, size: 28),
                     ),
-                    child: Icon(Icons.photo_library_rounded, color: primary, size: 28),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      s.sendTabSubhead,
-                      style: TextStyle(
-                        fontSize: 15,
-                        height: 1.35,
-                        color: colorScheme.onSurface,
-                        fontWeight: FontWeight.w500,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        enabled ? s.sendTabSubhead : s.frameOfflineLabel,
+                        style: TextStyle(
+                          fontSize: 15,
+                          height: 1.35,
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: onPickGallery,
+                  icon: const Icon(Icons.add_photo_alternate_rounded, size: 22),
+                  label: Text(
+                    s.gallery,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                   ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              FilledButton.icon(
-                onPressed: onPickGallery,
-                icon: const Icon(Icons.add_photo_alternate_rounded, size: 22),
-                label: Text(
-                  s.gallery,
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: enabled ? primary : colorScheme.surfaceContainerHighest,
+                    foregroundColor: enabled ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                  ),
                 ),
-                style: FilledButton.styleFrom(
-                  backgroundColor: primary,
-                  foregroundColor: colorScheme.onPrimary,
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -911,6 +986,7 @@ class _SendRow extends StatelessWidget {
     required this.onTap,
     this.trailing,
     this.highlighted = false,
+    this.enabled = true,
   });
 
   final IconData icon;
@@ -919,34 +995,38 @@ class _SendRow extends StatelessWidget {
   final VoidCallback onTap;
   final Widget? trailing;
   final bool highlighted;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final primary = cs.primary;
+    final accent = enabled ? primary : cs.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
+      child: Opacity(
+        opacity: enabled ? 1 : 0.72,
+        child: Material(
+          color: cs.surface,
           borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: highlighted ? primary : cs.outlineVariant,
-                width: highlighted ? 1.5 : 1,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: highlighted && enabled ? primary : cs.outlineVariant,
+                  width: highlighted && enabled ? 1.5 : 1,
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: primary, size: 26),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
+              child: Row(
+                children: [
+                  Icon(icon, color: accent, size: 26),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
@@ -971,6 +1051,7 @@ class _SendRow extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

@@ -15,3 +15,21 @@ Future<void> showConnectFrameFirstDialog(BuildContext context) {
     ),
   );
 }
+
+/// Shown when the user tries to send photos while the frame is offline.
+Future<void> showFrameOfflineSendDialog(BuildContext context) {
+  final s = AppStrings.of(context);
+  return showDialog<void>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text(s.frameOfflineReconnectTitle),
+      content: Text(s.frameOfflineSendBlockedBody),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(c),
+          child: Text(s.gotItLabel),
+        ),
+      ],
+    ),
+  );
+}
