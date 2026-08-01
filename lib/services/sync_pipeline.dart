@@ -18,8 +18,9 @@ import 'user_gallery_cloud_service.dart';
 ///
 /// Storage model:
 /// - Resync = per-account cloud state between phones.
-/// - Frame TF holds cast content only; account delete does **not** stop
-///   playback or free TF — frame keeps playing until slideshow changes.
+/// - Playlist/album delete is synced via the server, which also notifies
+///   affected frames to stop that slideshow (MQTT). TF files may remain
+///   until overwritten by a later cast.
 ///
 /// Triggers:
 /// 1. Periodic tick every 10s while signed in (foreground)

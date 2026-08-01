@@ -17,8 +17,8 @@ import 'user_playlist_remote_api.dart';
 /// appear on every signed-in phone. Photo membership uses cloud media IDs
 /// from [UserGalleryCloudService]; local paths are resolved on each device.
 ///
-/// Deletes update account/cloud only — they do **not** stop frame playback
-/// or free TF space (cast/TF is separate storage).
+/// Deletes sync account/cloud to other phones; the server also notifies
+/// frames playing that playlist to stop (see DELETE /api/user/playlists).
 class AlbumCloudSync {
   AlbumCloudSync._();
   static final instance = AlbumCloudSync._();

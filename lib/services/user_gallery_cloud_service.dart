@@ -38,8 +38,8 @@ class CloudGalleryPhoto {
 
 /// Syncs the personal gallery with VPS (`GET/POST/DELETE /api/user/gallery`).
 ///
-/// Account/cloud only: deletes update other phones via resync. They do **not**
-/// tell the frame to stop playback or free TF space (cast/TF is separate).
+/// Deletes update other phones via resync. Playlist/album deletes (separate
+/// APIs) also notify frames to stop that slideshow via the server.
 class UserGalleryCloudService {
   UserGalleryCloudService._();
   static final UserGalleryCloudService instance = UserGalleryCloudService._();
@@ -410,7 +410,8 @@ class UserGalleryCloudService {
   }
 
   /// Permanently deletes a gallery photo from the **account** (other phones
-  /// drop it on resync). Does not stop frame playback or free TF space.
+  /// drop it on resync). If it was the last image in a frame slideshow, the
+  /// server stops that frame's rotation.
   /// [photoId] is the cloud upload id; [localPath] is used to resolve id from cache.
   Future<bool> deletePhoto({
     required String authToken,

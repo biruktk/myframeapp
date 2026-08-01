@@ -222,7 +222,7 @@ class SendAlbumsStore {
       if (seen.contains(a.id) || deleted.contains(a.id)) continue;
       // Keep only not-yet-pushed local albums (timestamp ids). Cloud albums
       // missing from the server list were deleted on another device — drop them.
-      // Account delete does not stop frame playback / TF.
+      // Server delete also notifies frames to stop that playlist.
       final looksLocal = RegExp(r'^\d{10,}$').hasMatch(a.id);
       if (looksLocal) next.add(a);
     }
