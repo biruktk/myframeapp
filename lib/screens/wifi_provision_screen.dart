@@ -88,29 +88,48 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     try {
       try {
         await PermissionGate.locationWhenInUse();
-        final loc = await Permission.locationWhenInUse.status;
-        if (!loc.isGranted && !loc.isLimited) {
-          if (Platform.isAndroid) {
+        if (Platform.isAndroid) {
+          await PermissionGate.nearbyWifiDevices();
+          final loc = await Permission.locationWhenInUse.status;
+          final nearby = await Permission.nearbyWifiDevices.status;
+          if (!loc.isGranted && !loc.isLimited && !nearby.isGranted) {
             await PermissionGate.enqueueLocationCoarse();
+          }
+          final loc2 = await Permission.locationWhenInUse.status;
+          final nearby2 = await Permission.nearbyWifiDevices.status;
+          if (!loc2.isGranted && !loc2.isLimited && !nearby2.isGranted) {
+            if (!mounted) return;
+            setState(() {
+              _showManualEntry = true;
+              _error = AppStrings.of(context).wifiScanPermissionHint;
+            });
           }
         }
       } catch (_) {}
+
       final info = await _nativeBleMethod.invokeMethod<Map<dynamic, dynamic>>('getWifiInfo');
       final currentSsid = normalizeWifiSsid(info?['ssid']?.toString() ?? '');
       if (currentSsid.isNotEmpty && currentSsid != '<unknown ssid>') {
         setState(() {
           _currentWifiSsid = currentSsid;
-          _ssidCtrl.text = currentSsid;
-          _selectedSsid = currentSsid;
+          if (_ssidCtrl.text.trim().isEmpty) {
+            _ssidCtrl.text = currentSsid;
+            _selectedSsid = currentSsid;
+          }
         });
       }
+
+      // iOS: no public nearby-SSID API — current network + manual entry only.
       if (!Platform.isAndroid) {
+        if (!mounted) return;
         setState(() {
+          _wifiNetworks = const [];
           _showManualEntry = true;
           _scanningWifi = false;
         });
         return;
       }
+
       final wifiEnabled = info?['enabled'] == true;
       if (!wifiEnabled) {
         if (!mounted) return;
@@ -122,8 +141,14 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         });
         return;
       }
+
       AppDiagLog.verbose('[WiFi] scan start');
-      final raw = await _nativeBleMethod.invokeMethod<List<dynamic>>('scanWifiNetworks') ?? <dynamic>[];
+      var raw = await _nativeBleMethod.invokeMethod<List<dynamic>>('scanWifiNetworks') ?? <dynamic>[];
+      // One retry if the first pass returned empty (scan throttle / cold start).
+      if (raw.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
+        raw = await _nativeBleMethod.invokeMethod<List<dynamic>>('scanWifiNetworks') ?? <dynamic>[];
+      }
       final parsed = <({String ssid, int rssi, bool secure})>[];
       for (final item in raw) {
         if (item is! Map) continue;
@@ -193,10 +218,13 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       await _connectInner();
     } catch (e, st) {
       AppDiagLog.verbose('[WiFi] connect failed: $e\n$st');
+      await DeviceStore.instance.clearWifiProvision();
       if (!mounted) return;
       final s = AppStrings.of(context);
       setState(() {
         _busy = false;
+        _wifiConfirmed = false;
+        _status = null;
         _error = AppDiagLog.userFacingStatus(
           e.toString(),
           fallback: s.wifiConnectionFailed,
@@ -210,17 +238,22 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     final paired = DeviceStore.instance.cached;
     final currentSsid = normalizeWifiSsid(_ssidCtrl.text);
     // Password is only what the user typed — never cached/saved auto-fill.
+    // Trim only trailing/leading spaces; empty string = open network.
     final effectivePassword = _passCtrl.text;
-    final secure = _wifiNetworks.any(
-      (n) => wifiSsidEquals(n.ssid, currentSsid) && n.secure,
+    final match = _wifiNetworks.where(
+      (n) => wifiSsidEquals(n.ssid, currentSsid),
     );
+    final listedSecure = match.isNotEmpty && match.first.secure;
+    // Prefer explicit open selection / blank password over a flaky scan "secure" bit.
+    final treatAsOpen =
+        _selectedIsOpen || (!listedSecure && effectivePassword.isEmpty);
     if (currentSsid.isEmpty) {
       setState(() {
         _error = s.wifiSsidRequired;
       });
       return;
     }
-    if (secure && effectivePassword.isEmpty) {
+    if (listedSecure && !treatAsOpen && effectivePassword.isEmpty) {
       setState(() {
         _error = s.wifiRequiresPasswordError;
       });
@@ -231,6 +264,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       _busy = true;
       _error = null;
       _status = s.connectingWifi;
+      _wifiConfirmed = false;
     });
 
     if (paired == null) {
@@ -242,7 +276,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     }
 
     AppDiagLog.verbose(
-      '[WiFi] connect start ssid="$currentSsid" pwdLen=${effectivePassword.length}',
+      '[WiFi] connect start ssid="$currentSsid" pwdLen=${effectivePassword.length} open=$treatAsOpen',
     );
 
     final selfHostedMqtt = SelfHostedMqttConfig(
@@ -267,11 +301,16 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     if (!mounted) return;
 
     if (!provision.ok || !provision.confirmed) {
+      // Never persist a failed SSID as "connected".
+      await DeviceStore.instance.clearWifiProvision();
+      if (!mounted) return;
       setState(() {
         _busy = false;
+        _wifiConfirmed = false;
+        _status = null;
         _error = AppDiagLog.userFacingStatus(
           provision.message,
-          fallback: s.wifiConnectFrameFailed,
+          fallback: s.wifiConnectionFailed,
         );
       });
       return;
@@ -424,6 +463,47 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                             color: cs.onSurfaceVariant,
                           ),
                         ),
+                        if (!Platform.isAndroid) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            s.wifiIosNearbyUnavailable,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        if (Platform.isAndroid) ...[
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: (_busy || _scanningWifi) ? null : _scanWifiNetworks,
+                              icon: _scanningWifi
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: _kRed,
+                                      ),
+                                    )
+                                  : const Icon(Icons.refresh, size: 18, color: _kRed),
+                              label: Text(
+                                s.wifiRescanNetworks,
+                                style: const TextStyle(
+                                  color: _kRed,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: _kRed,
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          ),
+                        ],
 
                         // Current WiFi
                         if (_currentWifiSsid != null && _currentWifiSsid!.isNotEmpty) ...[

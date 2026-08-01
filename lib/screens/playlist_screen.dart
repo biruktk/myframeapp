@@ -10,6 +10,7 @@ import '../services/frame_online_guard.dart';
 import '../services/send_albums_store.dart';
 import '../services/slideshow_photo_picker.dart';
 import '../services/slideshow_playlist_store.dart';
+import '../services/sync_pipeline.dart';
 import '../services/user_playlist_remote_api.dart';
 import '../settings/app_settings.dart';
 import '../widgets/text_input_bottom_sheet.dart';
@@ -39,17 +40,17 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
     await DeviceStore.instance.load();
-    await SendAlbumsStore.instance.load();
-    _albums = SendAlbumsStore.instance.albums;
-    final paired = DeviceStore.instance.cached;
-    _localSlideshow = await SlideshowPlaylistStore.instance.load(paired);
-
     final tok = AppSettingsScope.of(context).authToken.trim();
     if (tok.isNotEmpty) {
+      await SyncPipeline.instance.onAlbumsChanged();
       _dashboard = await UserPlaylistRemoteApi(bearerToken: tok).fetchDashboard();
     } else {
       _dashboard = null;
     }
+    await SendAlbumsStore.instance.load();
+    _albums = SendAlbumsStore.instance.albums;
+    final paired = DeviceStore.instance.cached;
+    _localSlideshow = await SlideshowPlaylistStore.instance.load(paired);
     if (mounted) setState(() => _loading = false);
   }
 
@@ -98,6 +99,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     await SendAlbumsStore.instance.load();
     if (SendAlbumsStore.instance.albums.isEmpty || !mounted) return;
     final album = SendAlbumsStore.instance.albums.first;
+    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: album.id));
     if (!mounted) return;
 
     if (paths.isNotEmpty) {

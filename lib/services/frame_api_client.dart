@@ -245,9 +245,9 @@ class FrameApiClient {
                   : null,
             )
             .timeout(t);
-        if (res.statusCode != 200) return null;
+        if (res.statusCode != 200) continue;
         final json = jsonDecode(res.body) as Map<String, dynamic>;
-        if (json['ok'] != true) return null;
+        if (json['ok'] != true) continue;
         return FrameStatus.fromJson(json);
       } catch (_) {
         continue;

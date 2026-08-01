@@ -55,6 +55,12 @@ import FirebaseCore
           NSLog("[myframe] getWifiInfo: iOS < 14, returning empty")
           result(["enabled": false, "ssid": ""])
         }
+      case "scanWifiNetworks":
+        // Apple does not expose a public API to list nearby SSIDs without
+        // Hotspot Helper entitlement (Apple approval). Return empty; Flutter
+        // shows the current network + manual SSID entry.
+        NSLog("[myframe] scanWifiNetworks: iOS cannot list nearby SSIDs")
+        result([])
       default:
         result(FlutterMethodNotImplemented)
       }

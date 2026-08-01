@@ -4760,6 +4760,22 @@ class AppStrings {
     de: 'Erneut scannen',
     ja: '再スキャン',
   );
+  String get wifiIosNearbyUnavailable => _l6(
+    en: 'iOS cannot list nearby Wi‑Fi networks. Use your current network below, or type the SSID manually.',
+    zh: 'iOS 无法列出附近的 Wi‑Fi。请使用下方当前网络，或手动输入名称。',
+    es: 'iOS no puede listar redes Wi‑Fi cercanas. Usa la red actual o escribe el nombre manualmente.',
+    fr: 'iOS ne peut pas lister les Wi‑Fi à proximité. Utilisez le réseau actuel ou saisissez le SSID.',
+    de: 'iOS kann nahe WLAN-Netze nicht auflisten. Aktuelles Netz nutzen oder SSID manuell eingeben.',
+    ja: 'iOSでは近くのWi‑Fi一覧を取得できません。現在のネットワークを使うか、SSIDを入力してください。',
+  );
+  String get wifiScanPermissionHint => _l6(
+    en: 'Location or Nearby Wi‑Fi permission is needed to list networks.',
+    zh: '需要位置或附近 Wi‑Fi 权限才能列出网络。',
+    es: 'Se necesita permiso de ubicación o Wi‑Fi cercano para listar redes.',
+    fr: 'Autorisation Localisation ou Wi‑Fi à proximité requise pour lister les réseaux.',
+    de: 'Standort- oder Nähe-WLAN-Berechtigung nötig, um Netze anzuzeigen.',
+    ja: 'ネットワーク一覧には位置情報または付近のWi‑Fi権限が必要です。',
+  );
   String get wifiTapPlusForNewNetwork => _l6(
     en: 'Tap + if your network is not listed — you can type the SSID and password.',
     zh: '若列表没有你的网络，点右上角 + 手动输入名称和密码。',
@@ -5168,6 +5184,38 @@ class AppStrings {
     de: 'Beitritt fehlgeschlagen.',
     ja: '参加できませんでした。',
   );
+  String get joinFamilyCodeRequired => _l6(
+    en: 'Enter an invite code first.',
+    zh: '请先输入邀请码。',
+    es: 'Introduce un código primero.',
+    fr: 'Saisissez d’abord un code.',
+    de: 'Bitte zuerst einen Code eingeben.',
+    ja: '先に招待コードを入力してください。',
+  );
+  String get joinFamilyNotFound => _l6(
+    en: 'No family matches that invite code.',
+    zh: '找不到该邀请码对应的家庭。',
+    es: 'Ninguna familia coincide con ese código.',
+    fr: 'Aucune famille ne correspond à ce code.',
+    de: 'Keine Familie zu diesem Code gefunden.',
+    ja: 'その招待コードの家族が見つかりません。',
+  );
+  String get joinFamilyInvalidCode => _l6(
+    en: 'That invite code is invalid.',
+    zh: '邀请码无效。',
+    es: 'Código de invitación no válido.',
+    fr: 'Code d’invitation invalide.',
+    de: 'Ungültiger Einladungscode.',
+    ja: '招待コードが無効です。',
+  );
+  String get joinFamilyNeedLogin => _l6(
+    en: 'Sign in to join a family with this code.',
+    zh: '请先登录后再使用邀请码加入。',
+    es: 'Inicia sesión para unirte.',
+    fr: 'Connectez-vous pour rejoindre.',
+    de: 'Zum Beitreten bitte anmelden.',
+    ja: '参加するにはサインインしてください。',
+  );
 
   String get familyCloudCreateHint => _l6(
     en: 'Sign in sync: create your cloud family so codes work across devices.',
@@ -5529,6 +5577,14 @@ class AppStrings {
     fr: 'Image illisible',
     de: 'Bild nicht lesbar',
     ja: '画像を読めません',
+  );
+  String get decodeErrorHint => _l6(
+    en: 'Try another photo. On iPhone: Full Photos access, and wait until iCloud finishes downloading.',
+    zh: '请换一张照片重试。iPhone：开启完整照片权限，并等待 iCloud 下载完成。',
+    es: 'Prueba otra foto. En iPhone: acceso completo y descarga de iCloud.',
+    fr: 'Réessayez avec une autre photo. iPhone : accès complet et téléchargement iCloud.',
+    de: 'Andere Foto versuchen. iPhone: Voller Fotozugriff und iCloud-Download abwarten.',
+    ja: '別の写真を試してください。iPhoneは写真へのフルアクセスとiCloudダウンロード完了を確認。',
   );
   String get noImage => _l6(
     en: 'No image',
@@ -6707,20 +6763,20 @@ class AppStrings {
       );
   // ── WiFi Provision Screen ──
   String get wifiProvisionPhoneHint => _l6(
-        en: 'Your phone\'s Wi‑Fi will be used for the initial connection.',
-        zh: '您手机的 Wi‑Fi 将用于初始连接。',
-        es: 'El Wi‑Fi de tu teléfono se usará para la conexión inicial.',
-        fr: 'Le Wi‑Fi de votre téléphone sera utilisé pour la connexion initiale.',
-        de: 'Das WLAN Ihres Telefons wird für die Erstverbindung verwendet.',
-        ja: '初期接続にはお使いの電話のWi‑Fiが使用されます。',
+        en: 'Select a network (or type the SSID), enter the password, then Connect — credentials are sent to the frame over Bluetooth.',
+        zh: '选择网络（或输入名称），填写密码后点连接 — 凭证通过蓝牙发送到相框。',
+        es: 'Elige una red (o escribe el SSID), introduce la contraseña y Conectar — se envía al marco por Bluetooth.',
+        fr: 'Choisissez un réseau (ou saisissez le SSID), mot de passe, puis Connecter — envoi au cadre via Bluetooth.',
+        de: 'Netz wählen (oder SSID tippen), Passwort eingeben, Verbinden — Daten gehen per Bluetooth an den Rahmen.',
+        ja: 'ネットワークを選ぶ（またはSSID入力）、パスワードを入れて接続 — 認証情報はBluetoothでフレームへ送信されます。',
       );
   String get wifiCurrentNetwork => _l6(
-        en: 'Current',
-        zh: '当前',
-        es: 'Actual',
-        fr: 'Actuel',
-        de: 'Aktuell',
-        ja: '現在',
+        en: 'This phone’s Wi‑Fi',
+        zh: '本机 Wi‑Fi',
+        es: 'Wi‑Fi de este teléfono',
+        fr: 'Wi‑Fi de ce téléphone',
+        de: 'WLAN dieses Telefons',
+        ja: 'このスマホのWi‑Fi',
       );
   String get wifiUseNetwork => _l6(
         en: 'Use',

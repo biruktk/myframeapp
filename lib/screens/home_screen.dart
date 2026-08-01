@@ -15,7 +15,7 @@ import '../navigation/pairing_flow_nav.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
 import '../services/family_group_store.dart';
 import '../services/frame_api_client.dart';
-import '../services/frame_mac_util.dart';
+import '../services/sync_pipeline.dart';
 import '../services/usage_metrics_store.dart';
 import '../settings/app_settings.dart';
 import 'device_discovery_screen.dart';
@@ -59,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _refreshAllFrameStatuses();
     });
   }
@@ -74,8 +74,24 @@ class _HomeScreenState extends State<HomeScreen> {
     _coachEntry = null;
   }
 
+  Future<void> _onPullToRefresh() async {
+    final app = AppSettingsScope.of(context);
+    try {
+      if (app.hasAuthenticatedSession) {
+        await SyncPipeline.instance
+            .pullToRefresh()
+            .timeout(const Duration(seconds: 40));
+      }
+      await _load().timeout(const Duration(seconds: 20));
+    } catch (_) {
+      // Always end the RefreshIndicator even if network/status probes stall.
+      if (mounted) await DeviceStore.instance.load();
+    }
+  }
+
   Future<void> _load() async {
     await DeviceStore.instance.load();
+    await DeviceStore.instance.dedupeRelatedFrames();
     if (!mounted) return;
     final app = AppSettingsScope.of(context);
     await FamilyGroupStore.instance.ensureLoaded(ownerDisplayName: () {
@@ -103,27 +119,37 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() => _checkingFrameStatus = true);
     final updated = Map<String, FrameStatus>.from(_frameStatuses);
-    for (final f in frames) {
-      final mac = _macForFrame(f);
-      if (mac == null) continue;
-      try {
-        final status = await _apiClient.fetchFrameStatus(mac: mac);
-        if (status != null) {
-          updated[f.deviceId] = status;
-        }
-      } catch (_) {}
+
+    Future<void> probeOne(PairedFrame f) async {
+      FrameStatus? status;
+      // Cap MAC probes so pull-to-refresh cannot spin for minutes.
+      final macs = DeviceStore.statusMacCandidates(f).take(2);
+      for (final mac in macs) {
+        try {
+          status = await _apiClient
+              .fetchFrameStatus(mac: mac, timeout: const Duration(seconds: 4));
+          if (status != null) break;
+        } catch (_) {}
+      }
+      if (status != null) {
+        updated[f.deviceId] = status;
+      } else {
+        updated.remove(f.deviceId);
+      }
     }
+
+    try {
+      await Future.wait(frames.map(probeOne))
+          .timeout(const Duration(seconds: 12));
+    } catch (_) {}
+
     if (mounted) setState(() {
       _frameStatuses = updated;
       _checkingFrameStatus = false;
     });
   }
 
-  String? _macForFrame(PairedFrame f) {
-    return DeviceStore.instance.pairedFrameMac ??
-        FrameMacUtil.macFromBleName(f.bleNamePrefix ?? '') ??
-        FrameMacUtil.normalizeSlug(f.deviceId);
-  }
+  String? _macForFrame(PairedFrame f) => DeviceStore.macForPairedFrame(f);
 
   void _maybeShowCoachmark(AppSettings app) {
     if (!app.pendingHomeAddFrameCoachmark) return;
@@ -209,13 +235,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool _frameLikelyOnline(PairedFrame f) {
+    final st = _frameStatuses[f.deviceId];
+    if (st != null) return st.isEffectivelyOnline;
     final active = DeviceStore.instance.cached;
     if (BleFrameDeviceTransport.instance.connectionUi.value == FrameConnectionState.connected &&
         active != null &&
         active.deviceId.trim() == f.deviceId.trim()) {
       return true;
     }
-    return f.isWifiProvisioned || f.hasApiUrl;
+    // Unknown ≠ online. Never greenlight from wifiProvisioned / apiUrl alone.
+    return false;
   }
 
   Future<void> _confirmRemoveFrame(AppStrings s, PairedFrame f) async {
@@ -315,7 +344,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onlineC == 0 &&
               !_checkingFrameStatus;
 
-          return ListView(
+          return RefreshIndicator(
+            color: const Color(0xFFE5252A),
+            displacement: 48,
+            onRefresh: _onPullToRefresh,
+            child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             children: [
               if (showOfflineBanner) ...[
@@ -535,6 +571,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }),
             ],
+          ),
           );
         },
       ),

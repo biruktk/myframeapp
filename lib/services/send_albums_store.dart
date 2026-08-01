@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -152,5 +153,114 @@ class SendAlbumsStore {
     final p = await SharedPreferences.getInstance();
     final key = await _scopedKey();
     await p.setString(key, jsonEncode(_albums.map((e) => e.toJson()).toList()));
+  }
+
+  /// Apply cloud playlist / album metadata.
+  ///
+  /// When [cloudIdToPath] is provided, `photo_ids` / `photoIds` are resolved to
+  /// local gallery paths so albums show the same photos on every device.
+  Future<void> applyPlaylistsMeta(
+    List<Map<String, dynamic>> meta, {
+    Map<String, String>? cloudIdToPath,
+  }) async {
+    await load();
+    final deleted = await deletedAlbumIds();
+    final byId = {for (final a in _albums) a.id: a};
+    final next = <SendAlbumEntry>[];
+    final seen = <String>{};
+
+    // Merge caller map with persisted gallery id→path cache.
+    final idToPath = <String, String>{};
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('personal_gallery_cloud_ids_v1');
+      if (raw != null && raw.isNotEmpty) {
+        final m = jsonDecode(raw) as Map<String, dynamic>;
+        for (final e in m.entries) {
+          idToPath[e.key] = '${e.value}';
+        }
+      }
+    } catch (_) {}
+    if (cloudIdToPath != null) idToPath.addAll(cloudIdToPath);
+
+    for (final m in meta) {
+      final id = '${m['id'] ?? m['album_id'] ?? ''}'.trim();
+      if (id.isEmpty || deleted.contains(id)) continue;
+      seen.add(id);
+      final name = '${m['name'] ?? m['title'] ?? 'Album'}'.trim();
+      final existing = byId[id];
+      final paths = <String>[];
+      final rawIds = m['photo_ids'] ?? m['photoIds'] ?? m['media_ids'];
+      if (rawIds is List) {
+        for (final raw in rawIds) {
+          final pid = '$raw'.trim();
+          if (pid.isEmpty) continue;
+          final path = idToPath[pid];
+          if (path != null &&
+              path.isNotEmpty &&
+              !paths.contains(path) &&
+              await _fileExists(path)) {
+            paths.add(path);
+          }
+        }
+      }
+      // If server has photo ids but none resolved yet, keep prior local paths
+      // only when the album already had content (avoid wiping during race).
+      if (paths.isEmpty && existing != null && existing.paths.isNotEmpty) {
+        paths.addAll(existing.paths);
+      }
+      next.add(
+        SendAlbumEntry(
+          id: id,
+          name: name.isEmpty ? 'Album' : name,
+          paths: paths,
+        ),
+      );
+    }
+
+    for (final a in _albums) {
+      if (seen.contains(a.id) || deleted.contains(a.id)) continue;
+      next.add(a);
+    }
+
+    _albums = next;
+    await _persist();
+  }
+
+  /// Replace a local-only album id with the cloud id after createPlaylist.
+  Future<void> rebindAlbumId({
+    required String fromId,
+    required String toId,
+    String? name,
+  }) async {
+    await load();
+    final from = fromId.trim();
+    final to = toId.trim();
+    if (from.isEmpty || to.isEmpty || from == to) return;
+    final i = _albums.indexWhere((a) => a.id == from);
+    if (i < 0) return;
+    final cur = _albums[i];
+    _albums[i] = SendAlbumEntry(
+      id: to,
+      name: (name ?? cur.name).trim().isEmpty ? cur.name : (name ?? cur.name),
+      paths: List<String>.from(cur.paths),
+    );
+    await _persist();
+  }
+
+  Future<void> clearAllForAccount() async {
+    await load();
+    _albums = [];
+    await _persist();
+    final p = await SharedPreferences.getInstance();
+    await p.remove('send_albums_deleted_ids_v1');
+  }
+
+  static Future<bool> _fileExists(String path) async {
+    try {
+      return await File(path).exists();
+    } catch (_) {
+      return false;
+    }
   }
 }

@@ -99,7 +99,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
       {String? prefill}) async {
     final appTok = AppSettingsScope.of(context).authToken.trim();
     final birthdayPrefill = AppSettingsScope.of(context).birthday;
-    await showModalBottomSheet<void>(
+    final joined = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -108,18 +108,17 @@ class _FamilyScreenState extends State<FamilyScreen> {
         prefill: prefill,
         birthdayPrefill: birthdayPrefill,
         authToken: appTok,
-        onJoined: () async {
-          final tok = AppSettingsScope.of(context).authToken.trim();
-          if (tok.isNotEmpty) {
-            await DeviceStore.instance.syncServerFrames(bearerToken: tok);
-          }
-          if (mounted) setState(() {});
-        },
-        onBusyChanged: (busy) {
-          if (mounted) setState(() => _busy = busy);
-        },
-        isBusy: _busy,
       ),
+    );
+    if (joined != true || !mounted) return;
+    final tok = AppSettingsScope.of(this.context).authToken.trim();
+    if (tok.isNotEmpty) {
+      await DeviceStore.instance.syncServerFrames(bearerToken: tok);
+    }
+    if (!mounted) return;
+    setState(() {});
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      SnackBar(content: Text(s.joinFamilySuccess)),
     );
   }
 
@@ -551,18 +550,12 @@ class _JoinFamilySheet extends StatefulWidget {
     required this.prefill,
     required this.birthdayPrefill,
     required this.authToken,
-    required this.onJoined,
-    required this.onBusyChanged,
-    required this.isBusy,
   });
 
   final AppStrings strings;
   final String? prefill;
   final String birthdayPrefill;
   final String authToken;
-  final VoidCallback onJoined;
-  final void Function(bool busy) onBusyChanged;
-  final bool isBusy;
 
   @override
   State<_JoinFamilySheet> createState() => _JoinFamilySheetState();
@@ -571,6 +564,7 @@ class _JoinFamilySheet extends StatefulWidget {
 class _JoinFamilySheetState extends State<_JoinFamilySheet> {
   late final TextEditingController _ctrl;
   DateTime? _birthdayPick;
+  var _joining = false;
 
   @override
   void initState() {
@@ -600,63 +594,87 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
   String _isoBirthday(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  void _toast(String message) {
+    if (!mounted) return;
+    // Use the root messenger so toasts are visible above the sheet.
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger?.hideCurrentSnackBar();
+    messenger?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _confirm() async {
+    if (_joining) return;
     final s = widget.strings;
     final raw = _ctrl.text.trim();
-    if (raw.isEmpty) return;
-    if (_birthdayPick == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.joinFamilyBirthdayRequired)),
-      );
+    if (raw.isEmpty) {
+      _toast(s.joinFamilyCodeRequired);
       return;
     }
-    widget.onBusyChanged(true);
+    final norm = FamilyGroupStore.normalizeCode(raw);
+    if (norm.length != 8) {
+      _toast(s.joinFamilyCodeTooShort);
+      return;
+    }
+    if (_birthdayPick == null) {
+      _toast(s.joinFamilyBirthdayRequired);
+      return;
+    }
+    if (widget.authToken.trim().isEmpty) {
+      _toast(s.joinFamilyNeedLogin);
+      return;
+    }
+
+    setState(() => _joining = true);
+    final bIso = _isoBirthday(_birthdayPick!);
     try {
-      final norm = FamilyGroupStore.normalizeCode(raw);
-      final bIso = _isoBirthday(_birthdayPick!);
       final r = await FamilyGroupStore.instance.joinWithCode(
         raw,
         labelIfNew: s.joinFamilyDefaultLabel(norm),
-        bearerToken: widget.authToken.isNotEmpty ? widget.authToken : null,
-        apiOrigin: widget.authToken.isNotEmpty ? ApiConfig.baseUrl : null,
+        bearerToken: widget.authToken,
+        apiOrigin: ApiConfig.baseUrl,
         birthdayIso: bIso,
       );
       if (!mounted) return;
+
       switch (r) {
         case JoinFamilyResult.ok:
           final scope = AppSettingsScope.of(context);
-          await scope.setAccountProfile(
-            name: scope.profileName,
-            email: scope.accountEmail,
-            birthdayValue: bIso,
-          );
+          try {
+            await scope.setAccountProfile(
+              name: scope.profileName,
+              email: scope.accountEmail,
+              birthdayValue: bIso,
+            );
+          } catch (_) {
+            // Birthday save is best-effort; join already succeeded.
+          }
           if (!mounted) return;
-          Navigator.pop(context);
-          widget.onJoined();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(s.joinFamilySuccess)),
-          );
+          Navigator.pop(context, true);
+          return;
         case JoinFamilyResult.codeTooShort:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(s.joinFamilyCodeTooShort)),
-          );
+          _toast(s.joinFamilyCodeTooShort);
         case JoinFamilyResult.ownInviteCode:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(s.joinFamilyOwnCodeHint)),
-          );
+          _toast(s.joinFamilyOwnCodeHint);
+        case JoinFamilyResult.notFound:
+          _toast(s.joinFamilyNotFound);
+        case JoinFamilyResult.invalidInvite:
+          _toast(s.joinFamilyInvalidCode);
+        case JoinFamilyResult.unauthorized:
+          _toast(s.joinFamilyNeedLogin);
         case JoinFamilyResult.networkError:
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(s.joinFamilyNetworkError)),
-          );
+          _toast(s.joinFamilyNetworkError);
       }
+    } catch (e) {
+      _toast('${s.joinFamilyNetworkError} ($e)');
     } finally {
-      widget.onBusyChanged(false);
+      if (mounted) setState(() => _joining = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final s = widget.strings;
+    final cs = Theme.of(context).colorScheme;
     return SingleChildScrollView(
       padding: EdgeInsets.only(
         left: 20,
@@ -672,21 +690,26 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(s.joinFamilyBody,
-              style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  height: 1.4)),
+              style: TextStyle(color: cs.onSurfaceVariant, height: 1.4)),
           const SizedBox(height: 16),
           TextField(
             controller: _ctrl,
+            enabled: !_joining,
             textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
               labelText: s.joinFamilyHint,
               border: const OutlineInputBorder(),
+              counterText: '',
             ),
+            maxLength: 12,
             autocorrect: false,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) {
+              if (!_joining) unawaited(_confirm());
+            },
           ),
           const SizedBox(height: 20),
-          Divider(color: Theme.of(context).colorScheme.outlineVariant),
+          Divider(color: cs.outlineVariant),
           const SizedBox(height: 12),
           Text(
             s.joinFamilyProfileSection,
@@ -696,7 +719,7 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
           Text(
             s.joinFamilyBirthdayHint,
             style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              color: cs.onSurfaceVariant,
               height: 1.4,
               fontSize: 13,
             ),
@@ -706,29 +729,43 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+              side: BorderSide(color: cs.outlineVariant),
             ),
             child: ListTile(
+              enabled: !_joining,
               title: Text(s.joinFamilyBirthdayLabel),
               subtitle: Text(
                 _birthdayPick == null ? '—' : _isoBirthday(_birthdayPick!),
               ),
               trailing: const Icon(Icons.cake_outlined),
-              onTap: () async {
-                final d = await showDatePicker(
-                  context: context,
-                  initialDate: _birthdayPick ?? DateTime(1990, 6, 15),
-                  firstDate: DateTime(1900),
-                  lastDate: DateTime.now(),
-                );
-                if (d != null && mounted) setState(() => _birthdayPick = d);
-              },
+              onTap: _joining
+                  ? null
+                  : () async {
+                      final d = await showDatePicker(
+                        context: context,
+                        initialDate: _birthdayPick ?? DateTime(1990, 6, 15),
+                        firstDate: DateTime(1900),
+                        lastDate: DateTime.now(),
+                      );
+                      if (d != null && mounted) {
+                        setState(() => _birthdayPick = d);
+                      }
+                    },
             ),
           ),
           const SizedBox(height: 10),
           FilledButton(
-            onPressed: widget.isBusy ? null : _confirm,
-            child: Text(s.joinFamilyConfirm),
+            onPressed: _joining ? null : () => unawaited(_confirm()),
+            child: _joining
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(s.joinFamilyConfirm),
           ),
         ],
       ),

@@ -6,7 +6,6 @@ import 'package:app_settings/app_settings.dart' as app_os;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../utils/platform_share.dart';
@@ -26,9 +25,11 @@ import '../services/frame_forget_service.dart';
 import '../services/frame_guest_invite_service.dart';
 import '../services/frame_recovery_service.dart';
 import '../services/gallery_image_cache.dart';
+import '../services/gallery_image_normalizer.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
+import '../services/sync_pipeline.dart';
 import '../services/device_transport.dart';
 import 'create_playlist_screen.dart';
 import '../services/permission_gate.dart';
@@ -281,7 +282,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
       );
       if (x == null) return; // user cancelled
       cameraPath = x.path;
-      bytes = await _ensureJpeg(await x.readAsBytes());
+      bytes = await _ensureJpeg(await x.readAsBytes(), pathHint: x.path);
     } on PlatformException catch (e) {
       if (!context.mounted) return;
       final msg = e.code == 'camera_access_denied' || e.code == 'camera_access_denied_android'
@@ -371,7 +372,11 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     final shareBytes = <Uint8List>[];
     for (final f in files) {
       try {
-        shareBytes.add(await f.readAsBytes());
+        final raw = await f.readAsBytes();
+        final jpeg = await GalleryImageNormalizer.toJpegBytes(raw, pathHint: f.path);
+        if (jpeg != null && jpeg.isNotEmpty) {
+          shareBytes.add(jpeg);
+        }
       } catch (e) {
         AppDiagLog.verbose('[Send] share read failed ${f.path}: $e');
       }
@@ -410,8 +415,16 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
 
     if (sheet.addToAlbumId != null) {
       await SendAlbumsStore.instance.addPathsToAlbum(sheet.addToAlbumId!, pathList);
+      unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: sheet.addToAlbumId));
     } else if (sheet.newAlbumName != null && sheet.newAlbumName!.trim().isNotEmpty) {
       await SendAlbumsStore.instance.createAlbum(sheet.newAlbumName!.trim(), pathList);
+      await SendAlbumsStore.instance.load();
+      final id = SendAlbumsStore.instance.albums.isNotEmpty
+          ? SendAlbumsStore.instance.albums.first.id
+          : null;
+      if (id != null) {
+        unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
+      }
     }
     for (var i = 0; i < shareBytes.length; i++) {
       if (!context.mounted) return;
@@ -513,9 +526,11 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     final fileBytes = <Uint8List>[];
     for (final path in paths) {
       try {
-        final bytes = await File(path).readAsBytes();
-        fileBytes.add(bytes);
-        AppDiagLog.verbose('[Send] gallery pick $path bytes=${bytes.length}');
+        final raw = await File(path).readAsBytes();
+        final jpeg = await GalleryImageNormalizer.toJpegBytes(raw, pathHint: path);
+        if (jpeg == null || jpeg.isEmpty) continue;
+        fileBytes.add(jpeg);
+        AppDiagLog.verbose('[Send] gallery pick $path bytes=${jpeg.length}');
       } catch (e) {
         AppDiagLog.verbose('[Send] gallery read failed $path: $e');
       }
@@ -542,8 +557,16 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
 
       if (sheet.addToAlbumId != null) {
         await SendAlbumsStore.instance.addPathsToAlbum(sheet.addToAlbumId!, paths);
+        unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: sheet.addToAlbumId));
       } else if (sheet.newAlbumName != null && sheet.newAlbumName!.trim().isNotEmpty) {
         await SendAlbumsStore.instance.createAlbum(sheet.newAlbumName!.trim(), paths);
+        await SendAlbumsStore.instance.load();
+        final id = SendAlbumsStore.instance.albums.isNotEmpty
+            ? SendAlbumsStore.instance.albums.first.id
+            : null;
+        if (id != null) {
+          unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
+        }
       }
     }
 
@@ -637,29 +660,17 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     if (x == null) return null;
     final path = x.path;
     final raw = await x.readAsBytes();
-    final bytes = await _ensureJpeg(raw);
+    final bytes = await _ensureJpeg(raw, pathHint: path);
     return (bytes: bytes, path: path);
   }
 
-  /// Re-encodes as JPEG if the [image] package cannot decode the raw bytes
-  /// (e.g. HEIC from iOS camera).
-  Future<Uint8List> _ensureJpeg(Uint8List raw) async {
-    try {
-      final decoded = img.decodeImage(raw);
-      if (decoded != null) return raw;
-    } catch (_) {}
-    // HEIC or other unsupported format — convert via the image_picker's own
-    // JPEG export by re-picking from the file.  If that also fails, fall back
-    // to the raw bytes and let the editor surface the error.
-    try {
-      final repick = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-        maxWidth: 1920,
-        maxHeight: 1920,
-      );
-      if (repick != null) return await repick.readAsBytes();
-    } catch (_) {}
+  /// Re-encodes as JPEG if needed (HEIC / odd PNG from iOS).
+  Future<Uint8List> _ensureJpeg(Uint8List raw, {String? pathHint}) async {
+    final normalized = await GalleryImageNormalizer.toJpegBytes(
+      raw,
+      pathHint: pathHint,
+    );
+    if (normalized != null && normalized.isNotEmpty) return normalized;
     return raw;
   }
 

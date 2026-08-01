@@ -6,7 +6,7 @@ import '../l10n/app_strings.dart';
 import '../services/account_sync_service.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
-import '../services/frame_mac_util.dart';
+import '../widgets/text_input_bottom_sheet.dart';
 
 class DeviceDetailsScreen extends StatefulWidget {
   const DeviceDetailsScreen({super.key});
@@ -20,6 +20,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   FrameStatus? _status;
   Timer? _pollTimer;
   final FrameApiClient _api = FrameApiClient();
+  var _savingName = false;
 
   @override
   void initState() {
@@ -54,7 +55,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     final mac = _resolveMac;
     if (mac == null || mac.length != 12) return;
     try {
-      final st = await _api.fetchFrameStatus(mac: mac);
+      final st = await _api.fetchFrameStatus(
+        mac: mac,
+        timeout: const Duration(seconds: 5),
+      );
       if (mounted) setState(() => _status = st);
     } catch (_) {}
   }
@@ -62,9 +66,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String? get _resolveMac {
     final p = _paired;
     if (p == null) return null;
-    return DeviceStore.instance.pairedFrameMac ??
-        FrameMacUtil.macFromBleName(p.bleNamePrefix ?? '') ??
-        FrameMacUtil.normalizeSlug(p.deviceId);
+    return DeviceStore.macForPairedFrame(p);
   }
 
   String get _deviceName => _paired?.frameName?.trim().isNotEmpty == true
@@ -72,17 +74,14 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
       : (_paired?.listDisplayTitle(AppStrings(AppLocale.en)) ?? 'MyFrame');
 
   String get _macAddress {
-    // Use the hardware MAC (from BLE name or pairedFrameMac store), NOT the iOS
-    // CoreBluetooth peripheral UUID stored in deviceId — iOS never exposes the
-    // real BLE MAC to apps, so deviceId is a random UUID on iOS.
     final hex = (_resolveMac ?? '').toUpperCase();
     if (hex.length == 12) {
       return '${hex.substring(0, 2)}:${hex.substring(2, 4)}:${hex.substring(4, 6)}:${hex.substring(6, 8)}:${hex.substring(8, 10)}:${hex.substring(10, 12)}';
     }
-    // Fallback: try to extract 12 hex digits from deviceId (covers colon-separated or raw)
     final p = _paired;
     if (p == null) return '--';
-    final rawHex = p.deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    final rawHex =
+        p.deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
     if (rawHex.length >= 12) {
       final s = rawHex.substring(rawHex.length - 12);
       return '${s.substring(0, 2)}:${s.substring(2, 4)}:${s.substring(4, 6)}:${s.substring(6, 8)}:${s.substring(8, 10)}:${s.substring(10, 12)}';
@@ -93,8 +92,17 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   String get _wifiSsid {
     final p = _paired;
     final st = _status;
-    if (p?.wifiSsid?.trim().isNotEmpty == true) return p!.wifiSsid!;
-    if (st != null && st.wifiSsid.isNotEmpty) return st.wifiSsid;
+    // Live online status is authoritative — never show a stale local SSID as
+    // "connected" after a failed provision.
+    if (st != null) {
+      if (st.isEffectivelyOnline && st.wifiSsid.trim().isNotEmpty) {
+        return st.wifiSsid;
+      }
+      if (!st.isEffectivelyOnline) return '--';
+    }
+    if (p?.wifiSsid?.trim().isNotEmpty == true && p!.isWifiProvisioned) {
+      return p.wifiSsid!;
+    }
     return '--';
   }
 
@@ -113,6 +121,41 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
+  PairedFrame? _frameAfterRename(String deviceId) {
+    for (final f in DeviceStore.instance.pairedFrames) {
+      if (f.deviceId == deviceId) return f;
+    }
+    return DeviceStore.instance.cached;
+  }
+
+  Future<void> _editFrameName() async {
+    final p = _paired;
+    if (p == null || _savingName) return;
+    final s = AppStrings.of(context);
+    final next = await TextInputBottomSheet.show(
+      context,
+      title: s.frameNameLabel,
+      label: s.frameNameLabel,
+      confirmLabel: s.saveLabel,
+      initialText: p.frameName?.trim() ?? '',
+    );
+    if (next == null || !mounted) return;
+    final clean = next.trim();
+    if (clean.isEmpty || clean == (p.frameName?.trim() ?? '')) return;
+    setState(() => _savingName = true);
+    try {
+      await DeviceStore.instance.updateFrameDisplayName(
+        clean,
+        deviceId: p.deviceId,
+      );
+      await DeviceStore.instance.load();
+      if (!mounted) return;
+      setState(() => _paired = _frameAfterRename(p.deviceId));
+    } finally {
+      if (mounted) setState(() => _savingName = false);
+    }
+  }
+
   Future<void> _confirmDelete() async {
     final p = _paired;
     if (p == null) return;
@@ -123,10 +166,13 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         title: Text(s.deleteDevice),
         content: Text(s.deleteDeviceConfirm(_deviceName)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(s.cancel)),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(s.cancel)),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(s.deleteButton, style: const TextStyle(color: Color(0xFFE53935))),
+            child: Text(s.deleteButton,
+                style: const TextStyle(color: Color(0xFFE53935))),
           ),
         ],
       ),
@@ -159,14 +205,15 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     final isOnline = st?.isEffectivelyOnline ?? false;
     final battery = st?.battery ?? 100;
     final storageRatio = st?.storageFraction ?? 0;
-    final firmware = 'v0.5.0';
+    const firmware = 'v0.5.0';
 
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
         title: Text(
           s.deviceDetails,
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+          style: const TextStyle(
+              color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
         ),
         centerTitle: false,
         backgroundColor: Colors.transparent,
@@ -175,6 +222,19 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
           icon: const Icon(Icons.chevron_left, color: Colors.black, size: 28),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            tooltip: s.frameNameLabel,
+            onPressed: p == null || _savingName ? null : _editFrameName,
+            icon: _savingName
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.edit_outlined, color: Colors.black87),
+          ),
+        ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -200,14 +260,18 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                                 value: battery / 100.0,
                                 minHeight: 6,
                                 backgroundColor: const Color(0xFFEEEEEE),
-                                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                    Color(0xFF4CAF50)),
                               ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Text(
                             '$battery%',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87),
                           ),
                         ],
                       ),
@@ -225,14 +289,18 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                                 value: storageRatio,
                                 minHeight: 6,
                                 backgroundColor: const Color(0xFFEEEEEE),
-                                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                    Color(0xFF4CAF50)),
                               ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Text(
                             _storageText(),
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black87),
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black87),
                           ),
                         ],
                       ),
@@ -246,6 +314,12 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: [
+                    _infoTile(
+                      s.frameNameLabel,
+                      _deviceName,
+                      onTap: p == null || _savingName ? null : _editFrameName,
+                    ),
+                    _divider,
                     _infoTile(s.macLabel, _macAddress),
                     _divider,
                     _infoTile(s.firmwareVersionLabel, firmware),
@@ -254,7 +328,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     _divider,
                     _infoTile(s.lastSeenLabel, _lastSeen(s)),
                     _divider,
-                    _infoTile(s.wifiSignalLabel, isOnline ? s.connected : s.disconnected),
+                    _infoTile(s.wifiSignalLabel,
+                        isOnline ? s.connected : s.disconnected),
                   ],
                 ),
               ),
@@ -267,11 +342,15 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     onPressed: p == null ? null : _confirmDelete,
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: _red, width: 1.2),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     child: Text(
                       s.deleteDevice,
-                      style: const TextStyle(color: _red, fontWeight: FontWeight.bold, fontSize: 15),
+                      style: const TextStyle(
+                          color: _red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15),
                     ),
                   ),
                 ),
@@ -298,9 +377,27 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
             child: const Icon(Icons.cast, color: Colors.white, size: 32),
           ),
           const SizedBox(height: 12),
-          Text(
-            name,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Flexible(
+                child: Text(
+                  name,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed:
+                    _paired == null || _savingName ? null : _editFrameName,
+                icon: const Icon(Icons.edit_outlined,
+                    size: 18, color: Colors.black54),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -370,7 +467,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         const SizedBox(width: 8),
         SizedBox(
           width: 56,
-          child: Text(label, style: const TextStyle(fontSize: 14, color: Colors.black87)),
+          child: Text(label,
+              style: const TextStyle(fontSize: 14, color: Colors.black87)),
         ),
         const SizedBox(width: 16),
         Expanded(child: child),
@@ -378,24 +476,44 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     );
   }
 
-  Widget _infoTile(String title, String value) {
-    return Padding(
+  Widget _infoTile(String title, String value, {VoidCallback? onTap}) {
+    final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title, style: const TextStyle(fontSize: 14, color: Colors.black87)),
+          Text(title,
+              style: const TextStyle(fontSize: 14, color: Colors.black87)),
           Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: const TextStyle(fontSize: 14, color: Colors.black87, fontWeight: FontWeight.w500),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w500),
+                  ),
+                ),
+                if (onTap != null) ...[
+                  const SizedBox(width: 6),
+                  const Icon(Icons.edit_outlined,
+                      size: 16, color: Colors.black45),
+                ],
+              ],
             ),
           ),
         ],
       ),
     );
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, child: row);
   }
 }
 
-const _divider = Divider(height: 1, indent: 16, endIndent: 16, color: Color(0xFFF0F0F0));
+const _divider =
+    Divider(height: 1, indent: 16, endIndent: 16, color: Color(0xFFF0F0F0));

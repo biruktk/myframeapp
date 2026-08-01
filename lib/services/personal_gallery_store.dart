@@ -10,7 +10,7 @@ import 'gallery_image_cache.dart';
 /// Local paths added from the Gallery tab (personal library only; no social graph).
 class PersonalGalleryStore {
   PersonalGalleryStore._();
-  static final PersonalGalleryStore instance = PersonalGalleryStore._();
+  static final instance = PersonalGalleryStore._();
 
   static const _kPaths = 'personal_gallery_file_paths_v1';
   static const _kAuthUserId = 'settings_auth_user_id';
@@ -52,7 +52,7 @@ class PersonalGalleryStore {
     for (final t in stored) {
       if (!_paths.contains(t)) _paths.insert(0, t);
     }
-    _paths = await _dedupeByContentHash(_paths);
+    _paths = await _dedupeByContentHashKeepOrder(_paths);
     if (_paths.length > 200) _paths = _paths.sublist(0, 200);
     await _persist();
     revision.value++;
@@ -72,18 +72,31 @@ class PersonalGalleryStore {
     revision.value++;
   }
 
-  /// Merges VPS-synced paths (newest first); keeps any extra local-only items after cloud set.
+  /// Applies cloud gallery order (newest first) as the authority.
+  /// Local-only files that are not content-duplicates stay after the cloud set.
   Future<void> replaceWithCloudPaths(List<String> cloudPaths) async {
     await load();
-    final cloudHashes = await _hashesForPaths(cloudPaths);
+    final cloudOrdered = <String>[];
+    final cloudSeenHash = <String>{};
+    for (final path in cloudPaths) {
+      if (path.isEmpty || cloudOrdered.contains(path)) continue;
+      final h = await _hashFile(path);
+      if (h != null) {
+        if (!cloudSeenHash.add(h)) continue;
+      }
+      cloudOrdered.add(path);
+    }
+
     final localOnly = <String>[];
     for (final p in _paths) {
-      if (cloudPaths.contains(p)) continue;
+      if (cloudOrdered.contains(p)) continue;
       final h = await _hashFile(p);
-      if (h != null && cloudHashes.contains(h)) continue;
-      localOnly.add(p);
+      if (h != null && cloudSeenHash.contains(h)) continue;
+      if (!localOnly.contains(p)) localOnly.add(p);
     }
-    _paths = await _dedupeByContentHash([...cloudPaths, ...localOnly]);
+
+    // Cloud chronological order first — never let local-only shuffle it.
+    _paths = [...cloudOrdered, ...localOnly];
     if (_paths.length > 200) _paths = _paths.sublist(0, 200);
     await _persist();
     revision.value++;
@@ -98,16 +111,9 @@ class PersonalGalleryStore {
     }
   }
 
-  static Future<Set<String>> _hashesForPaths(List<String> paths) async {
-    final out = <String>{};
-    for (final p in paths) {
-      final h = await _hashFile(p);
-      if (h != null) out.add(h);
-    }
-    return out;
-  }
-
-  static Future<List<String>> _dedupeByContentHash(List<String> paths) async {
+  static Future<List<String>> _dedupeByContentHashKeepOrder(
+    List<String> paths,
+  ) async {
     final seen = <String>{};
     final out = <String>[];
     for (final path in paths) {

@@ -7,7 +7,9 @@ import '../services/device_store.dart';
 import '../services/frame_online_guard.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/gallery_image_cache.dart';
+import '../services/gallery_image_normalizer.dart';
 import '../services/send_albums_store.dart';
+import '../l10n/app_strings.dart';
 import 'image_editor_screen.dart';
 
 class PlaylistCreationScreen extends StatefulWidget {
@@ -99,7 +101,19 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
 
     final allBytes = <Uint8List>[];
     for (final path in _paths) {
-      allBytes.add(await File(path).readAsBytes());
+      final raw = await File(path).readAsBytes();
+      final jpeg = await GalleryImageNormalizer.toJpegBytes(raw, pathHint: path);
+      if (jpeg != null && jpeg.isNotEmpty) {
+        allBytes.add(jpeg);
+      }
+    }
+    if (allBytes.isEmpty) {
+      if (!mounted) return;
+      setState(() => _isUploading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.of(context).decodeError)),
+      );
+      return;
     }
 
     await SendAlbumsStore.instance.createAlbum(name, _paths);

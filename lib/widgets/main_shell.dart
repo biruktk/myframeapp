@@ -8,9 +8,10 @@ import '../screens/gallery_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/send_screen.dart';
 import '../screens/settings_screen.dart';
+import '../services/account_sync_service.dart';
 import '../services/fcm_service.dart';
 import '../services/share_incoming_service.dart';
-import '../services/user_gallery_cloud_service.dart';
+import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
 import 'shell_navigation.dart';
 
@@ -21,7 +22,7 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => MainShellState();
 }
 
-class MainShellState extends State<MainShell> {
+class MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
   final ValueNotifier<int> sendGalleryPickNonce = ValueNotifier<int>(0);
   final ValueNotifier<List<String>> sendSharedPathsNonce = ValueNotifier<List<String>>(const []);
@@ -29,6 +30,7 @@ class MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     ShellNavigation.registerHost(
       _setIndex,
       openSendGalleryPick: openSendGalleryPicker,
@@ -36,16 +38,39 @@ class MainShellState extends State<MainShell> {
     ShareIncomingService.instance.revision.addListener(_onShareIncomingRevision);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _consumeSharedPaths();
-      _syncCloudGalleryIfSignedIn();
+      _startSyncPipeline();
       _syncFcmTokenIfSignedIn();
     });
   }
 
-  void _syncCloudGalleryIfSignedIn() {
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startSyncPipeline();
+      // Soft tick — not replaceFrames pull (that re-imported ghosts).
+      unawaited(SyncPipeline.instance.tick(
+        forceFrames: true,
+        forceGallery: true,
+        forceAlbums: true,
+      ));
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      SyncPipeline.instance.stop();
+      AccountSyncService.instance.stopPeriodicSync();
+    }
+  }
+
+  void _startSyncPipeline() {
     if (!mounted) return;
     final app = AppSettingsScope.of(context);
-    if (!app.hasAuthenticatedSession) return;
-    unawaited(UserGalleryCloudService.instance.syncFromServer(app.authToken));
+    if (!app.hasAuthenticatedSession) {
+      SyncPipeline.instance.stop();
+      AccountSyncService.instance.stopPeriodicSync();
+      return;
+    }
+    // Single pipeline: 10s tick + event hooks. Stop legacy 2‑min-only poll.
+    AccountSyncService.instance.stopPeriodicSync();
+    SyncPipeline.instance.start(appSettings: app);
   }
 
   void _syncFcmTokenIfSignedIn() {
@@ -57,6 +82,9 @@ class MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
+    SyncPipeline.instance.stop();
+    AccountSyncService.instance.stopPeriodicSync();
+    WidgetsBinding.instance.removeObserver(this);
     ShareIncomingService.instance.revision.removeListener(_onShareIncomingRevision);
     ShellNavigation.unregisterHost();
     sendGalleryPickNonce.dispose();

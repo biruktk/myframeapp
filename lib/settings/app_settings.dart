@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/account_sync_service.dart';
 import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/in_app_notification_store.dart';
+import '../services/personal_gallery_store.dart';
+import '../services/send_albums_store.dart';
 import '../services/slideshow_style.dart';
 import '../theme/app_theme.dart';
 
@@ -217,11 +222,16 @@ class AppSettings extends ChangeNotifier {
     await p.setString(_kAccent, value.name);
   }
 
-  Future<void> setThemeMode(ThemeMode value) async {
+  Future<void> setThemeMode(ThemeMode value, {bool syncToCloud = true}) async {
     themeMode = value;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     await p.setString(_kThemeMode, value.name);
+    if (syncToCloud && hasAuthenticatedSession) {
+      unawaited(
+        AccountSyncService.instance.pushPreferences(theme: value.name),
+      );
+    }
   }
 
   Future<void> setComfortMode(bool value) async {
@@ -231,7 +241,7 @@ class AppSettings extends ChangeNotifier {
     await p.setBool(_kComfort, value);
   }
 
-  Future<void> setLanguageCode(String? code) async {
+  Future<void> setLanguageCode(String? code, {bool syncToCloud = true}) async {
     languageCode = code;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
@@ -239,6 +249,14 @@ class AppSettings extends ChangeNotifier {
       await p.remove(_kLanguage);
     } else {
       await p.setString(_kLanguage, code);
+    }
+    if (syncToCloud &&
+        hasAuthenticatedSession &&
+        code != null &&
+        code.isNotEmpty) {
+      unawaited(
+        AccountSyncService.instance.pushPreferences(language: code),
+      );
     }
   }
 
@@ -453,10 +471,37 @@ class AppSettings extends ChangeNotifier {
     }
     if (!value) {
       await clearAuthJwt();
-      // Aggressive logout: clear all paired frame data and notification history,
-      // mirroring the mini-app's performLogout behaviour.
+      // Aggressive logout: wipe account-scoped local state to prevent
+      // cross-account leakage (frames, albums, gallery, sync version, transit).
       await DeviceStore.instance.clear();
       await InAppNotificationStore.instance.clearAll();
+      await SendAlbumsStore.instance.clearAllForAccount();
+      await PersonalGalleryStore.instance.clear();
+      await AccountSyncService.instance.wipeLocalSyncState();
+    }
+  }
+
+  /// Apply server `configurations` from GET /api/v1/user/profile.
+  /// Does not re-push to cloud (avoids sync loops).
+  Future<void> applyCloudConfigurations(Map<String, dynamic> configs) async {
+    final lang = configs['language']?.toString().trim();
+    if (lang == 'zh' || lang == 'en') {
+      await setLanguageCode(lang, syncToCloud: false);
+    }
+    final theme = configs['theme']?.toString().trim().toLowerCase();
+    if (theme == 'light') {
+      await setThemeMode(ThemeMode.light, syncToCloud: false);
+    } else if (theme == 'dark') {
+      await setThemeMode(ThemeMode.dark, syncToCloud: false);
+    } else if (theme == 'system') {
+      await setThemeMode(ThemeMode.system, syncToCloud: false);
+    }
+    final prefs = configs['display_preferences'];
+    if (prefs is Map) {
+      final interval = prefs['interval_seconds'];
+      if (interval is num) {
+        await setSlideshowIntervalSeconds(interval.toInt());
+      }
     }
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'wifi_credential_cache.dart';
 import 'frame_api_client.dart';
+import 'account_sync_service.dart';
 
 import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
@@ -55,7 +57,215 @@ class DeviceStore {
 
   int _indexOf(String deviceId) {
     final t = deviceId.trim();
-    return _frames.indexWhere((e) => e.deviceId.trim() == t);
+    final exact = _frames.indexWhere((e) => e.deviceId.trim() == t);
+    if (exact >= 0) return exact;
+    // BLE ↔ STA siblings (±2) count as the same physical frame.
+    final key = FrameMacUtil.normalizeSlug(t)?.toUpperCase() ?? t.toUpperCase();
+    final keyInt = int.tryParse(key, radix: 16);
+    if (keyInt == null) return -1;
+    return _frames.indexWhere((e) {
+      final ed = FrameMacUtil.normalizeSlug(e.deviceId)?.toUpperCase() ??
+          e.deviceId.trim().toUpperCase();
+      final ei = int.tryParse(ed, radix: 16);
+      return ei != null && (ei - keyInt).abs() == 2;
+    });
+  }
+
+  static bool _macsRelated(String a, String b) {
+    final aa = a.trim().toUpperCase();
+    final bb = b.trim().toUpperCase();
+    if (aa.isEmpty || bb.isEmpty) return false;
+    if (aa == bb) return true;
+    final ia = int.tryParse(aa, radix: 16);
+    final ib = int.tryParse(bb, radix: 16);
+    return ia != null && ib != null && (ia - ib).abs() == 2;
+  }
+
+  static bool _seenHasRelated(Set<String> seen, String key) {
+    if (seen.contains(key)) return true;
+    for (final s in seen) {
+      if (_macsRelated(s, key)) return true;
+    }
+    return false;
+  }
+
+  /// Drop frameName when it is clearly just the Wi‑Fi SSID.
+  static List<PairedFrame> _sanitizeFrameNames(List<PairedFrame> frames) {
+    return frames.map((f) {
+      final name = f.frameName?.trim();
+      final ssid = f.wifiSsid?.trim();
+      if (name == null || name.isEmpty) return f;
+      if (ssid != null &&
+          ssid.isNotEmpty &&
+          name.toLowerCase() == ssid.toLowerCase()) {
+        return PairedFrame(
+          deviceId: f.deviceId,
+          pairingToken: f.pairingToken,
+          apiUrl: f.apiUrl,
+          bleServiceUuid: f.bleServiceUuid,
+          bleDataCharUuid: f.bleDataCharUuid,
+          bleNamePrefix: f.bleNamePrefix,
+          bleRemoteId: f.bleRemoteId,
+          product: f.product,
+          wifiSsid: f.wifiSsid,
+          wifiUsername: f.wifiUsername,
+          wifiPassword: f.wifiPassword,
+          wifiProvisionedAtMs: f.wifiProvisionedAtMs,
+          frameName: null,
+          frameOrientation: f.frameOrientation,
+          mqttBrokerHost: f.mqttBrokerHost,
+          mqttBrokerPort: f.mqttBrokerPort,
+          mqttBrokerUser: f.mqttBrokerUser,
+          mqttBrokerPassword: f.mqttBrokerPassword,
+        );
+      }
+      return f;
+    }).toList();
+  }
+
+  /// Collapse BLE/STA duplicate rows into one card (prefer station MAC + real name).
+  Future<void> dedupeRelatedFrames() async {
+    await load();
+    if (_frames.isEmpty) return;
+
+    String? identity(PairedFrame f) {
+      return FrameMacUtil.macFromBleName(f.bleNamePrefix ?? '') ??
+          FrameMacUtil.normalizeSlug(f.deviceId) ??
+          FrameMacUtil.normalizeSlug(f.bleRemoteId ?? '');
+    }
+
+    if (_frames.length < 2) {
+      final cleaned = _sanitizeFrameNames(_frames);
+      if (!_sameNames(cleaned, _frames)) {
+        _frames = cleaned;
+        await _persistAll();
+        _bumpRevision();
+      }
+      return;
+    }
+
+    final kept = <PairedFrame>[];
+    final used = <int>{};
+    for (var i = 0; i < _frames.length; i++) {
+      if (used.contains(i)) continue;
+      var best = _frames[i];
+      used.add(i);
+      final bi = identity(best)?.toUpperCase() ??
+          best.deviceId.trim().toUpperCase();
+      for (var j = i + 1; j < _frames.length; j++) {
+        if (used.contains(j)) continue;
+        final other = _frames[j];
+        final oj = identity(other)?.toUpperCase() ??
+            other.deviceId.trim().toUpperCase();
+        if (!_macsRelated(bi, oj) && bi != oj) continue;
+        used.add(j);
+        best = _mergeSiblingFrames(best, other);
+      }
+      kept.add(best);
+    }
+
+    final next = _sanitizeFrameNames(kept);
+    if (_sameNames(next, _frames) && next.length == _frames.length) return;
+    _frames = next;
+    if (_activeDeviceId != null && _indexOf(_activeDeviceId!) < 0) {
+      _activeDeviceId = _frames.isNotEmpty ? _frames.first.deviceId : null;
+    }
+    await _persistAll();
+    _bumpRevision();
+  }
+
+  static bool _sameNames(List<PairedFrame> a, List<PairedFrame> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].deviceId != b[i].deviceId) return false;
+      if (a[i].frameName != b[i].frameName) return false;
+    }
+    return true;
+  }
+
+  static PairedFrame _mergeSiblingFrames(PairedFrame a, PairedFrame b) {
+    final idA = FrameMacUtil.normalizeSlug(a.deviceId) ?? a.deviceId;
+    final preferA =
+        (PairedFrame.preferEsp32WifiStationMac(idA) ?? idA) == idA;
+    final primary = preferA ? a : b;
+    final secondary = preferA ? b : a;
+    final nameA = a.frameName?.trim();
+    final nameB = b.frameName?.trim();
+    final ssidA = a.wifiSsid?.trim();
+    final ssidB = b.wifiSsid?.trim();
+    String? name;
+    for (final n in [nameA, nameB]) {
+      if (n == null || n.isEmpty) continue;
+      if (ssidA != null && n.toLowerCase() == ssidA.toLowerCase()) continue;
+      if (ssidB != null && n.toLowerCase() == ssidB.toLowerCase()) continue;
+      name = n;
+      break;
+    }
+    final stationId =
+        PairedFrame.preferEsp32WifiStationMac(primary.deviceId) ??
+            primary.deviceId;
+    return PairedFrame(
+      deviceId: stationId,
+      pairingToken: primary.pairingToken ?? secondary.pairingToken,
+      apiUrl: primary.apiUrl ?? secondary.apiUrl,
+      bleServiceUuid: primary.bleServiceUuid ?? secondary.bleServiceUuid,
+      bleDataCharUuid: primary.bleDataCharUuid ?? secondary.bleDataCharUuid,
+      bleNamePrefix: primary.bleNamePrefix ?? secondary.bleNamePrefix,
+      bleRemoteId: primary.bleRemoteId ?? secondary.bleRemoteId,
+      product: primary.product ?? secondary.product,
+      wifiSsid: primary.wifiSsid ?? secondary.wifiSsid,
+      wifiUsername: primary.wifiUsername ?? secondary.wifiUsername,
+      wifiPassword: primary.wifiPassword ?? secondary.wifiPassword,
+      wifiProvisionedAtMs:
+          primary.wifiProvisionedAtMs ?? secondary.wifiProvisionedAtMs,
+      frameName: name,
+      frameOrientation: primary.frameOrientation ?? secondary.frameOrientation,
+      mqttBrokerHost: primary.mqttBrokerHost ?? secondary.mqttBrokerHost,
+      mqttBrokerPort: primary.mqttBrokerPort ?? secondary.mqttBrokerPort,
+      mqttBrokerUser: primary.mqttBrokerUser ?? secondary.mqttBrokerUser,
+      mqttBrokerPassword:
+          primary.mqttBrokerPassword ?? secondary.mqttBrokerPassword,
+    );
+  }
+
+  /// Per-frame MAC for live status / cast.
+  /// Prefer BLE advertised name (real hardware MAC). Never treat iOS UUID as MAC.
+  static String? macForPairedFrame(PairedFrame f) {
+    final fromBle = FrameMacUtil.macFromBleName(f.bleNamePrefix ?? '');
+    if (fromBle != null && fromBle.isNotEmpty) {
+      return PairedFrame.preferEsp32WifiStationMac(
+            fromBle,
+            fromBleAdvertisement: true,
+          ) ??
+          fromBle;
+    }
+    final global = DeviceStore.instance.pairedFrameMac;
+    if (global != null && global.isNotEmpty) return global;
+    final fromDevice = FrameMacUtil.normalizeSlug(f.deviceId);
+    if (fromDevice != null && fromDevice.isNotEmpty) {
+      return fromDevice;
+    }
+    final fromRemote = FrameMacUtil.normalizeSlug(f.bleRemoteId ?? '');
+    if (fromRemote != null && fromRemote.isNotEmpty) {
+      return fromRemote;
+    }
+    return FrameMacUtil.normalizeSlug(f.resolvedFrameTargetId);
+  }
+
+  /// All MAC candidates to probe for online/status (BLE + STA siblings).
+  static List<String> statusMacCandidates(PairedFrame f) {
+    final keys = <String>{};
+    void add(String? raw) {
+      for (final c in FrameMacUtil.relatedMacCandidates(raw)) {
+        keys.add(c);
+      }
+    }
+    add(FrameMacUtil.macFromBleName(f.bleNamePrefix ?? ''));
+    add(DeviceStore.instance.pairedFrameMac);
+    add(FrameMacUtil.normalizeSlug(f.deviceId));
+    add(FrameMacUtil.normalizeSlug(f.bleRemoteId ?? ''));
+    add(macForPairedFrame(f));
+    return keys.toList();
   }
 
   /// Frames shown on **My Frames** (order preserved).
@@ -73,6 +283,199 @@ class DeviceStore {
     } catch (_) {
       _serverFrames = [];
     }
+  }
+
+  /// Merge or replace local bound-frame list from cloud `bound_frames`.
+  ///
+  /// When [pruneMissing] is false, server frames are added but local-only
+  /// frames are kept (until they are pushed / unbound). When true (server
+  /// sync_version is ahead), local frames absent from the server are removed.
+  Future<void> applyBoundFramesFromServer(
+    List<Map<String, dynamic>> serverFrames, {
+    String? primaryFrameId,
+    String? bearerToken,
+    bool pruneMissing = false,
+  }) async {
+    await load();
+
+    final next = <PairedFrame>[];
+    final seen = <String>{};
+
+    for (final f in serverFrames) {
+      final station = (f['station_mac'] as String?) ?? '';
+      final mac = (f['ble_mac'] as String?) ?? '';
+      final frameId = (f['frame_id'] as String?) ?? '';
+      // Prefer Wi‑Fi station MAC (upload/cast identity), then BLE, never product SKUs.
+      final rawId = station.isNotEmpty
+          ? station
+          : (mac.isNotEmpty ? mac : frameId);
+      final slugRaw = FrameMacUtil.normalizeSlug(rawId);
+      if (slugRaw == null) continue; // skip non-MAC ids like YX-133P-001
+      final slug = PairedFrame.preferEsp32WifiStationMac(slugRaw) ?? slugRaw;
+      final key = slug.trim().toUpperCase();
+      if (key.isEmpty || seen.contains(key)) continue;
+      // Dedupe BLE/STA siblings already present under related key.
+      var relatedHit = false;
+      for (final s in seen) {
+        final a = int.tryParse(s, radix: 16);
+        final b = int.tryParse(key, radix: 16);
+        if (a != null && b != null && (a - b).abs() == 2) {
+          relatedHit = true;
+          break;
+        }
+      }
+      if (relatedHit) continue;
+      seen.add(key);
+
+      PairedFrame? existing;
+      for (final e in _frames) {
+        final ed = FrameMacUtil.normalizeSlug(e.deviceId)?.toUpperCase() ??
+            e.deviceId.trim().toUpperCase();
+        if (ed == key) {
+          existing = e;
+          break;
+        }
+        final ea = int.tryParse(ed, radix: 16);
+        final eb = int.tryParse(key, radix: 16);
+        if (ea != null && eb != null && (ea - eb).abs() == 2) {
+          existing = e;
+          break;
+        }
+      }
+
+      // Frame name is a user label — NEVER fall back to Wi‑Fi SSID (that caused
+      // frames named "O" / home router names). Keep local name if server omits it.
+      final serverFrameName = (f['frame_name'] as String?)?.trim();
+      final wifiSsid = (f['wifi_ssid'] as String?)?.trim();
+      final resolvedName = () {
+        if (serverFrameName != null &&
+            serverFrameName.isNotEmpty &&
+            serverFrameName != wifiSsid) {
+          return serverFrameName;
+        }
+        final local = existing?.frameName?.trim();
+        if (local != null &&
+            local.isNotEmpty &&
+            local != wifiSsid &&
+            local != existing?.wifiSsid) {
+          return local;
+        }
+        return null;
+      }();
+
+      // Other-device imports: require a real name + Wi‑Fi. Skip incomplete
+      // server rows so BLE-only ghosts never appear as "online".
+      final hasWifi = wifiSsid != null && wifiSsid.isNotEmpty;
+      final hasName = resolvedName != null && resolvedName.isNotEmpty;
+      if (existing == null && (!hasWifi || !hasName)) {
+        continue;
+      }
+
+      if (existing != null) {
+        next.add(
+          PairedFrame(
+            deviceId: slug,
+            pairingToken: existing.pairingToken,
+            apiUrl: existing.apiUrl ?? ApiConfig.baseUrl,
+            bleServiceUuid: existing.bleServiceUuid,
+            bleDataCharUuid: existing.bleDataCharUuid,
+            // Never overwrite BLE advertised name with SSID / display label.
+            bleNamePrefix: existing.bleNamePrefix,
+            bleRemoteId: existing.bleRemoteId,
+            product: existing.product,
+            wifiSsid: wifiSsid?.isNotEmpty == true ? wifiSsid : existing.wifiSsid,
+            wifiUsername: existing.wifiUsername,
+            wifiPassword: existing.wifiPassword,
+            wifiProvisionedAtMs: existing.wifiProvisionedAtMs,
+            frameName: resolvedName,
+            frameOrientation: existing.frameOrientation,
+            mqttBrokerHost: existing.mqttBrokerHost,
+            mqttBrokerPort: existing.mqttBrokerPort,
+            mqttBrokerUser: existing.mqttBrokerUser,
+            mqttBrokerPassword: existing.mqttBrokerPassword,
+          ),
+        );
+      } else {
+        next.add(
+          PairedFrame(
+            deviceId: slug,
+            bleNamePrefix: null,
+            frameName: resolvedName,
+            wifiSsid: wifiSsid,
+            apiUrl: ApiConfig.baseUrl,
+          ),
+        );
+      }
+    }
+
+    if (!pruneMissing) {
+      for (final e in _frames) {
+        final key = e.deviceId.trim().toUpperCase();
+        if (key.isEmpty) continue;
+        if (_seenHasRelated(seen, key)) continue;
+        seen.add(key);
+        next.add(e);
+      }
+    } else {
+      // Keep in-progress local pairings (BLE only / unnamed) even on hard pull.
+      for (final e in _frames) {
+        if (e.isReadyForAccountSync) continue;
+        final key = e.deviceId.trim().toUpperCase();
+        if (key.isEmpty) continue;
+        if (_seenHasRelated(seen, key)) continue;
+        seen.add(key);
+        next.add(e);
+      }
+    }
+
+    _frames = _sanitizeFrameNames(next);
+    _serverFrames = serverFrames
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList(growable: false);
+
+    final primary = primaryFrameId?.trim() ?? '';
+    if (primary.isNotEmpty) {
+      final primarySlug =
+          (FrameMacUtil.normalizeSlug(primary) ?? primary).trim().toUpperCase();
+      PairedFrame? match;
+      for (final e in _frames) {
+        final id = e.deviceId.trim().toUpperCase();
+        if (id == primarySlug || id == primary.toUpperCase()) {
+          match = e;
+          break;
+        }
+      }
+      _activeDeviceId =
+          match?.deviceId ?? (_frames.isNotEmpty ? _frames.first.deviceId : null);
+    } else if (_frames.isNotEmpty) {
+      if (_activeDeviceId == null ||
+          _activeDeviceId!.isEmpty ||
+          _indexOf(_activeDeviceId!) < 0) {
+        _activeDeviceId = _frames.first.deviceId;
+      }
+    } else {
+      _activeDeviceId = null;
+    }
+
+    final active = cached;
+    if (active != null) {
+      final mac = FrameMacUtil.macFromBleIdentity(
+            bleName: active.bleNamePrefix,
+            fallbackText: active.deviceId,
+          ) ??
+          FrameMacUtil.normalizeSlug(active.deviceId);
+      if (mac != null && mac.isNotEmpty) {
+        await savePairedFrameMac(mac);
+      }
+    } else {
+      _pairedFrameMac = null;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(kPairedFrameMac);
+    }
+
+    await _persistAll();
+    await syncServerFrames(bearerToken: bearerToken);
+    _bumpRevision();
   }
 
   /// 12-hex MAC from BLE name (`IJ_…`) for `/api/frames/:mac/*` — never hardcode.
@@ -191,19 +594,21 @@ class DeviceStore {
     final id = deviceId.trim();
     if (id.isEmpty) return;
 
-    PairedFrame? removed;
-    for (final f in _frames) {
-      if (f.deviceId.trim() == id) {
-        removed = f;
-        break;
-      }
-    }
-    if (removed == null) return;
+    final idx = _indexOf(id);
+    if (idx < 0) return;
+    final removed = _frames[idx];
 
     final p = await SharedPreferences.getInstance();
     await p.remove(_slideshowPrefsKey(_macSlugForFrame(removed)));
 
-    _frames.removeWhere((e) => e.deviceId.trim() == id);
+    final removedKey =
+        FrameMacUtil.normalizeSlug(removed.deviceId)?.toUpperCase() ??
+            removed.deviceId.trim().toUpperCase();
+    _frames.removeWhere((e) {
+      final k = FrameMacUtil.normalizeSlug(e.deviceId)?.toUpperCase() ??
+          e.deviceId.trim().toUpperCase();
+      return _macsRelated(k, removedKey);
+    });
 
     if (_frames.isEmpty) {
       await clear();
@@ -290,6 +695,7 @@ class DeviceStore {
     );
     if (mac != null) await savePairedFrameMac(mac);
     await _persistAll();
+    // Do NOT pushBoundFrame here — frame must finish Wi‑Fi + naming first.
   }
 
   Future<void> savePairedFrameMac(String mac) async {
@@ -309,12 +715,20 @@ class DeviceStore {
     String? bleRemoteId,
   }) async {
     await load();
-    final cleanId = deviceId.trim();
-    if (cleanId.isEmpty) return;
-    final idx = _indexOf(cleanId);
+    final rawId = deviceId.trim();
+    if (rawId.isEmpty) return;
+    final fromName = FrameMacUtil.macFromBleName(bleNamePrefix ?? '');
+    final fromRaw = FrameMacUtil.normalizeSlug(rawId);
+    final hardware = fromName ?? fromRaw;
+    if (hardware == null || hardware.length != 12) {
+      // Refuse to persist iOS UUID as a frame id (creates ghost second cards).
+      return;
+    }
+    final station = PairedFrame.preferEsp32WifiStationMac(hardware) ?? hardware;
+    final idx = _indexOf(station);
     final old = idx >= 0 ? _frames[idx] : null;
     final merged = PairedFrame(
-      deviceId: cleanId,
+      deviceId: station,
       pairingToken: old?.pairingToken,
       apiUrl: old?.apiUrl,
       bleServiceUuid: old?.bleServiceUuid,
@@ -324,7 +738,7 @@ class DeviceStore {
           : old?.bleNamePrefix,
       bleRemoteId: bleRemoteId?.trim().isNotEmpty == true
           ? bleRemoteId!.trim()
-          : old?.bleRemoteId,
+          : (rawId.contains('-') ? rawId : old?.bleRemoteId),
       product: old?.product,
       wifiSsid: old?.wifiSsid,
       wifiUsername: old?.wifiUsername,
@@ -342,13 +756,11 @@ class DeviceStore {
     } else {
       _frames.add(merged);
     }
-    _activeDeviceId = cleanId;
-    final mac = FrameMacUtil.macFromBleIdentity(
-      bleName: bleNamePrefix,
-      fallbackText: cleanId,
-    );
-    if (mac != null) await savePairedFrameMac(mac);
+    _activeDeviceId = station;
+    await savePairedFrameMac(station);
     await _persistAll();
+    await dedupeRelatedFrames();
+    // Do NOT cloud-bind on BLE pair — wait until Wi‑Fi + name (saveFrameProfile).
   }
 
   Future<void> saveSelfHostedMqtt({
@@ -425,6 +837,60 @@ class DeviceStore {
     if (cleanPass.isNotEmpty) {
       await WifiCredentialCache.instance.remember(cleanSsid, cleanPass);
     }
+    // If the frame was already named, bind now that Wi‑Fi is set.
+    if (updated.isReadyForAccountSync) {
+      unawaited(
+        AccountSyncService.instance.pushBoundFrame(
+          updated.deviceId,
+          setPrimary: true,
+          frameName: updated.frameName,
+          wifiSsid: updated.wifiSsid,
+        ),
+      );
+    }
+  }
+
+  /// Clears saved Wi‑Fi credentials after a failed provision attempt so the UI
+  /// never shows a fake "connected" network name.
+  Future<void> clearWifiProvision({String? deviceId}) async {
+    await load();
+    final id = (deviceId ?? _activeDeviceId ?? cached?.deviceId)?.trim();
+    if (id == null || id.isEmpty) return;
+    final i = _indexOf(id);
+    if (i < 0) return;
+    final c = _frames[i];
+    if ((c.wifiSsid == null || c.wifiSsid!.trim().isEmpty) &&
+        (c.wifiPassword == null || c.wifiPassword!.isEmpty) &&
+        c.wifiProvisionedAtMs == null) {
+      return;
+    }
+    _frames[i] = PairedFrame(
+      deviceId: c.deviceId,
+      pairingToken: c.pairingToken,
+      apiUrl: c.apiUrl,
+      bleServiceUuid: c.bleServiceUuid,
+      bleDataCharUuid: c.bleDataCharUuid,
+      bleNamePrefix: c.bleNamePrefix,
+      bleRemoteId: c.bleRemoteId,
+      product: c.product,
+      wifiSsid: null,
+      wifiUsername: null,
+      wifiPassword: null,
+      wifiProvisionedAtMs: null,
+      frameName: c.frameName,
+      frameOrientation: c.frameOrientation,
+      mqttBrokerHost: c.mqttBrokerHost,
+      mqttBrokerPort: c.mqttBrokerPort,
+      mqttBrokerUser: c.mqttBrokerUser,
+      mqttBrokerPassword: c.mqttBrokerPassword,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kWifiSsid);
+    await prefs.remove(_kWifiUser);
+    await prefs.remove(_kWifiPass);
+    await prefs.remove(_kWifiProvisionedAt);
+    await _persistAll();
+    _bumpRevision();
   }
 
   Future<void> saveFrameProfile({
@@ -461,6 +927,63 @@ class DeviceStore {
     );
     _replaceFrame(updated);
     await _persistAll();
+    _bumpRevision();
+    // Cloud-bind only when Wi‑Fi is set AND a real name exists.
+    if (updated.isReadyForAccountSync) {
+      unawaited(
+        AccountSyncService.instance.pushBoundFrame(
+          updated.deviceId,
+          setPrimary: true,
+          frameName: storedName,
+          wifiSsid: updated.wifiSsid,
+        ),
+      );
+    }
+  }
+
+  /// Rename the active (or given) frame and push to account when ready.
+  Future<void> updateFrameDisplayName(
+    String frameName, {
+    String? deviceId,
+  }) async {
+    await load();
+    final id = (deviceId ?? _activeDeviceId ?? cached?.deviceId)?.trim();
+    if (id == null || id.isEmpty) return;
+    final i = _indexOf(id);
+    if (i < 0) return;
+    final c = _frames[i];
+    final storedName = frameName.trim().isEmpty ? null : frameName.trim();
+    final updated = PairedFrame(
+      deviceId: c.deviceId,
+      pairingToken: c.pairingToken,
+      apiUrl: c.apiUrl,
+      bleServiceUuid: c.bleServiceUuid,
+      bleDataCharUuid: c.bleDataCharUuid,
+      bleNamePrefix: c.bleNamePrefix,
+      bleRemoteId: c.bleRemoteId,
+      product: c.product,
+      wifiSsid: c.wifiSsid,
+      wifiUsername: c.wifiUsername,
+      wifiPassword: c.wifiPassword,
+      wifiProvisionedAtMs: c.wifiProvisionedAtMs,
+      frameName: storedName,
+      frameOrientation: c.frameOrientation,
+      mqttBrokerHost: c.mqttBrokerHost,
+      mqttBrokerPort: c.mqttBrokerPort,
+      mqttBrokerUser: c.mqttBrokerUser,
+      mqttBrokerPassword: c.mqttBrokerPassword,
+    );
+    _frames[i] = updated;
+    await _persistAll();
+    _bumpRevision();
+    if (updated.isReadyForAccountSync) {
+      await AccountSyncService.instance.pushBoundFrame(
+        updated.deviceId,
+        setPrimary: true,
+        frameName: storedName,
+        wifiSsid: updated.wifiSsid,
+      );
+    }
   }
 
   void _replaceFrame(PairedFrame u) {
@@ -730,13 +1253,19 @@ class PairedFrame {
     return id.isNotEmpty ? id : ble;
   }
 
-  /// Best-effort Wi‑Fi station MAC for uploads/MQTT from a 12‑hex id (BLE or STA).
-  static String? preferEsp32WifiStationMac(String raw) {
+  /// Best-effort Wi‑Fi station MAC for uploads/MQTT from a 12‑hex id.
+  /// When [fromBleAdvertisement] is true, apply ESP32 BLE→STA (−2).
+  /// Otherwise leave the MAC unchanged (callers try ±2 siblings for status).
+  static String? preferEsp32WifiStationMac(
+    String raw, {
+    bool fromBleAdvertisement = false,
+  }) {
     final n = _normalizedHexMac(raw);
     if (n == null) return null;
-    final bleFromWifi = _esp32BleMacFromWifiMac(n);
-    if (bleFromWifi != null && bleFromWifi != n) return n;
-    return _esp32WifiMacFromBleMac(n) ?? n;
+    if (fromBleAdvertisement) {
+      return _esp32WifiMacFromBleMac(n) ?? n;
+    }
+    return n;
   }
 
   static String? _normalizedHexMac(String raw) {
@@ -859,6 +1388,15 @@ class PairedFrame {
   }
 
   bool get isWifiProvisioned => wifiSsid != null && wifiSsid!.trim().isNotEmpty;
+
+  /// Ready to appear on other signed-in devices (Wi‑Fi + real name).
+  bool get isReadyForAccountSync {
+    final name = frameName?.trim() ?? '';
+    final ssid = wifiSsid?.trim() ?? '';
+    if (name.isEmpty || ssid.isEmpty) return false;
+    if (name.toLowerCase() == ssid.toLowerCase()) return false;
+    return true;
+  }
 
   /// List row / editor labels when [frameName] is unset (avoids raw BLE MAC like `D0:CF:…`).
   String listDisplayTitle(AppStrings s) {

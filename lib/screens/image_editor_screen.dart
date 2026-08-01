@@ -22,6 +22,7 @@ import '../services/app_diag_log.dart';
 import '../services/app_release_guard.dart';
 import '../services/cloud_photo_upload_service.dart';
 import '../services/in_app_notification_store.dart';
+import '../services/sync_pipeline.dart';
 import '../widgets/debug_slog_overlay.dart';
 import '../widgets/shell_navigation.dart';
 import '../services/frame_cloud_cast_service.dart';
@@ -438,6 +439,15 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       }
       await File(destPath).writeAsBytes(jpeg, flush: true);
       await PersonalGalleryStore.instance.addPaths([destPath]);
+
+      // Immediate account gallery sync so the other phone sees the cast.
+      if (!mounted) return;
+      try {
+        await SyncPipeline.instance.onPhotoCasted(
+          localPath: destPath,
+          deviceId: _paired?.deviceId,
+        );
+      } catch (_) {}
     } catch (e) {
       AppDiagLog.verbose('[Editor] gallery save failed: $e');
     }
@@ -498,14 +508,48 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
     if (_isPlaylist) {
       _perStates = [];
+      var skipped = 0;
       for (final bytes in widget.playlistImages!) {
-        final decoded = _processor.decode(bytes);
+        img.Image? decoded;
+        try {
+          decoded = bytes.isEmpty ? null : _processor.decode(bytes);
+        } catch (e, st) {
+          AppDiagLog.verbose('[Editor] playlist decode failed: $e\n$st');
+          decoded = null;
+        }
+        if (decoded == null) {
+          skipped++;
+          continue;
+        }
         _perStates!.add(_PerImageState(originalBytes: bytes, decoded: decoded));
       }
       if (_perStates!.isNotEmpty) {
         _restorePerState(0);
+        if (skipped > 0) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            final s = AppStrings.of(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                behavior: SnackBarBehavior.floating,
+                content: Text(
+                  '$skipped ${s.decodeError}',
+                ),
+              ),
+            );
+          });
+        }
       } else {
         _decodeFailed = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text(AppStrings.of(context).decodeError),
+            ),
+          );
+        });
       }
     } else {
       // Fresh pick: plain image only — no sticky overlays / filters / grade.
@@ -519,12 +563,30 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       _saturation = 0;
       _filter = FrameImageFilter.none;
       _quarterTurns = 0;
-      _decoded = _processor.decode(widget.imageBytes);
+      try {
+        if (widget.imageBytes.isEmpty) {
+          _decoded = null;
+        } else {
+          _decoded = _processor.decode(widget.imageBytes);
+        }
+      } catch (e, st) {
+        AppDiagLog.verbose('[Editor] decode failed: $e\n$st');
+        _decoded = null;
+      }
       if (_decoded != null) {
         _previewBytes = widget.imageBytes; // instant first frame
         _warmFastPreviewCache();
       } else {
         _decodeFailed = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text(AppStrings.of(context).decodeError),
+            ),
+          );
+        });
       }
     }
     _loadPairing().then((_) {
@@ -1183,7 +1245,34 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           title: Text(s.editTitle),
           leadingWidth: 44,
         ),
-        body: Center(child: Text(s.decodeError)),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.broken_image_outlined, size: 48, color: Color(0xFF9E9E9E)),
+                const SizedBox(height: 16),
+                Text(
+                  s.decodeError,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  s.decodeErrorHint,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: cs.onSurfaceVariant, height: 1.4),
+                ),
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: Text(s.backTooltip),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
     }
     final viewInsets = MediaQuery.viewInsetsOf(context);
@@ -1645,16 +1734,56 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   }
 }
 
+  Widget _safeMemoryImage(
+    Uint8List bytes, {
+    BoxFit fit = BoxFit.cover,
+    double? width,
+    double? height,
+    FilterQuality filterQuality = FilterQuality.low,
+  }) {
+    if (bytes.isEmpty) {
+      return ColoredBox(
+        color: const Color(0xFFF3F4F6),
+        child: Center(
+          child: Text(
+            AppStrings.of(context).decodeError,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+          ),
+        ),
+      );
+    }
+    return Image.memory(
+      bytes,
+      fit: fit,
+      width: width,
+      height: height,
+      gaplessPlayback: true,
+      filterQuality: filterQuality,
+      errorBuilder: (_, __, ___) => ColoredBox(
+        color: const Color(0xFFF3F4F6),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              AppStrings.of(context).decodeError,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _filteredImage() {
     // During drag: skip all pixel-level filter/grade — just raw image for 60fps.
     if (_isDragging) {
-      return Image.memory(
+      return _safeMemoryImage(
         _currentBytes,
         fit: BoxFit.cover,
         width: double.infinity,
         height: double.infinity,
-        gaplessPlayback: true,
-        filterQuality: FilterQuality.low,
       );
     }
     final idx = _filter.index.clamp(0, _filterPreviewMatrices.length - 1);
@@ -1668,13 +1797,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       0, 0, c, 0, t + (b - 1) * 40,
       0, 0, 0, 1, 0,
     ]);
-    Widget img = Image.memory(
+    Widget img = _safeMemoryImage(
       _currentBytes,
       fit: BoxFit.cover,
       width: double.infinity,
       height: double.infinity,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.low,
     );
     img = ColorFiltered(colorFilter: grade, child: img);
     if (matrix != null) {
@@ -2008,11 +2135,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               final f = presetFilters[index];
               final sel = _filter == f;
               final matrix = matrices[f.index];
-              Widget thumb = Image.memory(
+              Widget thumb = _safeMemoryImage(
                 _currentBytes,
                 fit: BoxFit.cover,
-                gaplessPlayback: true,
-                filterQuality: FilterQuality.low,
               );
               if (matrix != null) {
                 thumb = ColorFiltered(colorFilter: matrix, child: thumb);
@@ -2699,7 +2824,14 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
               padding: const EdgeInsets.all(12),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.memory(bytes, fit: BoxFit.contain),
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => SizedBox(
+                    height: 180,
+                    child: Center(child: Text(_strings?.decodeError ?? 'Could not decode image')),
+                  ),
+                ),
               ),
             ),
             Padding(
@@ -3054,7 +3186,14 @@ class _FastEinkPreviewDialogState extends State<_FastEinkPreviewDialog> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: _bytes != null
-                    ? Image.memory(_bytes!, fit: BoxFit.contain)
+                    ? Image.memory(
+                        _bytes!,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => SizedBox(
+                          height: 180,
+                          child: Center(child: Text(s.decodeError)),
+                        ),
+                      )
                     : const SizedBox(
                         height: 220,
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),

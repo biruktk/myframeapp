@@ -483,10 +483,10 @@ class BlufiProvisioningService {
       await sendFrame(0x00, 0x02, const [_opModeSta], checksum: false);
       // data: STA ssid
       await sendFrame(0x01, 0x02, utf8.encode(ssid), checksum: false);
-      // data: STA password (skip for open networks)
-      if (password.isNotEmpty) {
-        await sendFrame(0x01, 0x03, utf8.encode(password), checksum: false);
-      }
+      // data: STA password — ALWAYS send (empty payload for open / no-password Wi‑Fi).
+      // Skipping this frame leaves a stale password on many firmwares and open
+      // networks never associate.
+      await sendFrame(0x01, 0x03, utf8.encode(password), checksum: false);
       // ctrl: connect wifi
       await sendFrame(0x00, 0x03, const [], checksum: false);
       // ctrl: query wifi status (some firmwares only answer when queried)

@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../services/gallery_send_flow.dart';
 import '../services/gallery_photo_picker.dart';
+import '../services/gallery_image_normalizer.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/user_gallery_cloud_service.dart';
+import '../services/sync_pipeline.dart';
 import '../services/frame_api_client.dart';
 import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
@@ -54,6 +56,18 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     if (mounted) setState(() {});
   }
 
+  Future<void> _onPullToRefresh() async {
+    final app = AppSettingsScope.of(context);
+    try {
+      if (app.hasAuthenticatedSession) {
+        await SyncPipeline.instance
+            .pullToRefresh()
+            .timeout(const Duration(seconds: 40));
+      }
+    } catch (_) {}
+    await _reload();
+  }
+
   Future<void> _confirmDeleteAlbum(SendAlbumEntry album) async {
     final s = AppStrings.of(context);
     final ok = await showDialog<bool>(
@@ -78,6 +92,7 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
         ),
       );
     }
+    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: album.id));
     await _reload();
   }
 
@@ -93,6 +108,12 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     await SendAlbumsStore.instance.createAlbum(name.trim(), const <String>[]);
     await _reload();
     if (!mounted) return;
+    final created = SendAlbumsStore.instance.albums.isNotEmpty
+        ? SendAlbumsStore.instance.albums.first
+        : null;
+    if (created != null) {
+      unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: created.id));
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(s.albumCreatedMessage(name.trim()))),
     );
@@ -100,21 +121,10 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
 
   Future<void> _addFromPicker() async {
     final list = await GalleryPhotoPicker.pickMulti(context);
-    await PersonalGalleryStore.instance.load();
-    final before = Set<String>.from(PersonalGalleryStore.instance.paths);
     if (list.isEmpty) return;
     await PersonalGalleryStore.instance.addPaths(list.map((e) => e.path).toList());
     if (!mounted) return;
-    final tok = AppSettingsScope.of(context).authToken;
-    if (tok.trim().isNotEmpty) {
-      for (final path in PersonalGalleryStore.instance.paths) {
-        if (before.contains(path)) continue;
-        await UserGalleryCloudService.instance.uploadFile(
-          authToken: tok,
-          localPath: path,
-        );
-      }
-    }
+    unawaited(SyncPipeline.instance.onGalleryLocalChanged());
     await _reload();
   }
 
@@ -167,6 +177,7 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
           _PersonalGrid(
             paths: paths,
             onAdd: _addFromPicker,
+            onRefresh: _onPullToRefresh,
             onRemove: (i) async {
               final paths = PersonalGalleryStore.instance.paths;
               final path = (i >= 0 && i < paths.length) ? paths[i] : null;
@@ -192,6 +203,7 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
             onCreateAlbum: _showCreateAlbumDialog,
             onAlbumTap: _openAlbumDetail,
             onDeleteAlbum: _confirmDeleteAlbum,
+            onRefresh: _onPullToRefresh,
             previewFor: _firstPreviewPath,
           ),
         ],
@@ -209,6 +221,7 @@ class _AlbumsGrid extends StatelessWidget {
     required this.onCreateAlbum,
     required this.onAlbumTap,
     required this.onDeleteAlbum,
+    required this.onRefresh,
     required this.previewFor,
   });
 
@@ -219,30 +232,40 @@ class _AlbumsGrid extends StatelessWidget {
   final VoidCallback onCreateAlbum;
   final void Function(SendAlbumEntry album) onAlbumTap;
   final void Function(SendAlbumEntry album) onDeleteAlbum;
+  final Future<void> Function() onRefresh;
   final String? Function(SendAlbumEntry) previewFor;
 
   @override
   Widget build(BuildContext context) {
     if (albums.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Text(emptyHint, style: TextStyle(color: colorScheme.onSurfaceVariant, height: 1.4)),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: onCreateAlbum,
-            icon: const Icon(Icons.create_new_folder_outlined),
-            label: Text(strings.createNewAlbum),
+      return RefreshIndicator(
+        color: const Color(0xFFE5252A),
+        onRefresh: onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
-        ],
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(emptyHint, style: TextStyle(color: colorScheme.onSurfaceVariant, height: 1.4)),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onCreateAlbum,
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: Text(strings.createNewAlbum),
+            ),
+          ],
+        ),
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: GridView.builder(
+    return RefreshIndicator(
+      color: const Color(0xFFE5252A),
+      onRefresh: onRefresh,
+      child: GridView.builder(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
@@ -361,8 +384,6 @@ class _AlbumsGrid extends StatelessWidget {
               );
             },
           ),
-        ),
-      ],
     );
   }
 }
@@ -373,12 +394,14 @@ class _PersonalGrid extends StatelessWidget {
     required this.onAdd,
     required this.onRemove,
     required this.onSendToFrame,
+    required this.onRefresh,
   });
 
   final List<String> paths;
   final VoidCallback onAdd;
   final void Function(int index) onRemove;
   final Future<void> Function(String path) onSendToFrame;
+  final Future<void> Function() onRefresh;
 
   Future<void> _openViewer(BuildContext context, int initialIndex) async {
     await Navigator.of(context).push<void>(
@@ -408,61 +431,89 @@ class _PersonalGrid extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: paths.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(s.galleryEmptyHint, textAlign: TextAlign.center, style: TextStyle(color: cs.onSurfaceVariant)),
-                  ),
-                )
-              : GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 6,
-                    mainAxisSpacing: 6,
-                  ),
-                  itemCount: paths.length,
-                  itemBuilder: (context, i) {
-                    final path = paths[i];
-                    return Material(
-                      color: cs.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () => _openViewer(context, i),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.file(
-                              File(path),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => ColoredBox(
-                                color: cs.surfaceContainerHighest,
-                                child: Icon(Icons.broken_image_outlined, color: cs.error),
-                              ),
+          child: RefreshIndicator(
+            color: const Color(0xFFE5252A),
+            onRefresh: onRefresh,
+            child: paths.isEmpty
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    children: [
+                      SizedBox(
+                        height: MediaQuery.sizeOf(context).height * 0.35,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              s.galleryEmptyHint,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: cs.onSurfaceVariant),
                             ),
-                            Positioned(
-                              top: 4,
-                              right: 4,
-                              child: InkWell(
-                                onTap: () => onRemove(i),
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black54,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(Icons.close, color: Colors.white, size: 16),
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ],
+                  )
+                : GridView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 6,
+                      mainAxisSpacing: 6,
+                    ),
+                    itemCount: paths.length,
+                    itemBuilder: (context, i) {
+                      final path = paths[i];
+                      return Material(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => _openViewer(context, i),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              Image.file(
+                                File(path),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => ColoredBox(
+                                  color: cs.surfaceContainerHighest,
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: cs.error,
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: InkWell(
+                                  onTap: () => onRemove(i),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black54,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.close,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
         ),
       ],
     );
@@ -506,7 +557,15 @@ class _PersonalPhotoViewerScreenState extends State<_PersonalPhotoViewerScreen> 
     final path = widget.paths[_index];
     final file = File(path);
     if (!await file.exists()) return;
-    final bytes = await file.readAsBytes();
+    final raw = await file.readAsBytes();
+    final bytes = await GalleryImageNormalizer.toJpegBytes(raw, pathHint: path);
+    if (bytes == null || bytes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.of(context).decodeError)),
+      );
+      return;
+    }
     if (!mounted) return;
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
     await Navigator.of(context).push<void>(

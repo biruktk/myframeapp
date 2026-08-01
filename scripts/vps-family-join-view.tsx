@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
+import { Copy, Check } from "lucide-react";
 import type { Locale } from "@/lib/i18n";
 
 type Props = {
@@ -17,6 +17,9 @@ const copy: Record<
     openApp: string;
     download: string;
     codeLabel: string;
+    copyLabel: string;
+    copiedLabel: string;
+    copiedToast: string;
     steps: string[];
     invalid: string;
   }
@@ -27,6 +30,9 @@ const copy: Record<
     openApp: "Open in MyFrame app",
     download: "Get the app",
     codeLabel: "Invite code",
+    copyLabel: "Copy",
+    copiedLabel: "Copied!",
+    copiedToast: "Copied to clipboard!",
     steps: [
       "Install MyFrame if you do not have it yet.",
       "Open the app and sign in.",
@@ -36,14 +42,17 @@ const copy: Record<
   },
   zh: {
     title: "加入 MyFrame 家庭",
-    lead: "有人邀请您加入家庭共享相册。",
+    lead: "有人邀请你加入他们的家庭组并共享照片。",
     openApp: "在 MyFrame 应用中打开",
     download: "下载应用",
     codeLabel: "邀请码",
+    copyLabel: "复制",
+    copiedLabel: "已复制",
+    copiedToast: "已复制到剪贴板",
     steps: [
-      "如果您尚未安装 MyFrame，请先下载安装。",
-      "打开应用并登录您的账号。",
-      "进入「家庭」页面 ➔ 点击「使用邀请码加入」，输入下方邀请码。",
+      "如未安装请先下载 MyFrame。",
+      "打开应用并登录。",
+      "进入「家庭」→「加入家庭」并输入下方邀请码。",
     ],
     invalid: "此邀请链接缺少有效的 8 位邀请码。",
   },
@@ -53,6 +62,9 @@ const copy: Record<
     openApp: "Abrir en la app MyFrame",
     download: "Descargar la app",
     codeLabel: "Código de invitación",
+    copyLabel: "Copiar",
+    copiedLabel: "¡Copiado!",
+    copiedToast: "¡Copiado al portapapeles!",
     steps: [
       "Instala MyFrame si aún no la tienes.",
       "Abre la app e inicia sesión.",
@@ -66,6 +78,9 @@ const copy: Record<
     openApp: "Ouvrir dans l'app MyFrame",
     download: "Télécharger l'app",
     codeLabel: "Code d'invitation",
+    copyLabel: "Copier",
+    copiedLabel: "Copié !",
+    copiedToast: "Copié dans le presse-papiers !",
     steps: [
       "Installez MyFrame si nécessaire.",
       "Ouvrez l'app et connectez-vous.",
@@ -79,6 +94,9 @@ const copy: Record<
     openApp: "In der MyFrame-App öffnen",
     download: "App herunterladen",
     codeLabel: "Einladungscode",
+    copyLabel: "Kopieren",
+    copiedLabel: "Kopiert!",
+    copiedToast: "In die Zwischenablage kopiert!",
     steps: [
       "Installiere MyFrame, falls noch nicht geschehen.",
       "Öffne die App und melde dich an.",
@@ -92,6 +110,9 @@ const copy: Record<
     openApp: "MyFrameアプリで開く",
     download: "アプリを入手",
     codeLabel: "招待コード",
+    copyLabel: "コピー",
+    copiedLabel: "コピー済み",
+    copiedToast: "クリップボードにコピーしました",
     steps: [
       "未インストールの場合は MyFrame をインストールしてください。",
       "アプリを開いてサインインします。",
@@ -101,65 +122,43 @@ const copy: Record<
   },
 };
 
-function detectLocale(serverLocale: Locale): Locale {
-  if (typeof window === "undefined") return serverLocale;
-  const params = new URLSearchParams(window.location.search);
-  const lang = params.get("lang");
-  if (lang === "zh" || lang === "en") return lang;
-  const browserLang = (navigator.language || "").toLowerCase();
-  if (browserLang.startsWith("zh")) return "zh";
-  return serverLocale;
-}
-
-export function FamilyJoinView({ locale: serverLocale, code }: Props) {
-  const [effectiveLocale, setEffectiveLocale] = useState<Locale>(serverLocale);
-  useEffect(() => {
-    setEffectiveLocale(detectLocale(serverLocale));
-  }, [serverLocale]);
-
-  const t = copy[effectiveLocale] ?? copy.en;
+export function FamilyJoinView({ locale, code }: Props) {
+  const t = copy[locale] ?? copy.en;
   const valid = code.length === 8;
+  const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState(false);
 
-  const appDeepLink = valid ? `myframe://join?code=${encodeURIComponent(code)}` : "#";
-  const downloadHref = `/${effectiveLocale}/download`;
+  useEffect(() => {
+    if (!valid || typeof window === "undefined") return;
+    const deep = `myframe://join?code=${encodeURIComponent(code)}`;
+    const timer = window.setTimeout(() => {
+      window.location.href = deep;
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [code, valid]);
 
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(code);
-      setToast(true);
-      setTimeout(() => setToast(false), 2000);
     } catch {
-      // fallback for older browsers
       const ta = document.createElement("textarea");
       ta.value = code;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
       document.body.removeChild(ta);
-      setToast(true);
-      setTimeout(() => setToast(false), 2000);
     }
+    setCopied(true);
+    setToast(true);
+    window.setTimeout(() => setCopied(false), 2000);
+    window.setTimeout(() => setToast(false), 2000);
   }
 
-  function openAppWithCode() {
-    const startedAt = Date.now();
-    window.location.href = appDeepLink;
-    setTimeout(() => {
-      if (!document.hidden) {
-        copyCode();
-        alert(t.openApp + "\n\n" + t.codeLabel + ": " + code);
-      }
-    }, 1500);
-  }
-
-  useEffect(() => {
-    if (!valid || typeof window === "undefined") return;
-    const timer = window.setTimeout(() => {
-      openAppWithCode();
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [code, valid]);
+  const appDeepLink = valid ? `myframe://join?code=${encodeURIComponent(code)}` : "#";
+  const downloadHref = `/${locale}/download`;
 
   return (
     <main
@@ -173,12 +172,14 @@ export function FamilyJoinView({ locale: serverLocale, code }: Props) {
     >
       {toast && (
         <div
+          role="status"
+          aria-live="polite"
           style={{
             position: "fixed",
             bottom: 24,
             left: "50%",
             transform: "translateX(-50%)",
-            background: "#333",
+            background: "#111",
             color: "#fff",
             padding: "10px 20px",
             borderRadius: 8,
@@ -186,9 +187,10 @@ export function FamilyJoinView({ locale: serverLocale, code }: Props) {
             fontWeight: 500,
             zIndex: 1000,
             boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
+            whiteSpace: "nowrap",
           }}
         >
-          Copied to clipboard!
+          {t.copiedToast}
         </div>
       )}
 
@@ -203,54 +205,78 @@ export function FamilyJoinView({ locale: serverLocale, code }: Props) {
         {valid && (
           <>
             <div
-              onClick={copyCode}
               style={{
                 background: "#fff",
                 borderRadius: 12,
                 padding: 16,
                 marginBottom: 16,
                 boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                textAlign: "center",
-                cursor: "pointer",
-                userSelect: "none",
-                transition: "box-shadow 0.2s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)")}
-              onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.08)")}
             >
-              <p style={{ margin: 0, fontSize: 13, color: "#888" }}>{t.codeLabel}</p>
-              <p
+              <p style={{ margin: 0, fontSize: 13, color: "#888", textAlign: "center" }}>{t.codeLabel}</p>
+              <div
                 style={{
-                  margin: "8px 0 0",
-                  fontSize: 28,
-                  fontWeight: 800,
-                  letterSpacing: 4,
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  marginTop: 8,
+                  flexWrap: "wrap",
                 }}
               >
-                {code}
-              </p>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 28,
+                    fontWeight: 800,
+                    letterSpacing: 4,
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    color: "#111",
+                  }}
+                >
+                  {code}
+                </p>
+                <button
+                  type="button"
+                  onClick={copyCode}
+                  aria-label={t.copyLabel}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    border: copied ? "1px solid #16a34a" : "1px solid #ddd",
+                    background: copied ? "#f0fdf4" : "#fafafa",
+                    color: copied ? "#15803d" : "#111",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    lineHeight: 1,
+                  }}
+                >
+                  {copied ? <Check size={16} strokeWidth={2.5} /> : <Copy size={16} strokeWidth={2.5} />}
+                  {copied ? t.copiedLabel : t.copyLabel}
+                </button>
+              </div>
             </div>
 
-            <button
-              onClick={openAppWithCode}
+            <a
+              href={appDeepLink}
               style={{
                 display: "block",
-                width: "100%",
                 textAlign: "center",
                 background: "#dc2626",
                 color: "#fff",
                 padding: "14px 20px",
                 borderRadius: 10,
                 fontWeight: 600,
-                fontSize: 16,
-                border: "none",
-                cursor: "pointer",
+                textDecoration: "none",
                 marginBottom: 12,
               }}
             >
               {t.openApp}
-            </button>
+            </a>
 
             <a
               href={downloadHref}

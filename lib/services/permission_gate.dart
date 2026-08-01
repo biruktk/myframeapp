@@ -52,4 +52,12 @@ class PermissionGate {
     if (current.isPermanentlyDenied || current.isRestricted) return current;
     return _enqueue(() => Permission.location.request());
   }
+
+  /// Android 13+: Wi‑Fi scan permission (alternative to fine location).
+  static Future<PermissionStatus> nearbyWifiDevices() async {
+    final current = await Permission.nearbyWifiDevices.status;
+    if (current.isGranted || current.isLimited) return current;
+    if (current.isPermanentlyDenied || current.isRestricted) return current;
+    return _enqueue(() => Permission.nearbyWifiDevices.request());
+  }
 }

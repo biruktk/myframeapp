@@ -66,7 +66,15 @@ class JoinedFamilySnapshot {
       );
 }
 
-enum JoinFamilyResult { ok, codeTooShort, ownInviteCode, networkError }
+enum JoinFamilyResult {
+  ok,
+  codeTooShort,
+  ownInviteCode,
+  notFound,
+  invalidInvite,
+  unauthorized,
+  networkError,
+}
 
 /// Local cache + optional cloud sync via [FamilyRemoteApi].
 class FamilyGroupStore {
@@ -272,7 +280,7 @@ class FamilyGroupStore {
     String? birthdayIso,
   }) async {
     final c = normalizeCode(rawCode);
-    if (c.length < 8) return JoinFamilyResult.codeTooShort;
+    if (c.length != 8) return JoinFamilyResult.codeTooShort;
     if (c == inviteCode.toUpperCase()) return JoinFamilyResult.ownInviteCode;
 
     final tok = bearerToken?.trim() ?? '';
@@ -282,11 +290,23 @@ class FamilyGroupStore {
         await FamilyRemoteApi(baseUrl: origin, token: tok).join(c, birthdayIso: birthdayIso);
         await pullFromRemote(origin, tok);
         return JoinFamilyResult.ok;
+      } on FamilyRemoteAuthException {
+        return JoinFamilyResult.unauthorized;
+      } on FamilyRemoteHttpException catch (e) {
+        final err = e.errorCode;
+        if (e.statusCode == 404 || err == 'not_found') {
+          return JoinFamilyResult.notFound;
+        }
+        if (e.statusCode == 400 || err == 'invalid_invite') {
+          return JoinFamilyResult.invalidInvite;
+        }
+        return JoinFamilyResult.networkError;
       } catch (_) {
         return JoinFamilyResult.networkError;
       }
     }
 
+    // Offline / signed-out: keep a local joined snapshot so UX still completes.
     joinedFamilies.removeWhere((j) => j.code == c);
     joinedFamilies.add(
       JoinedFamilySnapshot(

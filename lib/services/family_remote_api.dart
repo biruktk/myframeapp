@@ -96,6 +96,27 @@ class FamilyRemoteHttpException implements Exception {
   FamilyRemoteHttpException(this.statusCode, this.body);
   final int statusCode;
   final String body;
+
+  /// Best-effort parse of `{ "error": "..." }` from the API body.
+  String? get errorCode {
+    try {
+      final map = jsonDecode(body);
+      if (map is Map && map['error'] != null) {
+        return map['error'].toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String? get message {
+    try {
+      final map = jsonDecode(body);
+      if (map is Map && map['message'] != null) {
+        return map['message'].toString();
+      }
+    } catch (_) {}
+    return null;
+  }
 }
 
 class FamilyMembersBundle {

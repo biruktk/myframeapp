@@ -4,11 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../l10n/app_strings.dart';
+import 'gallery_image_normalizer.dart';
 import 'permission_gate.dart';
 
 const int kMaxMultiPick = 10;
 
 /// Shared gallery multi-pick; avoids reopening picker on iOS cancel.
+///
+/// Every returned [XFile] is a durable **JPEG** under app documents (HEIC / P3
+/// screenshots are normalized before the editor or upload sees them).
 class GalleryPhotoPicker {
   GalleryPhotoPicker._();
 
@@ -27,6 +32,7 @@ class GalleryPhotoPicker {
         imageQuality: 85,
         maxWidth: 1920,
         maxHeight: 1080,
+        requestFullMetadata: false,
       );
       // iOS returns [] when user cancels — do not open single-image picker.
       if (list.isEmpty && Platform.isAndroid) {
@@ -35,6 +41,7 @@ class GalleryPhotoPicker {
           imageQuality: 85,
           maxWidth: 1920,
           maxHeight: 1080,
+          requestFullMetadata: false,
         );
         if (one != null) list = [one];
       }
@@ -50,7 +57,38 @@ class GalleryPhotoPicker {
           );
         }
       }
-      return list;
+
+      final normalized = <XFile>[];
+      for (final x in list) {
+        final jpegPath = await GalleryImageNormalizer.persistAsJpeg(x.path);
+        if (jpegPath != null) {
+          normalized.add(XFile(jpegPath, mimeType: 'image/jpeg'));
+        }
+      }
+
+      if (list.isNotEmpty && normalized.isEmpty && context.mounted) {
+        final s = AppStrings.of(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text(s.decodeError),
+          ),
+        );
+      } else if (list.isNotEmpty &&
+          normalized.length < list.length &&
+          context.mounted) {
+        final skipped = list.length - normalized.length;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            content: Text(
+              'Skipped $skipped photo(s) that could not be converted to JPEG.',
+            ),
+          ),
+        );
+      }
+
+      return normalized;
     } finally {
       _open = false;
     }

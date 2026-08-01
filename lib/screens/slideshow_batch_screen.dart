@@ -7,6 +7,7 @@ import 'package:image/image.dart' as imgLib;
 import 'package:image_picker/image_picker.dart';
 
 import '../services/gallery_photo_picker.dart';
+import '../services/gallery_image_normalizer.dart';
 import '../config/api_config.dart';
 import '../l10n/app_strings.dart';
 import '../services/app_diag_log.dart';
@@ -139,9 +140,21 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           ),
         );
 
-        final bytes = await File(sourcePaths[i]).readAsBytes();
-        final img = imgLib.decodeImage(bytes);
-        final resized = imgLib.copyResize(img!, width: 1200);
+        final raw = await File(sourcePaths[i]).readAsBytes();
+        final jpeg = await GalleryImageNormalizer.toJpegBytes(
+          raw,
+          pathHint: sourcePaths[i],
+        );
+        if (jpeg == null || jpeg.isEmpty) {
+          AppDiagLog.verbose('[Slideshow] normalize failed photo $idx');
+          continue;
+        }
+        final img = imgLib.decodeImage(jpeg);
+        if (img == null) {
+          AppDiagLog.verbose('[Slideshow] decode failed photo $idx');
+          continue;
+        }
+        final resized = imgLib.copyResize(img, width: 1200);
         final compressed = Uint8List.fromList(imgLib.encodeJpg(resized, quality: 85));
 
         final ts = DateTime.now().millisecondsSinceEpoch;

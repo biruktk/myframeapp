@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../services/device_store.dart';
 import '../settings/app_settings.dart';
 import 'settings_account_screen.dart';
 import 'settings_notifications_screen.dart';
@@ -12,7 +11,7 @@ import 'settings_ai_generate_screen.dart';
 import 'settings_app_preferences_screen.dart';
 import 'settings_help_screen.dart';
 import 'settings_log_screen.dart';
-import 'device_details_screen.dart';
+import 'device_discovery_screen.dart';
 import 'playlist_screen.dart';
 
 const _red = Color(0xFFE53935);
@@ -25,7 +24,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  PairedFrame? _paired;
   var _sleepEnabled = true;
   var _autoOtaEnabled = true;
   TimeOfDay _sleepStart = const TimeOfDay(hour: 23, minute: 0);
@@ -35,12 +33,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    await DeviceStore.instance.load();
-    if (mounted) setState(() => _paired = DeviceStore.instance.cached);
   }
 
   String _languageSubtitle(AppSettings app, AppStrings s) {
@@ -57,10 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _pairingSubtitle(AppStrings s) {
-    if (_paired == null) return s.scanDeviceBody;
-    final title = _paired!.listDisplayTitle(s);
-    final id = _paired!.deviceId;
-    return '$title · ${id.length > 12 ? '${id.substring(0, 12)}...' : id}';
+    return s.scanDeviceTitle;
   }
 
   String _formatTime(TimeOfDay t) {
@@ -197,14 +186,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildGroup(cs, [
             _tile(
               context: context,
-              icon: Icons.bluetooth_connected,
+              icon: Icons.add_circle_outline,
               title: s.framePairing,
               subtitle: _pairingSubtitle(s),
               onTap: () async {
                 await Navigator.push<void>(
-                  context, MaterialPageRoute<void>(builder: (_) => const DeviceDetailsScreen()),
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const DeviceDiscoveryScreen(),
+                  ),
                 );
-                await _load();
               },
             ),
             _divider(cs),

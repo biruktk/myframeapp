@@ -1,11 +1,14 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'app_diag_log.dart';
+import 'gallery_image_normalizer.dart';
 
 /// Copies gallery picks out of iOS `/tmp` (image_picker) into app documents.
+///
+/// Persisted files are always normalized **JPEG** so the editor / upload path
+/// never sees HEIC or odd PNG variants.
 class GalleryImageCache {
   GalleryImageCache._();
 
@@ -26,10 +29,11 @@ class GalleryImageCache {
   static bool _isUnderGalleryDir(String path, String galleryRoot) {
     final normalized = p.normalize(path);
     final root = p.normalize(galleryRoot);
-    return normalized == root || normalized.startsWith('$root${Platform.pathSeparator}');
+    return normalized == root ||
+        normalized.startsWith('$root${Platform.pathSeparator}');
   }
 
-  /// Returns a durable path under app documents. Copies when needed.
+  /// Returns a durable JPEG path under app documents. Copies/converts when needed.
   static Future<String?> persistFromPath(String sourcePath) async {
     final src = sourcePath.trim();
     if (src.isEmpty) return null;
@@ -37,20 +41,16 @@ class GalleryImageCache {
     try {
       final galleryDir = await _dir();
       if (_isUnderGalleryDir(src, galleryDir.path)) {
-        if (await File(src).exists()) return src;
-        return null;
+        if (!await File(src).exists()) return null;
+        // Already in cache — still re-normalize if not JPEG magic.
+        final bytes = await File(src).readAsBytes();
+        if (GalleryImageNormalizer.isJpegMagic(bytes) && bytes.isNotEmpty) {
+          return src;
+        }
+        return GalleryImageNormalizer.persistAsJpeg(src);
       }
 
-      final file = File(src);
-      if (!await file.exists()) return null;
-
-      var ext = p.extension(src).toLowerCase();
-      if (ext.isEmpty || ext.length > 8) ext = '.jpg';
-      final name =
-          '${DateTime.now().millisecondsSinceEpoch}_${src.hashCode.abs()}$ext';
-      final dest = File(p.join(galleryDir.path, name));
-      await file.copy(dest.path);
-      return dest.path;
+      return GalleryImageNormalizer.persistAsJpeg(src);
     } catch (e, st) {
       AppDiagLog.verbose('[GalleryImageCache] persist failed $src: $e\n$st');
       return null;

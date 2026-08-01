@@ -9,6 +9,7 @@ import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
 import '../services/gallery_send_flow.dart';
 import '../services/frame_api_client.dart';
+import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
 import '../widgets/pick_personal_photos_dialog.dart';
 
@@ -84,6 +85,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       return;
     }
     await SendAlbumsStore.instance.renameAlbum(widget.albumId, next);
+    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: widget.albumId));
     if (!mounted) return;
     setState(() => _editingTitle = false);
     await _reload();
@@ -119,6 +121,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final paths = list.map((e) => e.path).toList();
     await PersonalGalleryStore.instance.addPaths(paths);
     await SendAlbumsStore.instance.addPathsToAlbum(albumId, paths);
+    // Await so album photoIds are uploaded before UI returns.
+    await SyncPipeline.instance.onGalleryLocalChanged();
+    await SyncPipeline.instance.onAlbumsChanged(albumId: albumId);
     await _reload();
     if (!mounted) return;
     final s = AppStrings.of(context);
@@ -156,6 +161,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     );
     if (picked == null || picked.isEmpty || !mounted) return;
     await SendAlbumsStore.instance.addPathsToAlbum(widget.albumId, picked);
+    await SyncPipeline.instance.onAlbumsChanged(albumId: widget.albumId);
     await _reload();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.albumAddedCount(picked.length))));
@@ -245,6 +251,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         ),
       );
     }
+    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: widget.albumId));
     if (!mounted) return;
     Navigator.of(context).pop();
   }
