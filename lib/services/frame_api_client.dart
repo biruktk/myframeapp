@@ -523,6 +523,7 @@ class FrameApiClient {
   }
 
   /// DELETE `/api/v1/user/media/:id` (fallback `/api/user/gallery/:id`).
+  /// Account cloud only — does not stop frame playback or clear TF.
   Future<bool> deleteUserMedia({
     required String bearerToken,
     required String mediaId,
@@ -552,6 +553,7 @@ class FrameApiClient {
   }
 
   /// DELETE `/api/v1/user/albums/:id` (fallback `/api/user/playlists/:id`).
+  /// Account cloud only — does not stop frame slideshow or free TF space.
   Future<bool> deleteUserAlbum({
     required String bearerToken,
     required String albumId,

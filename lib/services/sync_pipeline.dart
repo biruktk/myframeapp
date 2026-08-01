@@ -16,6 +16,11 @@ import 'user_gallery_cloud_service.dart';
 /// - **Albums/playlists** are account folders of gallery media IDs.
 /// - **Settings** stay LWW via [AccountSyncService] (language/theme).
 ///
+/// Storage model:
+/// - Resync = per-account cloud state between phones.
+/// - Frame TF holds cast content only; account delete does **not** stop
+///   playback or free TF — frame keeps playing until slideshow changes.
+///
 /// Triggers:
 /// 1. Periodic tick every 10s while signed in (foreground)
 /// 2. Immediate: cast, gallery add/delete, album create/edit, frame changes

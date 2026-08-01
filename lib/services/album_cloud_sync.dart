@@ -16,6 +16,9 @@ import 'user_playlist_remote_api.dart';
 /// Albums are account data (like gallery photos): create/edit/delete should
 /// appear on every signed-in phone. Photo membership uses cloud media IDs
 /// from [UserGalleryCloudService]; local paths are resolved on each device.
+///
+/// Deletes update account/cloud only — they do **not** stop frame playback
+/// or free TF space (cast/TF is separate storage).
 class AlbumCloudSync {
   AlbumCloudSync._();
   static final instance = AlbumCloudSync._();
@@ -239,7 +242,8 @@ class AlbumCloudSync {
     } catch (_) {}
 
     if (meta.isEmpty) {
-      AppDiagLog.verbose('[AlbumSync] pull: no remote albums');
+      AppDiagLog.verbose('[AlbumSync] pull: no remote albums — drop synced ones');
+      await SendAlbumsStore.instance.applyPlaylistsMeta(const []);
       return;
     }
 

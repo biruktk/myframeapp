@@ -66,6 +66,18 @@ class PersonalGalleryStore {
     revision.value++;
   }
 
+  /// Drops paths that vanished from account cloud (deleted on another phone).
+  Future<void> removePaths(Iterable<String> paths) async {
+    await load();
+    final drop = paths.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+    if (drop.isEmpty) return;
+    final before = _paths.length;
+    _paths = _paths.where((p) => !drop.contains(p)).toList();
+    if (_paths.length == before) return;
+    await _persist();
+    revision.value++;
+  }
+
   Future<void> clear() async {
     _paths = [];
     await _persist();

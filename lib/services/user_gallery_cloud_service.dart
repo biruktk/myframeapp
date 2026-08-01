@@ -36,7 +36,10 @@ class CloudGalleryPhoto {
   }
 }
 
-/// Syncs the personal gallery with VPS (`GET/POST /api/user/gallery`).
+/// Syncs the personal gallery with VPS (`GET/POST/DELETE /api/user/gallery`).
+///
+/// Account/cloud only: deletes update other phones via resync. They do **not**
+/// tell the frame to stop playback or free TF space (cast/TF is separate).
 class UserGalleryCloudService {
   UserGalleryCloudService._();
   static final UserGalleryCloudService instance = UserGalleryCloudService._();
@@ -265,13 +268,30 @@ class UserGalleryCloudService {
       ..sort((a, b) => b.atMs.compareTo(a.atMs));
 
     final prefs = await SharedPreferences.getInstance();
-    final deleted = prefs.getStringList(_kDeletedIds) ?? const <String>[];
+    final deleted = List<String>.from(prefs.getStringList(_kDeletedIds) ?? const []);
     final deletedSet = deleted.toSet();
 
     var idToPath = await _loadIdToPath();
     final galleryDir = await GalleryImageCache.galleryDirForSync();
     final orderedLocal = <String>[];
     final nextIdToPath = Map<String, String>.from(idToPath);
+    final serverIds = photos.map((p) => p.id).where((id) => id.isNotEmpty).toSet();
+
+    // IDs present locally as cloud-mapped but gone from server = deleted on
+    // another phone (or this account). Drop them from UI; never notify frame.
+    final vanishedPaths = <String>{};
+    for (final e in idToPath.entries) {
+      if (serverIds.contains(e.key)) continue;
+      vanishedPaths.add(e.value);
+      nextIdToPath.remove(e.key);
+      if (!deletedSet.contains(e.key)) {
+        deleted.insert(0, e.key);
+        deletedSet.add(e.key);
+      }
+    }
+    if (vanishedPaths.isNotEmpty) {
+      await prefs.setStringList(_kDeletedIds, deleted.take(500).toList());
+    }
 
     for (final photo in photos) {
       if (deletedSet.contains(photo.id)) {
@@ -292,8 +312,11 @@ class UserGalleryCloudService {
 
     // Always apply cloud order when we have any photos (even if some downloads
     // failed) so newest remote uploads stay at the front.
-    if (orderedLocal.isNotEmpty || photos.isNotEmpty) {
+    if (orderedLocal.isNotEmpty || photos.isNotEmpty || vanishedPaths.isNotEmpty) {
       await PersonalGalleryStore.instance.replaceWithCloudPaths(orderedLocal);
+      if (vanishedPaths.isNotEmpty) {
+        await PersonalGalleryStore.instance.removePaths(vanishedPaths);
+      }
       await _saveIdToPath(nextIdToPath);
     }
 
@@ -386,7 +409,8 @@ class UserGalleryCloudService {
     }
   }
 
-  /// Permanently deletes a gallery photo from the account.
+  /// Permanently deletes a gallery photo from the **account** (other phones
+  /// drop it on resync). Does not stop frame playback or free TF space.
   /// [photoId] is the cloud upload id; [localPath] is used to resolve id from cache.
   Future<bool> deletePhoto({
     required String authToken,
@@ -421,19 +445,18 @@ class UserGalleryCloudService {
     }
 
     try {
-      final res = await http
-          .delete(
-            _uri('/api/user/gallery/$id'),
-            headers: _authHeaders(tok),
-          )
-          .timeout(_requestTimeout);
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final idToPath = await _loadIdToPath();
-        idToPath.remove(id);
-        await _saveIdToPath(idToPath);
-        return true;
+      for (final path in ['/api/v1/user/media/$id', '/api/user/gallery/$id']) {
+        final res = await http
+            .delete(_uri(path), headers: _authHeaders(tok))
+            .timeout(_requestTimeout);
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          final idToPath = await _loadIdToPath();
+          idToPath.remove(id);
+          await _saveIdToPath(idToPath);
+          return true;
+        }
+        AppDiagLog.verbose('[UserGallery] delete $path ${res.statusCode}');
       }
-      AppDiagLog.verbose('[UserGallery] delete ${res.statusCode} ${res.body}');
       return false;
     } catch (e, st) {
       AppDiagLog.verbose('[UserGallery] delete failed: $e\n$st');
