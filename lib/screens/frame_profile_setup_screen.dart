@@ -55,18 +55,19 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
       if (!mounted) return;
       setState(() => _busy = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not save frame profile. Try again.')),
+        SnackBar(content: Text(AppStrings.of(context).saveFrameProfileFailed)),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final s = AppStrings.of(context);
     return PopScope(
       canPop: !widget.requiredSetup,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Name Your Frame'),
+          title: Text(s.nameYourFrameTitle),
           centerTitle: true,
           automaticallyImplyLeading: !widget.requiredSetup,
         ),
@@ -82,7 +83,7 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
               ),
               const SizedBox(height: 20),
               Text(
-                'Your Frame is Connected!',
+                s.frameConnectedBanner,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 22,
@@ -92,7 +93,7 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Give your frame a name and start sending photos.',
+                s.frameConnectedHint,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
@@ -105,7 +106,7 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
                 controller: _nameCtrl,
                 style: const TextStyle(fontSize: 16),
                 decoration: InputDecoration(
-                  hintText: 'e.g. Living Room Frame',
+                  hintText: s.frameNameHintExample,
                   prefixIcon: const Icon(Icons.edit_outlined),
                   filled: true,
                   fillColor: Theme.of(context).colorScheme.surfaceContainerLow,

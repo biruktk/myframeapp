@@ -1,0 +1,3 @@
+// Pull FLUTTER_BUILD_NAME / FLUTTER_BUILD_NUMBER from Flutter (same as Runner).
+// Do not include Pods-Runner here — this target is a standalone appex.
+#include "../Flutter/Generated.xcconfig"

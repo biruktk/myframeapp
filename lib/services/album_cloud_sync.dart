@@ -2,11 +2,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import 'app_diag_log.dart';
+import 'device_store.dart';
 import 'frame_api_client.dart';
+import 'frame_ble_mac_slug.dart';
+import 'local_storage_service.dart';
 import 'send_albums_store.dart';
 import 'user_gallery_cloud_service.dart';
 import 'user_playlist_remote_api.dart';
@@ -17,13 +19,12 @@ import 'user_playlist_remote_api.dart';
 /// appear on every signed-in phone. Photo membership uses cloud media IDs
 /// from [UserGalleryCloudService]; local paths are resolved on each device.
 ///
-/// Deletes sync account/cloud to other phones; the server also notifies
-/// frames playing that playlist to stop (see DELETE /api/user/playlists).
+/// Deletes sync account/cloud to other phones and powerfully stop the frame
+/// playlist (clear slideshow + play last single / connected fallback).
 class AlbumCloudSync {
   AlbumCloudSync._();
   static final instance = AlbumCloudSync._();
 
-  static const _kSyncedIds = 'personal_gallery_cloud_ids_v1';
   static const _requestTimeout = Duration(seconds: 20);
 
   Uri _uri(String path) {
@@ -39,8 +40,9 @@ class AlbumCloudSync {
       };
 
   Future<Map<String, String>> _idToPath() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_kSyncedIds);
+    final raw = await LocalStorageService.instance.getString(
+      LocalStorageService.galleryCloudIdsBase,
+    );
     if (raw == null || raw.isEmpty) return {};
     try {
       final m = jsonDecode(raw) as Map<String, dynamic>;
@@ -85,15 +87,31 @@ class AlbumCloudSync {
     final tok = authToken.trim();
     if (tok.isEmpty) return;
     await SendAlbumsStore.instance.load();
+    final resolved = SendAlbumsStore.instance.resolveAlbumId(albumId);
+    final deleted = await SendAlbumsStore.instance.deletedAlbumIds();
+    if (deleted.contains(albumId.trim()) || deleted.contains(resolved)) {
+      // Already tombstoned — ensure server copy is gone; never recreate.
+      for (final id in {albumId.trim(), resolved}) {
+        if (id.isEmpty) continue;
+        try {
+          await FrameApiClient().deleteUserAlbum(bearerToken: tok, albumId: id);
+        } catch (_) {}
+      }
+      return;
+    }
     SendAlbumEntry? album;
     for (final a in SendAlbumsStore.instance.albums) {
-      if (a.id == albumId) {
+      if (a.id == resolved || a.id == albumId.trim()) {
         album = a;
         break;
       }
     }
     if (album == null) {
-      await FrameApiClient().deleteUserAlbum(bearerToken: tok, albumId: albumId);
+      await FrameApiClient().deleteUserAlbum(bearerToken: tok, albumId: resolved);
+      if (albumId.trim() != resolved) {
+        await FrameApiClient()
+            .deleteUserAlbum(bearerToken: tok, albumId: albumId.trim());
+      }
       return;
     }
     // Upload album members first so photoIds are available for PATCH.
@@ -109,12 +127,17 @@ class AlbumCloudSync {
 
   Future<void> _pushLocalAlbums(String tok) async {
     await SendAlbumsStore.instance.load();
+    final deleted = await SendAlbumsStore.instance.deletedAlbumIds();
     for (final album in SendAlbumsStore.instance.albums) {
+      if (deleted.contains(album.id)) continue;
       await _upsertAlbum(tok, album);
     }
   }
 
   Future<void> _upsertAlbum(String tok, SendAlbumEntry album) async {
+    final deleted = await SendAlbumsStore.instance.deletedAlbumIds();
+    if (deleted.contains(album.id)) return;
+
     final pathToId = await _pathToId();
     final photoIds = <String>[];
     for (final path in album.paths) {
@@ -139,8 +162,16 @@ class AlbumCloudSync {
     final looksLocal =
         RegExp(r'^\d{10,}$').hasMatch(album.id); // millis timestamp ids
 
+    await DeviceStore.instance.load();
+    final frameMac = frameBleMacSlug(DeviceStore.instance.cached);
+    final assigned =
+        (frameMac.isNotEmpty && frameMac != 'FRAME') ? frameMac : null;
+
     if (looksLocal) {
-      final created = await api.createPlaylist(title: album.name);
+      final created = await api.createPlaylist(
+        title: album.name,
+        assignedFrameId: assigned,
+      );
       if (created == null) {
         AppDiagLog.verbose('[AlbumSync] createPlaylist failed for ${album.name}');
         return;
@@ -154,6 +185,7 @@ class AlbumCloudSync {
         final updated = await api.updatePlaylistPhotos(
           playlistId: created.id,
           photoIds: photoIds,
+          assignedFrameId: assigned,
         );
         AppDiagLog.verbose(
           '[AlbumSync] created ${created.id} photos=${photoIds.length} ok=${updated != null}',
@@ -166,6 +198,7 @@ class AlbumCloudSync {
     final updated = await api.updatePlaylistPhotos(
       playlistId: album.id,
       photoIds: photoIds,
+      assignedFrameId: assigned,
     );
     AppDiagLog.verbose(
       '[AlbumSync] patch ${album.id} photos=${photoIds.length} ok=${updated != null}',

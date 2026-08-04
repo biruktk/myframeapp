@@ -3,23 +3,14 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'gallery_image_cache.dart';
+import 'local_storage_service.dart';
 
 /// Local paths added from the Gallery tab (personal library only; no social graph).
 class PersonalGalleryStore {
   PersonalGalleryStore._();
   static final instance = PersonalGalleryStore._();
-
-  static const _kPaths = 'personal_gallery_file_paths_v1';
-  static const _kAuthUserId = 'settings_auth_user_id';
-
-  static Future<String> _scopedKey() async {
-    final p = await SharedPreferences.getInstance();
-    final uid = p.getString(_kAuthUserId) ?? 'guest';
-    return '${_kPaths}_$uid';
-  }
 
   List<String> _paths = [];
 
@@ -28,10 +19,11 @@ class PersonalGalleryStore {
 
   List<String> get paths => List.unmodifiable(_paths);
 
-  Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
-    final key = await _scopedKey();
-    final raw = p.getString(key);
+  Future<void> load({String? userId}) async {
+    final raw = await LocalStorageService.instance.getString(
+      LocalStorageService.galleryPathsBase,
+      userId: userId,
+    );
     if (raw == null || raw.isEmpty) {
       _paths = [];
       return;
@@ -40,7 +32,7 @@ class PersonalGalleryStore {
       final list = jsonDecode(raw) as List<dynamic>;
       final loaded = list.map((e) => '$e').where((e) => e.isNotEmpty).toList();
       _paths = await GalleryImageCache.filterExisting(loaded);
-      if (_paths.length != loaded.length) await _persist();
+      if (_paths.length != loaded.length) await _persist(userId: userId);
     } catch (_) {
       _paths = [];
     }
@@ -48,11 +40,14 @@ class PersonalGalleryStore {
 
   Future<void> addPaths(List<String> paths) async {
     await load();
-    final stored = await GalleryImageCache.persistPaths(paths);
+    // Already staged by the picker — skip JPEG re-encode and full-library SHA256.
+    final stored = await GalleryImageCache.persistPaths(
+      paths,
+      normalizeJpeg: false,
+    );
     for (final t in stored) {
       if (!_paths.contains(t)) _paths.insert(0, t);
     }
-    _paths = await _dedupeByContentHashKeepOrder(_paths);
     if (_paths.length > 200) _paths = _paths.sublist(0, 200);
     await _persist();
     revision.value++;
@@ -75,6 +70,24 @@ class PersonalGalleryStore {
     _paths = _paths.where((p) => !drop.contains(p)).toList();
     if (_paths.length == before) return;
     await _persist();
+    revision.value++;
+  }
+
+  /// Clears in-memory list only (after logout JWT is already gone).
+  void resetMemory() {
+    _paths = [];
+    revision.value++;
+  }
+
+  /// Wipe prefs for a specific account **before** clearing the JWT.
+  Future<void> clearForUser(String userId) async {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    await LocalStorageService.instance.remove(
+      LocalStorageService.galleryPathsBase,
+      userId: uid,
+    );
+    _paths = [];
     revision.value++;
   }
 
@@ -107,7 +120,6 @@ class PersonalGalleryStore {
       if (!localOnly.contains(p)) localOnly.add(p);
     }
 
-    // Cloud chronological order first — never let local-only shuffle it.
     _paths = [...cloudOrdered, ...localOnly];
     if (_paths.length > 200) _paths = _paths.sublist(0, 200);
     await _persist();
@@ -123,25 +135,11 @@ class PersonalGalleryStore {
     }
   }
 
-  static Future<List<String>> _dedupeByContentHashKeepOrder(
-    List<String> paths,
-  ) async {
-    final seen = <String>{};
-    final out = <String>[];
-    for (final path in paths) {
-      final h = await _hashFile(path);
-      if (h == null) {
-        if (!out.contains(path)) out.add(path);
-        continue;
-      }
-      if (seen.add(h)) out.add(path);
-    }
-    return out;
-  }
-
-  Future<void> _persist() async {
-    final p = await SharedPreferences.getInstance();
-    final key = await _scopedKey();
-    await p.setString(key, jsonEncode(_paths));
+  Future<void> _persist({String? userId}) async {
+    await LocalStorageService.instance.setString(
+      LocalStorageService.galleryPathsBase,
+      jsonEncode(_paths),
+      userId: userId,
+    );
   }
 }

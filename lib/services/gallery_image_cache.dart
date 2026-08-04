@@ -1,40 +1,88 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
 import 'app_diag_log.dart';
+import 'file_storage_manager.dart';
 import 'gallery_image_normalizer.dart';
 
-/// Copies gallery picks out of iOS `/tmp` (image_picker) into app documents.
+/// Copies gallery picks out of iOS `/tmp` (image_picker) into the **active
+/// user's** documents folder (`users/<userId>/images/`).
 ///
-/// Persisted files are always normalized **JPEG** so the editor / upload path
-/// never sees HEIC or odd PNG variants.
+/// Prefer [stageQuickCopies] for UI-critical paths (album grid). Full JPEG
+/// normalization can run later / only when needed for upload.
 class GalleryImageCache {
   GalleryImageCache._();
 
-  static const _subdir = 'personal_gallery';
-
   /// Exposed for cloud gallery downloads (same folder as local picks).
-  static Future<Directory> galleryDirForSync() => _dir();
+  static Future<Directory> galleryDirForSync() =>
+      FileStorageManager.instance.imagesDir();
 
-  static Future<Directory> _dir() async {
-    final base = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(base.path, _subdir));
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
+  static Future<Directory> _dir() => FileStorageManager.instance.imagesDir();
+
+  static bool _isUnderGalleryDir(String path, String galleryRoot) =>
+      FileStorageManager.instance.isUnderDir(path, galleryRoot);
+
+  /// Peek only the JPEG SOI marker — never read the whole file.
+  static Future<bool> _isJpegFile(String path) async {
+    try {
+      final raf = await File(path).open();
+      try {
+        final header = await raf.read(3);
+        return GalleryImageNormalizer.isJpegMagic(Uint8List.fromList(header));
+      } finally {
+        await raf.close();
+      }
+    } catch (_) {
+      return false;
     }
-    return dir;
   }
 
-  static bool _isUnderGalleryDir(String path, String galleryRoot) {
-    final normalized = p.normalize(path);
-    final root = p.normalize(galleryRoot);
-    return normalized == root ||
-        normalized.startsWith('$root${Platform.pathSeparator}');
+  /// Fast durable copy (no re-encode). Keeps original bytes/extension.
+  /// Use this so album thumbnails can paint immediately after pick.
+  static Future<String?> stageQuickCopy(String sourcePath) async {
+    final src = sourcePath.trim();
+    if (src.isEmpty) return null;
+    try {
+      final file = File(src);
+      if (!await file.exists()) return null;
+
+      final galleryDir = await _dir();
+      if (_isUnderGalleryDir(src, galleryDir.path)) {
+        return src;
+      }
+
+      final ext = p.extension(src).toLowerCase();
+      final safeExt = (ext.length >= 2 && ext.length <= 5) ? ext : '.jpg';
+      final name =
+          '${DateTime.now().millisecondsSinceEpoch}_${src.hashCode.abs()}$safeExt';
+      final dest = File(p.join(galleryDir.path, name));
+      await file.copy(dest.path);
+      return dest.path;
+    } catch (e, st) {
+      AppDiagLog.verbose('[GalleryImageCache] stageQuickCopy failed $src: $e\n$st');
+      return null;
+    }
   }
 
-  /// Returns a durable JPEG path under app documents. Copies/converts when needed.
-  static Future<String?> persistFromPath(String sourcePath) async {
+  /// Parallel quick-stage for multi-pick (orders preserved; failed items omitted).
+  static Future<List<String>> stageQuickCopies(Iterable<String> paths) async {
+    final list = paths.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (list.isEmpty) return const [];
+    final results = await Future.wait(list.map(stageQuickCopy));
+    return results.whereType<String>().toList();
+  }
+
+  /// Returns a durable path under the active user's images dir.
+  ///
+  /// Already-staged gallery files that are JPEG are returned as-is (header peek).
+  /// Non-JPEG gallery files and outside paths are normalized when [normalizeJpeg]
+  /// is true; otherwise a quick copy is used.
+  static Future<String?> persistFromPath(
+    String sourcePath, {
+    bool normalizeJpeg = true,
+  }) async {
     final src = sourcePath.trim();
     if (src.isEmpty) return null;
 
@@ -42,14 +90,14 @@ class GalleryImageCache {
       final galleryDir = await _dir();
       if (_isUnderGalleryDir(src, galleryDir.path)) {
         if (!await File(src).exists()) return null;
-        // Already in cache — still re-normalize if not JPEG magic.
-        final bytes = await File(src).readAsBytes();
-        if (GalleryImageNormalizer.isJpegMagic(bytes) && bytes.isNotEmpty) {
-          return src;
-        }
+        if (await _isJpegFile(src)) return src;
+        if (!normalizeJpeg) return src;
         return GalleryImageNormalizer.persistAsJpeg(src);
       }
 
+      if (!normalizeJpeg) {
+        return stageQuickCopy(src);
+      }
       return GalleryImageNormalizer.persistAsJpeg(src);
     } catch (e, st) {
       AppDiagLog.verbose('[GalleryImageCache] persist failed $src: $e\n$st');
@@ -57,10 +105,13 @@ class GalleryImageCache {
     }
   }
 
-  static Future<List<String>> persistPaths(Iterable<String> paths) async {
+  static Future<List<String>> persistPaths(
+    Iterable<String> paths, {
+    bool normalizeJpeg = true,
+  }) async {
     final out = <String>[];
     for (final path in paths) {
-      final stored = await persistFromPath(path);
+      final stored = await persistFromPath(path, normalizeJpeg: normalizeJpeg);
       if (stored != null) out.add(stored);
     }
     return out;
@@ -77,4 +128,7 @@ class GalleryImageCache {
     }
     return out;
   }
+
+  /// Optional: relative name helper for diagnostics.
+  static String basename(String path) => p.basename(path);
 }

@@ -14,7 +14,8 @@ class AnimatedSplashScreen extends StatefulWidget {
 
 class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
     with SingleTickerProviderStateMixin {
-  static const _iconSize = 156.0;
+  /// Compact but readable square mark (was 96; bumped for presence).
+  static const _iconSize = 118.0;
 
   late final AnimationController _controller;
 
@@ -24,12 +25,12 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
   late final Animation<Offset> _textSlideUp;
   late final Animation<double> _textOpacity;
 
-  // Stage 3 – Focus (1200–1700ms / 0.52–0.74)
+  // Stage 3 – Soft focus (1200–1700ms / 0.52–0.74)
   late final Animation<double> _textFadeOut;
   late final Animation<double> _logoFocusScale;
 
-  // Stage 4 – Hero (1700–2100ms / 0.74–0.91)
-  late final Animation<double> _heroScale;
+  // Stage 4 – Settle (1700–2100ms / 0.74–0.91) — gentle scale, no hero zoom
+  late final Animation<double> _settleScale;
 
   // Stage 5 – Exit (2100–2300ms / 0.91–1.0)
   late final Animation<double> _exitOpacity;
@@ -49,14 +50,14 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
         curve: const Interval(0, 0.13, curve: Curves.easeOutCubic),
       ),
     );
-    _logoEntranceScale = Tween<double>(begin: 0.9, end: 1.0).animate(
+    _logoEntranceScale = Tween<double>(begin: 0.92, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
         curve: const Interval(0, 0.13, curve: Curves.easeOutCubic),
       ),
     );
     _textSlideUp = Tween<Offset>(
-      begin: const Offset(0, 0.35),
+      begin: const Offset(0, 0.28),
       end: Offset.zero,
     ).animate(
       CurvedAnimation(
@@ -77,27 +78,15 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
         curve: const Interval(0.52, 0.74, curve: Curves.easeOutCubic),
       ),
     );
-    _logoFocusScale = Tween<double>(begin: 1.0, end: 1.15).animate(
+    // Mild focus only — avoids exploding into the tilted frame artwork.
+    _logoFocusScale = Tween<double>(begin: 1.0, end: 1.06).animate(
       CurvedAnimation(
         parent: _controller,
         curve: const Interval(0.52, 0.74, curve: Curves.easeInOutCubic),
       ),
     );
 
-    _heroScale = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 1.15, end: 2.0),
-        weight: 1,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 2.0, end: 4.0),
-        weight: 1,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 4.0, end: 10.0),
-        weight: 1,
-      ),
-    ]).animate(
+    _settleScale = Tween<double>(begin: 1.06, end: 1.0).animate(
       CurvedAnimation(
         parent: _controller,
         curve: const Interval(0.74, 0.91, curve: Curves.easeInOutCubic),
@@ -142,12 +131,14 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
         double floatDy = 0;
         if (inStage2) {
           final t = (p - 0.13) / (0.52 - 0.13);
-          floatDy = sin(t * pi * 2) * -7;
+          floatDy = sin(t * pi * 2) * -5;
         }
 
-        final logoScale = inStage3
-            ? _logoFocusScale.value
-            : (inStage4 || inStage5 ? 1.15 : _logoEntranceScale.value);
+        final logoScale = inStage1
+            ? _logoEntranceScale.value
+            : inStage3
+                ? _logoFocusScale.value
+                : (inStage4 || inStage5 ? _settleScale.value : 1.0);
 
         final logoOpacity = inStage1 ? _logoOpacity.value : 1.0;
         final textOpacity = inStage1
@@ -158,9 +149,8 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
             ? _textSlideUp.value
             : (inStage2 ? Offset(0, floatDy * 0.3) : Offset.zero);
 
-        final heroScaling = (inStage4 || inStage5) ? _heroScale.value : 1.0;
         final overallOpacity = inStage5 ? _exitOpacity.value : 1.0;
-        final spacing = inStage2 ? 22 + floatDy * 0.3 : 22.0;
+        final spacing = inStage2 ? 18 + floatDy * 0.25 : 18.0;
 
         return Scaffold(
           backgroundColor: Colors.white,
@@ -178,7 +168,7 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
                       child: Opacity(
                         opacity: logoOpacity.clamp(0.0, 1.0),
                         child: Transform.scale(
-                          scale: heroScaling * logoScale,
+                          scale: logoScale,
                           alignment: Alignment.center,
                           child: const _SplashIcon(size: _iconSize),
                         ),
@@ -189,7 +179,7 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
                       opacity: textOpacity.clamp(0.0, 1.0),
                       child: Transform.translate(
                         offset: textOffset,
-                        child: const _MyFrameWordmark(fontSize: 34),
+                        child: const _MyFrameWordmark(fontSize: 30),
                       ),
                     ),
                   ],
@@ -210,7 +200,8 @@ class _SplashIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bytes = SplashBranding.iconPngBytes;
-    final radius = size * 0.223;
+    // Squircle that still reads as a full square mark (iOS-like ~22%).
+    final radius = size * 0.22;
 
     Widget image;
     if (bytes != null && bytes.isNotEmpty) {
@@ -218,7 +209,8 @@ class _SplashIcon extends StatelessWidget {
         bytes,
         width: size,
         height: size,
-        fit: BoxFit.contain,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
         filterQuality: FilterQuality.high,
         gaplessPlayback: true,
         semanticLabel: 'MyFrame',
@@ -233,11 +225,11 @@ class _SplashIcon extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
-        boxShadow: const [
+        boxShadow: [
           BoxShadow(
-            color: Colors.black26,
-            blurRadius: 20,
-            offset: Offset(0, 6),
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -256,7 +248,8 @@ class _AssetImage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       BrandAssets.appIconPath,
-      fit: BoxFit.contain,
+      fit: BoxFit.cover,
+      alignment: Alignment.center,
       filterQuality: FilterQuality.high,
       gaplessPlayback: true,
       semanticLabel: 'MyFrame',
@@ -272,8 +265,8 @@ class _FallbackIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 156.0;
-    const radius = size * 0.223;
+    const size = 118.0;
+    const radius = size * 0.22;
     return Container(
       width: size,
       height: size,
@@ -282,7 +275,7 @@ class _FallbackIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius),
       ),
       alignment: Alignment.center,
-      child: const Icon(Icons.photo_outlined, color: Colors.white, size: 68.64),
+      child: const Icon(Icons.photo_outlined, color: Colors.white, size: 42),
     );
   }
 }

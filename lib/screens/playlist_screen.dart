@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../services/device_store.dart';
 import '../services/frame_ble_mac_slug.dart';
-import '../services/frame_online_guard.dart';
+import '../services/playlist_send_nav.dart';
 import '../services/send_albums_store.dart';
 import '../services/slideshow_photo_picker.dart';
 import '../services/slideshow_playlist_store.dart';
@@ -14,7 +14,6 @@ import '../services/sync_pipeline.dart';
 import '../services/user_playlist_remote_api.dart';
 import '../settings/app_settings.dart';
 import '../widgets/text_input_bottom_sheet.dart';
-import 'edit_color_grade_screen.dart';
 
 /// Playlists are local albums; create like Gallery albums, then pick hours and send.
 class PlaylistScreen extends StatefulWidget {
@@ -40,48 +39,45 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     if (!mounted) return;
     setState(() => _loading = true);
     await DeviceStore.instance.load();
-    final tok = AppSettingsScope.of(context).authToken.trim();
-    if (tok.isNotEmpty) {
-      await SyncPipeline.instance.onAlbumsChanged();
-      _dashboard = await UserPlaylistRemoteApi(bearerToken: tok).fetchDashboard();
-    } else {
-      _dashboard = null;
-    }
+    // Show local albums immediately — cloud sync must not block the list (~30s).
     await SendAlbumsStore.instance.load();
     _albums = SendAlbumsStore.instance.albums;
     final paired = DeviceStore.instance.cached;
     _localSlideshow = await SlideshowPlaylistStore.instance.load(paired);
     if (mounted) setState(() => _loading = false);
+
+    final tok = AppSettingsScope.of(context).authToken.trim();
+    if (tok.isEmpty) {
+      _dashboard = null;
+      return;
+    }
+    unawaited(() async {
+      try {
+        await SyncPipeline.instance.onAlbumsChanged();
+        final dash = await UserPlaylistRemoteApi(bearerToken: tok).fetchDashboard();
+        await SendAlbumsStore.instance.load();
+        if (!mounted) return;
+        setState(() {
+          _dashboard = dash;
+          _albums = SendAlbumsStore.instance.albums;
+        });
+      } catch (_) {}
+    }());
   }
 
   Future<void> _openPlaylistEditor(String albumId, String name, List<String> paths) async {
-    final files = paths.map((p) => File(p)).toList();
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => EditColorGradeScreen(
-          selectedImages: files,
-          initialIntervalSeconds: 60,
-          playlistName: name,
-          albumId: albumId,
-        ),
-      ),
+    await PlaylistSendNav.openPlaylistSend(
+      context,
+      paths: paths,
+      playlistName: name,
+      albumId: albumId,
     );
     await _reload();
   }
 
   Future<void> _createPlaylistLikeAlbum(AppStrings s) async {
-    await DeviceStore.instance.load();
-    final paired = DeviceStore.instance.cached;
-    if (paired == null || !paired.canUploadToServer) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.connectFrameFirst)),
-      );
-      return;
-    }
-    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: paired)) {
-      return;
-    }
+    if (!await PlaylistSendNav.ensureReadyToSend(context)) return;
+    if (!mounted) return;
 
     final title = await TextInputBottomSheet.show(
       context,
@@ -91,36 +87,38 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
     );
     if (title == null || title.trim().isEmpty || !mounted) return;
 
-    final files = await SlideshowPhotoPicker.pickMulti(context);
-    if (!mounted) return;
-
-    final paths = files.map((f) => f.path).toList();
-    await SendAlbumsStore.instance.createAlbum(title.trim(), paths);
+    await SendAlbumsStore.instance.createAlbum(title.trim(), const <String>[]);
     await SendAlbumsStore.instance.load();
     if (SendAlbumsStore.instance.albums.isEmpty || !mounted) return;
     final album = SendAlbumsStore.instance.albums.first;
     unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: album.id));
     if (!mounted) return;
 
-    if (paths.isNotEmpty) {
-      await _openPlaylistEditor(album.id, album.name, List<String>.from(album.paths));
+    final files = await SlideshowPhotoPicker.pickMulti(context);
+    if (!mounted) return;
+    if (files.isEmpty) {
+      await _reload();
+      return;
     }
+
+    final paths = files.map((f) => f.path).toList();
+    await SendAlbumsStore.instance.addPathsToAlbum(album.id, paths);
+    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: album.id));
+    if (!mounted) return;
+
+    // Mini-app: pick → send page immediately (don't wait on image decode / sync).
+    await PlaylistSendNav.openPlaylistSend(
+      context,
+      paths: paths,
+      playlistName: album.name,
+      albumId: album.id,
+    );
+    await _reload();
   }
 
   Future<void> _sendAlbum(SendAlbumEntry album) async {
-    final s = AppStrings.of(context);
-    await DeviceStore.instance.load();
-    final paired = DeviceStore.instance.cached;
-    if (paired == null || !paired.canUploadToServer) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.connectFrameFirst)),
-      );
-      return;
-    }
-    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: paired)) {
-      return;
-    }
+    if (!await PlaylistSendNav.ensureReadyToSend(context)) return;
+    if (!mounted) return;
     var paths = album.paths.where((p) {
       try {
         return File(p).existsSync();

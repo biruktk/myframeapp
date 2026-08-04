@@ -72,6 +72,24 @@ class FamilyRemoteApi {
     _throwUnlessOk(res);
   }
 
+  /// Fast read of the stored invite code. `null` = 404 **no_family**.
+  Future<({String familyId, String inviteCode})?> fetchInviteCode() async {
+    final res = await http.get(_u('/api/family/invite'), headers: _hdr);
+    if (res.statusCode == 401) throw FamilyRemoteAuthException(res.body);
+    if (res.statusCode == 404) return null;
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw FamilyRemoteHttpException(res.statusCode, res.body);
+    }
+    final map = jsonDecode(res.body);
+    if (map is! Map<String, dynamic>) return null;
+    final code = (map['inviteCode'] as String? ?? '').trim();
+    if (code.isEmpty) return null;
+    return (
+      familyId: map['familyId'] as String? ?? '',
+      inviteCode: code,
+    );
+  }
+
   Future<String> rotateInviteCode() async {
     final res = await http.post(_u('/api/family/invite/rotate'), headers: _hdr);
     _throwUnlessOk(res);

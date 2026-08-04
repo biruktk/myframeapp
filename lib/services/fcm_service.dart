@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../firebase_options.dart';
@@ -40,6 +41,9 @@ class FcmService {
   String? _lastToken;
   StreamSubscription<String>? _tokenSub;
   StreamSubscription<RemoteMessage>? _foregroundSub;
+
+  /// Bumped when a family-related push arrives (owner should refresh members).
+  final ValueNotifier<int> familyPushRevision = ValueNotifier<int>(0);
 
   FirebaseMessaging get _messaging => FirebaseMessaging.instance;
 
@@ -177,6 +181,11 @@ class FcmService {
     final n = message.notification;
     final title = n?.title ?? message.data['title'] ?? 'MyFrame';
     final body = n?.body ?? message.data['body'] ?? '';
+    final combined = '${title.toString()} ${body.toString()}'.toLowerCase();
+    if (combined.contains('family member joined') ||
+        message.data['type'] == 'FAMILY_MEMBER_JOINED') {
+      familyPushRevision.value++;
+    }
     if (body.isEmpty && (n?.title == null)) return;
 
     await _local.show(

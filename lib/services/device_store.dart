@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'wifi_credential_cache.dart';
 import 'frame_api_client.dart';
 import 'account_sync_service.dart';
+import 'local_storage_service.dart';
 
 import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
@@ -274,27 +275,89 @@ class DeviceStore {
   /// Server-synced frames (shared via family, not BLE-paired locally).
   List<Map<String, dynamic>> get serverFrames => List.unmodifiable(_serverFrames);
 
-  /// Sync frames from `GET /api/frames` into [serverFrames].
+  static const _kUnboundMacsKey = 'account_unbound_frame_macs_v1';
+
+  Future<bool> _isUnboundMac(String? raw) async {
+    final slug = FrameMacUtil.normalizeSlug(raw ?? '')?.toUpperCase() ??
+        (raw ?? '').trim().toUpperCase();
+    if (slug.isEmpty) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final unbound = (prefs.getStringList(_kUnboundMacsKey) ?? const <String>[])
+        .map((e) => e.trim().toUpperCase())
+        .where((e) => e.isNotEmpty)
+        .toSet();
+    if (unbound.contains(slug)) return true;
+    final si = int.tryParse(slug, radix: 16);
+    if (si == null) return false;
+    for (final k in unbound) {
+      final ki = int.tryParse(k, radix: 16);
+      if (ki != null && (ki - si).abs() == 2) return true;
+    }
+    return false;
+  }
+
+  /// Sync frames from cloud into Home's [pairedFrames] list.
+  ///
+  /// Family joiners rely on this: shared frames must appear on Home without BLE.
   Future<void> syncServerFrames({String? bearerToken}) async {
     try {
       final api = FrameApiClient();
       final frames = await api.fetchFrames(bearerToken: bearerToken);
       _serverFrames = frames;
+
+      final mapped = <Map<String, dynamic>>[];
+      for (final f in frames) {
+        final id = '${f['id'] ?? f['bleMac'] ?? f['ble_mac'] ?? ''}'.trim();
+        final ble = '${f['bleMac'] ?? f['ble_mac'] ?? id}'.trim();
+        final station = '${f['stationMac'] ?? f['station_mac'] ?? ''}'.trim();
+        final name =
+            '${f['displayName'] ?? f['display_name'] ?? f['name'] ?? ''}'.trim();
+        final ssid = '${f['wifiSsid'] ?? f['wifi_ssid'] ?? ''}'.trim();
+        if (id.isEmpty && ble.isEmpty) continue;
+        // Honor Delete / Remove — never resurrect unbound MACs from /api/frames.
+        if (await _isUnboundMac(id) ||
+            await _isUnboundMac(ble) ||
+            await _isUnboundMac(station)) {
+          continue;
+        }
+        mapped.add({
+          'frame_id': id.isNotEmpty ? id : ble,
+          'ble_mac': ble.isNotEmpty ? ble : id,
+          if (station.isNotEmpty) 'station_mac': station,
+          'frame_name': name,
+          if (ssid.isNotEmpty) 'wifi_ssid': ssid,
+          'is_owner': f['isOwner'] == true || f['is_owner'] == true,
+        });
+      }
+
+      if (mapped.isEmpty) {
+        _bumpRevision();
+        return;
+      }
+
+      await applyBoundFramesFromServer(
+        mapped,
+        bearerToken: bearerToken,
+        pruneMissing: false,
+        refreshServerCache: false,
+      );
     } catch (_) {
       _serverFrames = [];
     }
   }
 
-  /// Merge or replace local bound-frame list from cloud `bound_frames`.
+  /// Merge server `bound_frames` into the local Home list.
   ///
-  /// When [pruneMissing] is false, server frames are added but local-only
-  /// frames are kept (until they are pushed / unbound). When true (server
-  /// sync_version is ahead), local frames absent from the server are removed.
+  /// Local BLE pairings are sticky: they stay on this phone forever until the
+  /// user taps Remove/Delete (which bans the MAC via [AccountSyncService.deleteFrame]).
+  /// [pruneMissing] is kept for call-site compatibility but **never** drops a
+  /// locally paired frame just because the cloud list is empty/incomplete.
   Future<void> applyBoundFramesFromServer(
     List<Map<String, dynamic>> serverFrames, {
     String? primaryFrameId,
     String? bearerToken,
     bool pruneMissing = false,
+    bool refreshServerCache = true,
   }) async {
     await load();
 
@@ -325,6 +388,12 @@ class DeviceStore {
         }
       }
       if (relatedHit) continue;
+      // Honor explicit Remove/Delete — never resurrect unbound MACs.
+      if (await _isUnboundMac(key) ||
+          await _isUnboundMac(station) ||
+          await _isUnboundMac(mac)) {
+        continue;
+      }
       seen.add(key);
 
       PairedFrame? existing;
@@ -360,14 +429,16 @@ class DeviceStore {
             local != existing?.wifiSsid) {
           return local;
         }
-        return null;
+        // Family-shared rows sometimes only have a MAC id — still show on Home
+        // so invitees can send photos/playlists without BLE pairing.
+        if (key.length >= 4) return 'Frame ${key.substring(key.length - 4)}';
+        return 'Frame';
       }();
 
-      // Other-device imports: require a real name + Wi‑Fi. Skip incomplete
-      // server rows so BLE-only ghosts never appear as "online".
+      // Other-device / family imports: require Wi‑Fi so incomplete BLE ghosts
+      // never appear as sendable. Name always has a fallback above.
       final hasWifi = wifiSsid != null && wifiSsid.isNotEmpty;
-      final hasName = resolvedName != null && resolvedName.isNotEmpty;
-      if (existing == null && (!hasWifi || !hasName)) {
+      if (existing == null && !hasWifi) {
         continue;
       }
 
@@ -387,7 +458,13 @@ class DeviceStore {
             wifiUsername: existing.wifiUsername,
             wifiPassword: existing.wifiPassword,
             wifiProvisionedAtMs: existing.wifiProvisionedAtMs,
-            frameName: resolvedName,
+            frameName: (serverFrameName != null &&
+                    serverFrameName.isNotEmpty &&
+                    serverFrameName != wifiSsid)
+                ? serverFrameName
+                : (existing.frameName?.trim().isNotEmpty == true
+                    ? existing.frameName
+                    : resolvedName),
             frameOrientation: existing.frameOrientation,
             mqttBrokerHost: existing.mqttBrokerHost,
             mqttBrokerPort: existing.mqttBrokerPort,
@@ -408,24 +485,23 @@ class DeviceStore {
       }
     }
 
-    if (!pruneMissing) {
-      for (final e in _frames) {
-        final key = e.deviceId.trim().toUpperCase();
-        if (key.isEmpty) continue;
-        if (_seenHasRelated(seen, key)) continue;
-        seen.add(key);
-        next.add(e);
+    // Always keep local pairings not on the server. A wall frame must survive
+    // empty cloud lists, app restarts, and soft sync — only Remove/Delete
+    // (unbound ban) may drop it. [pruneMissing] is ignored for sticky locals.
+    for (final e in _frames) {
+      final key = FrameMacUtil.normalizeSlug(e.deviceId)?.toUpperCase() ??
+          e.deviceId.trim().toUpperCase();
+      if (key.isEmpty) continue;
+      if (_seenHasRelated(seen, key)) continue;
+      if (await _isUnboundMac(key) || await _isUnboundMac(e.deviceId)) {
+        continue;
       }
-    } else {
-      // Keep in-progress local pairings (BLE only / unnamed) even on hard pull.
-      for (final e in _frames) {
-        if (e.isReadyForAccountSync) continue;
-        final key = e.deviceId.trim().toUpperCase();
-        if (key.isEmpty) continue;
-        if (_seenHasRelated(seen, key)) continue;
-        seen.add(key);
-        next.add(e);
-      }
+      seen.add(key);
+      next.add(e);
+    }
+    // Call sites still pass pruneMissing; sticky pairing intentionally ignores it.
+    if (pruneMissing) {
+      // no-op: never wipe wall frames from an empty/partial server list
     }
 
     _frames = _sanitizeFrameNames(next);
@@ -474,7 +550,19 @@ class DeviceStore {
     }
 
     await _persistAll();
-    await syncServerFrames(bearerToken: bearerToken);
+    if (refreshServerCache) {
+      // Refresh side-cache only (avoid re-entering applyBoundFramesFromServer).
+      try {
+        final api = FrameApiClient();
+        _serverFrames = await api.fetchFrames(bearerToken: bearerToken);
+      } catch (_) {
+        /* keep existing _serverFrames */
+      }
+    } else {
+      _serverFrames = serverFrames
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList(growable: false);
+    }
     _bumpRevision();
   }
 
@@ -594,12 +682,30 @@ class DeviceStore {
     final id = deviceId.trim();
     if (id.isEmpty) return;
 
-    final idx = _indexOf(id);
-    if (idx < 0) return;
+    var idx = _indexOf(id);
+    // Also match by normalized MAC when the list stores a related BLE/STA sibling.
+    if (idx < 0) {
+      final want = FrameMacUtil.normalizeSlug(id)?.toUpperCase() ?? id.toUpperCase();
+      idx = _frames.indexWhere((e) {
+        final k = FrameMacUtil.normalizeSlug(e.deviceId)?.toUpperCase() ??
+            e.deviceId.trim().toUpperCase();
+        if (k == want) return true;
+        return _macsRelated(k, want);
+      });
+    }
+    if (idx < 0) {
+      // Still bump so UI refreshes after a no-op sibling sweep.
+      _bumpRevision();
+      return;
+    }
     final removed = _frames[idx];
 
     final p = await SharedPreferences.getInstance();
-    await p.remove(_slideshowPrefsKey(_macSlugForFrame(removed)));
+    final macSlug = _macSlugForFrame(removed);
+    await p.remove(
+      await LocalStorageService.instance.slideshowScopedKey(macSlug),
+    );
+    await p.remove('slideshow_playlist_$macSlug');
 
     final removedKey =
         FrameMacUtil.normalizeSlug(removed.deviceId)?.toUpperCase() ??
@@ -607,7 +713,7 @@ class DeviceStore {
     _frames.removeWhere((e) {
       final k = FrameMacUtil.normalizeSlug(e.deviceId)?.toUpperCase() ??
           e.deviceId.trim().toUpperCase();
-      return _macsRelated(k, removedKey);
+      return _macsRelated(k, removedKey) || k == removedKey;
     });
 
     if (_frames.isEmpty) {
@@ -644,9 +750,6 @@ class DeviceStore {
 
   Future<void> removePairedFrame(String deviceId) =>
       forgetPairedFrame(deviceId);
-
-  static String _slideshowPrefsKey(String macSlug) =>
-      'slideshow_playlist_$macSlug';
 
   String _macSlugForFrame(PairedFrame f) {
     if (_pairedFrameMac != null && _pairedFrameMac!.length == 12) {

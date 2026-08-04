@@ -8,11 +8,14 @@ import '../services/gallery_send_flow.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/gallery_image_normalizer.dart';
 import '../services/personal_gallery_store.dart';
-import '../services/user_gallery_cloud_service.dart';
+import '../services/photo_delete_service.dart';
 import '../services/sync_pipeline.dart';
-import '../services/frame_api_client.dart';
+import '../services/album_delete_service.dart';
+import '../services/playlist_send_nav.dart';
 import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
+import '../widgets/app_status_toast.dart';
+import '../widgets/busy_status_dialog.dart';
 import '../widgets/custom_segmented_toggle.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
@@ -70,30 +73,86 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
 
   Future<void> _confirmDeleteAlbum(SendAlbumEntry album) async {
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(s.deleteAction),
-        content: Text('${s.albumRemoveFromAlbumTitle}\n"${album.name}" (${album.paths.length} photos)'),
+        title: Text(s.deleteAlbumTitle),
+        content: Text(s.deleteAlbumConfirmDetail(album.name)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.deleteAction)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: cs.error,
+              foregroundColor: cs.onError,
+            ),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(s.deleteAction),
+          ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    await SendAlbumsStore.instance.deleteAlbum(album.id);
     final tok = AppSettingsScope.of(context).authToken;
-    if (tok.trim().isNotEmpty) {
-      unawaited(
-        FrameApiClient().deleteUserAlbum(
-          bearerToken: tok,
+    await BusyStatusDialog.run<void>(
+      context,
+      message: s.deletingAlbum,
+      action: () async {
+        await AlbumDeleteService.deletePowerful(
           albumId: album.id,
-        ),
-      );
-    }
-    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: album.id));
+          bearerToken: tok,
+        );
+        // Pull-only — never push after delete (would resurrect the album).
+      },
+    );
     await _reload();
+    if (!mounted) return;
+    AppStatusToast.show(
+      context,
+      title: s.albumDeletedToast,
+      message: s.deleteAlbumStopsPlaylistBody,
+      tone: AppStatusTone.success,
+      icon: Icons.delete_outline_rounded,
+    );
+  }
+
+  Future<void> _confirmDeletePersonalPhoto(int index) async {
+    final paths = PersonalGalleryStore.instance.paths;
+    if (index < 0 || index >= paths.length) return;
+    final path = paths[index];
+    final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: Text(s.deletePhotoTitle),
+        content: Text(s.deletePhotoAccountBody),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: cs.error,
+              foregroundColor: cs.onError,
+            ),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(s.deleteAction),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final tok = AppSettingsScope.of(context).authToken;
+    await PhotoDeleteService.deleteCompletely(path: path, bearerToken: tok);
+    await _reload();
+    if (!mounted) return;
+    AppStatusToast.show(
+      context,
+      title: s.photoDeletedToast,
+      message: s.deletePhotoAccountBody,
+      tone: AppStatusTone.info,
+      icon: Icons.delete_outline_rounded,
+    );
   }
 
   Future<void> _showCreateAlbumDialog() async {
@@ -105,26 +164,61 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
       confirmLabel: s.nextLabel,
     );
     if (name == null || name.trim().isEmpty || !mounted) return;
+
+    // Mini-app: create → pick → immediately open playlist send page.
+    if (!await PlaylistSendNav.ensureReadyToSend(context)) return;
+    if (!mounted) return;
+
     await SendAlbumsStore.instance.createAlbum(name.trim(), const <String>[]);
     await _reload();
     if (!mounted) return;
     final created = SendAlbumsStore.instance.albums.isNotEmpty
         ? SendAlbumsStore.instance.albums.first
         : null;
-    if (created != null) {
-      unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: created.id));
+    if (created == null) return;
+
+    final list = await GalleryPhotoPicker.pickMulti(context);
+    if (!mounted) return;
+    if (list.isEmpty) {
+      // Empty playlist still exists — open detail so user can add later.
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (ctx) => AlbumDetailScreen(albumId: created.id),
+        ),
+      );
+      await _reload();
+      return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(s.albumCreatedMessage(name.trim()))),
+
+    final paths = list.map((e) => e.path).toList();
+    unawaited(PersonalGalleryStore.instance.addPaths(paths));
+    await SendAlbumsStore.instance.addPathsToAlbum(created.id, paths);
+    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: created.id));
+    if (!mounted) return;
+
+    await PlaylistSendNav.openPlaylistSend(
+      context,
+      paths: paths,
+      playlistName: created.name,
+      albumId: created.id,
     );
+    await _reload();
   }
 
   Future<void> _addFromPicker() async {
-    final list = await GalleryPhotoPicker.pickMulti(context);
-    if (list.isEmpty) return;
-    await PersonalGalleryStore.instance.addPaths(list.map((e) => e.path).toList());
+    // Mini-app Personal "New photo": online gate → pick → editor (1) / playlist send (2+).
+    if (!await PlaylistSendNav.ensureReadyToSend(context)) return;
     if (!mounted) return;
-    unawaited(SyncPipeline.instance.onGalleryLocalChanged());
+
+    final list = await GalleryPhotoPicker.pickMulti(context);
+    if (list.isEmpty || !mounted) return;
+    final paths = list.map((e) => e.path).toList();
+
+    // Persist in background — jump to send UI immediately.
+    unawaited(PersonalGalleryStore.instance.addPaths(paths));
+
+    await PlaylistSendNav.openAfterPick(context, paths: paths);
+    if (!mounted) return;
     await _reload();
   }
 
@@ -178,21 +272,7 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
             paths: paths,
             onAdd: _addFromPicker,
             onRefresh: _onPullToRefresh,
-            onRemove: (i) async {
-              final paths = PersonalGalleryStore.instance.paths;
-              final path = (i >= 0 && i < paths.length) ? paths[i] : null;
-              await PersonalGalleryStore.instance.removeAt(i);
-              final tok = AppSettingsScope.of(context).authToken;
-              if (tok.trim().isNotEmpty && path != null) {
-                unawaited(
-                  UserGalleryCloudService.instance.deletePhoto(
-                    authToken: tok,
-                    localPath: path,
-                  ),
-                );
-              }
-              await _reload();
-            },
+            onRemove: (i) => unawaited(_confirmDeletePersonalPhoto(i)),
             onSendToFrame: (path) => sendGalleryPhotoToFrame(context, path: path),
           ),
           _AlbumsGrid(
@@ -278,8 +358,9 @@ class _AlbumsGrid extends StatelessWidget {
               if (index == albums.length) {
                 return Container(
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    color: const Color(0xFFFFF5F5),
                     borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: colorScheme.primary.withValues(alpha: 0.28)),
                   ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(14),
@@ -289,7 +370,15 @@ class _AlbumsGrid extends StatelessWidget {
                       children: [
                         Icon(Icons.add_circle_outline, size: 36, color: colorScheme.primary),
                         const SizedBox(height: 6),
-                        Text(strings.createNewAlbum, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: colorScheme.primary)),
+                        Text(
+                          strings.createNewAlbum,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: colorScheme.primary,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -301,7 +390,14 @@ class _AlbumsGrid extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: colorScheme.surface,
                   borderRadius: BorderRadius.circular(14),
-                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
+                  border: Border.all(color: const Color(0xFFEEEEEE)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: Material(
@@ -318,9 +414,13 @@ class _AlbumsGrid extends StatelessWidget {
                                 Image.file(File(preview), fit: BoxFit.cover, width: double.infinity, height: double.infinity)
                               else
                                 Container(
-                                  color: const Color(0xFFFFF0F0),
-                                  child: const Center(
-                                    child: Icon(Icons.collections_outlined, color: Color(0xFFE53935), size: 28),
+                                  color: const Color(0xFFF5F5F7),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.collections_outlined,
+                                      color: colorScheme.onSurfaceVariant,
+                                      size: 28,
+                                    ),
                                   ),
                                 ),
                               Positioned(

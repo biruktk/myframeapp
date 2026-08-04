@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../utils/platform_share.dart';
 
+import '../config/feature_flags.dart';
 import '../l10n/app_strings.dart';
 import '../settings/app_settings.dart';
 import 'image_editor_screen.dart';
@@ -23,15 +24,16 @@ import '../services/frame_ble_mac_slug.dart';
 import '../services/frame_cloud_cast_service.dart';
 import '../services/frame_forget_service.dart';
 import '../services/frame_guest_invite_service.dart';
+import '../services/share_service.dart';
 import '../services/frame_recovery_service.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/gallery_image_normalizer.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
+import '../services/playlist_send_nav.dart';
 import '../services/send_albums_store.dart';
 import '../services/sync_pipeline.dart';
 import '../services/device_transport.dart';
-import 'create_playlist_screen.dart';
 import '../services/permission_gate.dart';
 import '../widgets/send_album_settings_sheet.dart';
 import '../widgets/shell_navigation.dart';
@@ -226,13 +228,17 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     final frameName = paired.frameName?.trim();
     final label = frameName != null && frameName.isNotEmpty ? frameName : AppStrings.of(context).myNewPlaylist;
 
-    // Force Chinese on the hosted invite page.
-    final shareUrl = '${invite.inviteUrl}${invite.inviteUrl.contains('?') ? '&' : '?'}lang=zh';
+    // Share sheet + hosted invite page follow the user's app language.
+    final shareUrl = ShareService.withShareLang(invite.inviteUrl, s);
 
     await platformShareText(
       context,
-      text: '邀请您为「$label」上传照片！\n点击链接或扫描二维码直接发送：\n$shareUrl',
-      subject: '上传照片至 $label',
+      text: ShareService.photoInviteShareBody(
+        strings: s,
+        shareUrl: shareUrl,
+        frameName: label,
+      ),
+      subject: ShareService.photoInviteSubject(s, label),
     );
     AppDiagLog.log('[ShareLink] shared $shareUrl');
   }
@@ -261,6 +267,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
       return;
     }
     if (source == _SendSource.ai) {
+      if (!FeatureFlags.enableAIFeatures) return;
       await _startAiGenerate(context);
       return;
     }
@@ -323,7 +330,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     );
     if (sent == true && context.mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ShellNavigation.goToTab(0);
+        ShellNavigation.switchToSend();
       });
     }
   }
@@ -444,7 +451,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
       if (sent == true) {
         if (!context.mounted) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          ShellNavigation.goToTab(0);
+          ShellNavigation.switchToSend();
         });
         return;
       }
@@ -497,8 +504,11 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     }
 
     final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
-    // Copy out of image_picker /tmp first, then read durable copies (iOS-safe).
-    final paths = await GalleryImageCache.persistPaths(files.map((e) => e.path));
+    // Fast durable copies — do not block on JPEG re-encode before opening send UI.
+    final paths = await GalleryImageCache.persistPaths(
+      files.map((e) => e.path),
+      normalizeJpeg: false,
+    );
     if (paths.isEmpty) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -514,12 +524,8 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     }
 
     if (paths.length > 1) {
-      unawaited(Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CreatePlaylistScreen(imagePaths: paths),
-        ),
-      ));
+      // Mini-app: multi-pick → playlist send page immediately.
+      unawaited(PlaylistSendNav.openPlaylistSend(context, paths: paths));
       return;
     }
 
@@ -611,9 +617,10 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
           }
           await Future<void>.delayed(const Duration(seconds: 120));
         } else {
+          // User backed out of the editor — stay on Send Photo.
           if (!context.mounted) return;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            ShellNavigation.goToTab(0);
+            ShellNavigation.switchToSend();
           });
           return;
         }
@@ -763,7 +770,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     );
     if (sent == true && context.mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ShellNavigation.goToTab(0);
+        ShellNavigation.switchToSend();
       });
     }
   }
@@ -871,21 +878,23 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
             subtitle: s.shareLinkSub,
             onTap: () => _startFlow(context, _SendSource.sharelink),
           ),
-          _SendRow(
-            icon: Icons.auto_awesome,
-            title: s.aiGenerate,
-            subtitle: s.aiGenerateSub,
-            highlighted: true,
-            enabled: _frameOnline != false,
-            onTap: () => _onSendEntryTap(
-              context,
-              () => _startFlow(context, _SendSource.ai),
+          if (FeatureFlags.enableAIFeatures) ...[
+            _SendRow(
+              icon: Icons.auto_awesome,
+              title: s.aiGenerate,
+              subtitle: s.aiGenerateSub,
+              highlighted: true,
+              enabled: _frameOnline != false,
+              onTap: () => _onSendEntryTap(
+                context,
+                () => _startFlow(context, _SendSource.ai),
+              ),
             ),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
-            child: AiContentNotice(compact: true),
-          ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
+              child: AiContentNotice(compact: true),
+            ),
+          ],
         ],
       ),
     );

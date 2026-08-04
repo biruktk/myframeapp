@@ -23,6 +23,7 @@ import '../services/frame_ble_mac_slug.dart';
 import '../widgets/shell_navigation.dart';
 import '../services/user_playlist_remote_api.dart';
 import '../settings/app_settings.dart';
+import '../widgets/progress_action_button.dart';
 
 /// Multi-photo upload with progress + server slideshow playlist POST.
 class SlideshowBatchScreen extends StatefulWidget {
@@ -46,6 +47,8 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
   static const _intervals = [2, 5, 10, 30, 60];
   int _intervalMinutes = 10;
   var _busy = false;
+  var _sendCurrent = 0;
+  var _sendTotal = 0;
   final _api = FrameApiClient();
 
   bool get _hasPresetPaths =>
@@ -108,7 +111,6 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
       return;
     }
 
-    setState(() => _busy = true);
     final ids = <String>[];
     final sourcePaths = _hasPresetPaths
         ? presetPaths
@@ -116,22 +118,28 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
     if (sourcePaths.toSet().length < sourcePaths.length) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Playlist has duplicate photos — pick different images for each slot.'),
+          SnackBar(
+            content: Text(s.duplicatePhotosError),
           ),
         );
       }
-      setState(() => _busy = false);
       return;
     }
     final total = sourcePaths.length;
     final token = AppSettingsScope.of(context).authToken.trim();
     final pairingToken = pFrame.resolvedPairingToken;
 
+    setState(() {
+      _busy = true;
+      _sendCurrent = 0;
+      _sendTotal = total;
+    });
+
     try {
       for (var i = 0; i < total; i++) {
         if (!mounted) break;
         final idx = i + 1;
+        setState(() => _sendCurrent = idx);
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -256,13 +264,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             ),
           ),
         );
-        if (_hasPresetPaths) {
-          Navigator.of(context).pop();
-        } else {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            ShellNavigation.goToTab(0);
-          });
-        }
+        ShellNavigation.returnToSendAfterCast(context);
       }
     } catch (e, st) {
       AppDiagLog.verbose('[Slideshow] pipeline failed: $e\n$st');
@@ -271,7 +273,13 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.processingFailed)));
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _sendCurrent = 0;
+          _sendTotal = 0;
+        });
+      }
     }
   }
 
@@ -314,14 +322,19 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          FilledButton.icon(
+          ProgressActionButton(
+            label: _hasPresetPaths ? s.sendToFrame : s.slideshowRunBatch,
+            icon: Icons.collections,
+            isLoading: _busy,
+            statusMessage: s.progressSendingPhotos,
+            currentStep: _sendCurrent > 0 ? _sendCurrent : null,
+            totalSteps: _sendTotal > 1 ? _sendTotal : null,
+            progress: (_busy && _sendTotal > 0 && _sendCurrent > 0)
+                ? (_sendCurrent / _sendTotal).clamp(0.05, 1.0)
+                : null,
             onPressed: _busy ? null : _runPipeline,
-            icon: _busy ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.collections),
-            label: Text(
-              _busy
-                  ? s.working
-                  : (_hasPresetPaths ? s.sendToFrame : s.slideshowRunBatch),
-            ),
+            height: 52,
+            borderRadius: BorderRadius.circular(14),
           ),
         ],
       ),

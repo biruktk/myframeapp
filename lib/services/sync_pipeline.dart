@@ -94,10 +94,15 @@ class SyncPipeline {
             .syncAccountState(
               force: false,
               replaceFrames: false,
+              pruneMissingFrames: false,
               appSettings: _settings,
               authTokenOverride: token,
             )
             .timeout(const Duration(seconds: 15));
+        // Family-shared frames (invitees) come from GET /api/frames — merge without prune.
+        await DeviceStore.instance
+            .syncServerFrames(bearerToken: token)
+            .timeout(const Duration(seconds: 12));
         await DeviceStore.instance.dedupeRelatedFrames();
         _lastFramesAt = now;
       }
@@ -155,6 +160,9 @@ class SyncPipeline {
       await AlbumCloudSync.instance
           .syncAll(token, pushLocal: false)
           .timeout(const Duration(seconds: 20));
+      await DeviceStore.instance
+          .syncServerFrames(bearerToken: token)
+          .timeout(const Duration(seconds: 12));
       await DeviceStore.instance.dedupeRelatedFrames();
       // Background: push any local-only photos/albums after UI refresh.
       unawaited(
@@ -233,15 +241,31 @@ class SyncPipeline {
     _lastAlbumsAt = DateTime.now();
   }
 
+  /// After a powerful album delete — pull only (never push, never recreate).
+  Future<void> onAlbumDeleted() async {
+    final token = _token;
+    if (token == null) return;
+    try {
+      await AlbumCloudSync.instance
+          .syncAll(token, pushLocal: false)
+          .timeout(const Duration(seconds: 30));
+    } catch (e, st) {
+      AppDiagLog.verbose('[SyncPipeline] onAlbumDeleted failed: $e\n$st');
+    }
+    _lastAlbumsAt = DateTime.now();
+  }
+
   Future<void> onFramesChanged({bool replace = true}) async {
     final token = _token;
     if (token == null) return;
     await AccountSyncService.instance.syncAccountState(
       force: true,
       replaceFrames: replace,
+      pruneMissingFrames: replace,
       appSettings: _settings,
       authTokenOverride: token,
     );
+    await DeviceStore.instance.syncServerFrames(bearerToken: token);
     await DeviceStore.instance.dedupeRelatedFrames();
     _lastFramesAt = DateTime.now();
   }

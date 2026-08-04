@@ -1,9 +1,10 @@
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 
 import 'family_remote_api.dart';
+import 'local_storage_service.dart';
 
 /// Role for [FamilyMember.role]; use string for JSON portability.
 abstract class FamilyRoles {
@@ -70,6 +71,7 @@ enum JoinFamilyResult {
   ok,
   codeTooShort,
   ownInviteCode,
+  alreadyMember,
   notFound,
   invalidInvite,
   unauthorized,
@@ -81,9 +83,6 @@ class FamilyGroupStore {
   FamilyGroupStore._();
   static final FamilyGroupStore instance = FamilyGroupStore._();
 
-  static const _kOwn = 'family_group_own_v1';
-  static const _kJoined = 'family_group_joined_v1';
-
   var _loaded = false;
 
   String familyName = 'Our family';
@@ -94,6 +93,11 @@ class FamilyGroupStore {
   List<FamilyMember> members = [];
   List<JoinedFamilySnapshot> joinedFamilies = [];
 
+  /// Bumps when members / invite / cloud sync state changes (Family UI listens).
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
+  void _bumpRevision() => revision.value++;
+
   static String generateInviteCode() {
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final r = Random.secure();
@@ -102,11 +106,24 @@ class FamilyGroupStore {
 
   static String normalizeCode(String raw) => raw.trim().toUpperCase().replaceAll(RegExp(r'[\s-]'), '');
 
+  /// Drop in-memory family state (logout / account switch). Disk stays user-scoped.
+  void resetMemory() {
+    _loaded = false;
+    familyName = 'Our family';
+    inviteCode = '';
+    remoteFamilyId = '';
+    cloudSynced = false;
+    members = [];
+    joinedFamilies = [];
+    _bumpRevision();
+  }
+
   Future<void> ensureLoaded({required String Function() ownerDisplayName}) async {
     if (_loaded) return;
-    final p = await SharedPreferences.getInstance();
 
-    final rawOwn = p.getString(_kOwn);
+    final rawOwn = await LocalStorageService.instance.getString(
+      LocalStorageService.familyOwnBase,
+    );
     if (rawOwn != null && rawOwn.isNotEmpty) {
       try {
         final map = jsonDecode(rawOwn) as Map<String, dynamic>;
@@ -138,7 +155,9 @@ class FamilyGroupStore {
       _seedNewGroup(ownerDisplayName());
     }
 
-    final rawJ = p.getString(_kJoined);
+    final rawJ = await LocalStorageService.instance.getString(
+      LocalStorageService.familyJoinedBase,
+    );
     if (rawJ != null && rawJ.isNotEmpty) {
       try {
         final list = jsonDecode(rawJ) as List<dynamic>;
@@ -171,7 +190,6 @@ class FamilyGroupStore {
   }
 
   Future<void> _persistOwn() async {
-    final p = await SharedPreferences.getInstance();
     final map = {
       'name': familyName,
       'code': inviteCode,
@@ -179,12 +197,17 @@ class FamilyGroupStore {
       'cloudSynced': cloudSynced,
       'members': members.map((m) => m.toJson()).toList(),
     };
-    await p.setString(_kOwn, jsonEncode(map));
+    await LocalStorageService.instance.setString(
+      LocalStorageService.familyOwnBase,
+      jsonEncode(map),
+    );
   }
 
   Future<void> _persistJoined() async {
-    final p = await SharedPreferences.getInstance();
-    await p.setString(_kJoined, jsonEncode(joinedFamilies.map((j) => j.toJson()).toList()));
+    await LocalStorageService.instance.setString(
+      LocalStorageService.familyJoinedBase,
+      jsonEncode(joinedFamilies.map((j) => j.toJson()).toList()),
+    );
   }
 
   Future<void> setFamilyName(String name) async {
@@ -206,12 +229,33 @@ class FamilyGroupStore {
       await regenerateInviteCodeLocal();
       return;
     }
+    final api = FamilyRemoteApi(baseUrl: origin, token: t);
     try {
-      final code = await FamilyRemoteApi(baseUrl: origin, token: t).rotateInviteCode();
+      final code = await api.rotateInviteCode();
       inviteCode = code;
+      cloudSynced = true;
       await _persistOwn();
+      return;
+    } on FamilyRemoteHttpException catch (e) {
+      // No cloud family yet — create one (gets a server code), then rotate
+      // so "New code" always lands in the DB and never invents a ghost local code.
+      if (e.statusCode == 404 || e.errorCode == 'no_family') {
+        await createCloudFamily(origin, t);
+        try {
+          final code = await api.rotateInviteCode();
+          inviteCode = code;
+          cloudSynced = true;
+          await _persistOwn();
+        } catch (_) {
+          // createCloudFamily already pulled a valid server inviteCode.
+        }
+        return;
+      }
+      rethrow;
     } catch (_) {
-      await regenerateInviteCodeLocal();
+      // Signed-in rotate must not fall back to a local-only code — that code
+      // never exists on the server and joiners get "No family matches…".
+      rethrow;
     }
   }
 
@@ -219,6 +263,59 @@ class FamilyGroupStore {
     final api = FamilyRemoteApi(baseUrl: origin, token: token);
     await api.create(name: name);
     await pullFromRemote(origin, token);
+  }
+
+  /// Epoch bumped on join / leave so an in-flight "ensure invite" never creates a
+  /// brand-new family after the user has already joined someone else's.
+  int _ensureEpoch = 0;
+
+  void invalidatePendingFamilyEnsure() => _ensureEpoch++;
+
+  /// Refresh invite + members from the server. Optionally create a cloud family
+  /// when [createIfMissing] is true (owners with a local frame only).
+  ///
+  /// Never auto-create for bare accounts — that races with Join and detaches the
+  /// new member from the family they just joined (frames disappear).
+  Future<void> refreshInviteFromServer(
+    String origin,
+    String token, {
+    String name = 'Our family',
+    bool createIfMissing = false,
+  }) async {
+    final t = token.trim();
+    if (t.isEmpty) return;
+    final epoch = _ensureEpoch;
+    final api = FamilyRemoteApi(baseUrl: origin, token: t);
+
+    try {
+      final fast = await api.fetchInviteCode();
+      if (epoch != _ensureEpoch) return;
+      if (fast != null && fast.inviteCode.trim().isNotEmpty) {
+        inviteCode = normalizeCode(fast.inviteCode);
+        remoteFamilyId = fast.familyId;
+        cloudSynced = true;
+        await _persistOwn();
+        await pullFromRemote(origin, t);
+        return;
+      }
+    } on FamilyRemoteAuthException {
+      rethrow;
+    } on FamilyRemoteHttpException catch (e) {
+      if (e.statusCode != 404 && e.errorCode != 'no_family') {
+        return;
+      }
+    } catch (_) {
+      return;
+    }
+
+    if (epoch != _ensureEpoch) return;
+    if (!createIfMissing) {
+      // Keep UI honest: no ghost local invite when there is no cloud family.
+      await pullFromRemote(origin, t);
+      return;
+    }
+
+    await createCloudFamily(origin, t, name: name);
   }
 
   /// Overwrites local member list when the server has a family; clears [joinedFamilies].
@@ -231,7 +328,23 @@ class FamilyGroupStore {
       if (bundle == null) {
         cloudSynced = false;
         remoteFamilyId = '';
+        // Never keep advertising a device-only invite code — joiners hit 404.
+        inviteCode = '';
+        // Drop local-only name stubs from the old "Add household name" flow.
+        members = members
+            .where((m) => m.role == FamilyRoles.owner && !m.id.startsWith('m_'))
+            .toList();
+        if (members.isEmpty) {
+          members = [
+            const FamilyMember(
+              id: 'owner',
+              displayName: 'You',
+              role: FamilyRoles.owner,
+            ),
+          ];
+        }
         await _persistOwn();
+        _bumpRevision();
         return;
       }
       cloudSynced = true;
@@ -242,34 +355,49 @@ class FamilyGroupStore {
         final id = m['userId'] as String? ?? '';
         final roleRaw = m['role'] as String? ?? 'member';
         final role = roleRaw == 'owner' ? FamilyRoles.owner : FamilyRoles.member;
-        final display = m['name'] as String? ?? id;
-        return FamilyMember(id: id, displayName: display, role: role);
+        final display = (m['name'] as String?)?.trim();
+        final email = (m['email'] as String?)?.trim() ?? '';
+        final name = (display != null && display.isNotEmpty && display != '(unknown)')
+            ? display
+            : (email.isNotEmpty ? email.split('@').first : id);
+        return FamilyMember(id: id, displayName: name, role: role);
       }).where((m) => m.id.isNotEmpty).toList();
       joinedFamilies = [];
       await _persistOwn();
       await _persistJoined();
+      _bumpRevision();
     } on FamilyRemoteAuthException {
       cloudSynced = false;
+      _bumpRevision();
     } catch (_) {
       /* keep local cache */
     }
   }
 
-  Future<void> removeMember(String id, {String? apiOrigin, String? token}) async {
+  /// Unlink a non-owner member from the cloud family (and local cache).
+  /// Returns `true` when the member was removed.
+  Future<bool> removeMember(String id, {String? apiOrigin, String? token}) async {
     final idx = members.indexWhere((e) => e.id == id);
-    if (idx < 0) return;
-    if (members[idx].role == FamilyRoles.owner) return;
+    if (idx < 0) return false;
+    if (members[idx].role == FamilyRoles.owner) return false;
 
-    if (cloudSynced && (apiOrigin?.isNotEmpty ?? false) && (token?.isNotEmpty ?? false)) {
+    final origin = apiOrigin?.trim() ?? '';
+    final tok = token?.trim() ?? '';
+    if (cloudSynced) {
+      if (origin.isEmpty || tok.isEmpty) return false;
       try {
-        await FamilyRemoteApi(baseUrl: apiOrigin!, token: token!).removeMember(id);
+        await FamilyRemoteApi(baseUrl: origin, token: tok).removeMember(id);
       } catch (_) {
-        // fall through — still remove locally
+        return false;
       }
+      await pullFromRemote(origin, tok);
+      return !members.any((m) => m.id == id);
     }
 
+    // Offline / local-only stubs (legacy name-only entries).
     members.removeAt(idx);
     await _persistOwn();
+    return true;
   }
 
   Future<JoinFamilyResult> joinWithCode(
@@ -281,19 +409,32 @@ class FamilyGroupStore {
   }) async {
     final c = normalizeCode(rawCode);
     if (c.length != 8) return JoinFamilyResult.codeTooShort;
-    if (c == inviteCode.toUpperCase()) return JoinFamilyResult.ownInviteCode;
+    // Only treat as "own code" when this device is already on that cloud family.
+    if (cloudSynced &&
+        inviteCode.isNotEmpty &&
+        c == inviteCode.toUpperCase()) {
+      return JoinFamilyResult.ownInviteCode;
+    }
 
     final tok = bearerToken?.trim() ?? '';
     final origin = apiOrigin ?? '';
     if (tok.isNotEmpty && origin.isNotEmpty) {
+      // Cancel any in-flight Family-tab auto-create before we join.
+      invalidatePendingFamilyEnsure();
       try {
         await FamilyRemoteApi(baseUrl: origin, token: tok).join(c, birthdayIso: birthdayIso);
+        invalidatePendingFamilyEnsure();
         await pullFromRemote(origin, tok);
         return JoinFamilyResult.ok;
       } on FamilyRemoteAuthException {
         return JoinFamilyResult.unauthorized;
       } on FamilyRemoteHttpException catch (e) {
         final err = e.errorCode;
+        if (e.statusCode == 409 || err == 'already_member') {
+          // Already in this family — still refresh so frames/members land.
+          await pullFromRemote(origin, tok);
+          return JoinFamilyResult.alreadyMember;
+        }
         if (e.statusCode == 404 || err == 'not_found') {
           return JoinFamilyResult.notFound;
         }

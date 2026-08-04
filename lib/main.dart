@@ -96,7 +96,10 @@ class MyFrameApp extends StatelessWidget {
               locale: settings.locale,
               builder: (context, child) {
                 final c = child;
-                if (c == null) return const SizedBox.shrink();
+                if (c == null) {
+                  // Avoid a solid black flash if navigator child is briefly null.
+                  return const ColoredBox(color: Color(0xFFFAFAFA));
+                }
                 final mq = MediaQuery.of(context);
                 final app = AppSettingsScope.of(context);
                 final systemFactor = mq.textScaler.scale(16) / 16.0;

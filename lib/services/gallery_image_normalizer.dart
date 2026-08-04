@@ -4,9 +4,9 @@ import 'dart:typed_data';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'app_diag_log.dart';
+import 'file_storage_manager.dart';
 
 /// Converts gallery / camera / share picks to standard sRGB JPEG before the editor
 /// or upload. Native compress handles iOS HEIC; the `image` package is the fallback.
@@ -57,11 +57,7 @@ class GalleryImageNormalizer {
       final jpeg = await toJpegBytes(raw, pathHint: src);
       if (jpeg == null || jpeg.isEmpty) return null;
 
-      final base = await getApplicationDocumentsDirectory();
-      final dir = Directory(p.join(base.path, 'personal_gallery'));
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
+      final dir = await FileStorageManager.instance.imagesDir();
       final name =
           '${DateTime.now().millisecondsSinceEpoch}_${src.hashCode.abs()}.jpg';
       final dest = File(p.join(dir.path, name));

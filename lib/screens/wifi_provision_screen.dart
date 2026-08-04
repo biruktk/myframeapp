@@ -17,6 +17,7 @@ import '../services/permission_gate.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
 import '../widgets/debug_slog_overlay.dart';
+import '../widgets/progress_action_button.dart';
 
 const _kRed = Color(0xFFE5252A);
 
@@ -47,7 +48,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   bool _scanningWifi = false;
   bool _busy = false;
   bool _hide = true;
-  bool _showManualEntry = false;
   bool _selectedIsOpen = false;
   String? _status;
   String? _error;
@@ -100,7 +100,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           if (!loc2.isGranted && !loc2.isLimited && !nearby2.isGranted) {
             if (!mounted) return;
             setState(() {
-              _showManualEntry = true;
               _error = AppStrings.of(context).wifiScanPermissionHint;
             });
           }
@@ -124,7 +123,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         if (!mounted) return;
         setState(() {
           _wifiNetworks = const [];
-          _showManualEntry = true;
           _scanningWifi = false;
         });
         return;
@@ -137,7 +135,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           _wifiNetworks = const [];
           _selectedSsid = null;
           _scanningWifi = false;
-          _showManualEntry = true;
         });
         return;
       }
@@ -164,16 +161,10 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       if (!mounted) return;
       setState(() {
         _wifiNetworks = parsed;
-        if (_wifiNetworks.isEmpty) {
-          _showManualEntry = true;
-        }
       });
       AppDiagLog.verbose('[WiFi] scan done count=${parsed.length}');
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _showManualEntry = true;
-      });
     } finally {
       if (mounted) setState(() => _scanningWifi = false);
     }
@@ -426,12 +417,12 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
 
-                  // Available WiFi networks card (scrollable rectangle at top)
+                  // Wi‑Fi selection: current phone network + optional nearby list
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 4),
+                    padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       color: cs.surface,
                       borderRadius: BorderRadius.circular(12),
@@ -447,36 +438,9 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          s.wifiSsidLabel,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: cs.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          s.wifiProvisionPhoneHint,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: cs.onSurfaceVariant,
-                          ),
-                        ),
-                        if (!Platform.isAndroid) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            s.wifiIosNearbyUnavailable,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: cs.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                        if (Platform.isAndroid) ...[
-                          const SizedBox(height: 10),
+                        if (Platform.isAndroid)
                           Align(
-                            alignment: Alignment.centerLeft,
+                            alignment: Alignment.centerRight,
                             child: TextButton.icon(
                               onPressed: (_busy || _scanningWifi) ? null : _scanWifiNetworks,
                               icon: _scanningWifi
@@ -503,11 +467,9 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                               ),
                             ),
                           ),
-                        ],
 
-                        // Current WiFi
-                        if (_currentWifiSsid != null && _currentWifiSsid!.isNotEmpty) ...[
-                          const SizedBox(height: 10),
+                        // Current phone Wi‑Fi shortcut
+                        if (_currentWifiSsid != null && _currentWifiSsid!.isNotEmpty)
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(
@@ -557,7 +519,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                                     ),
                                     child: Text(
                                       s.wifiUseNetwork,
-                                      style: TextStyle(
+                                      style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
@@ -567,15 +529,11 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                                 ),
                               ],
                             ),
-                          ),
-                        ],
-
-                        // Scanning indicator
-                        if (_scanningWifi && _wifiNetworks.isEmpty && (_currentWifiSsid == null || _currentWifiSsid!.isEmpty)) ...[
-                          const SizedBox(height: 14),
+                          )
+                        else if (_scanningWifi)
                           Row(
                             children: [
-                              SizedBox(
+                              const SizedBox(
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
@@ -586,7 +544,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                               const SizedBox(width: 8),
                               Text(
                                 s.wifiScanningNetworks,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: _kRed,
@@ -594,11 +552,10 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                               ),
                             ],
                           ),
-                        ],
 
-                        // Other networks scrollable list
+                        // Nearby networks (Android scan)
                         if (_wifiNetworks.isNotEmpty) ...[
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 16),
                           Text(
                             s.wifiNearbyNetworksTitle,
                             style: TextStyle(
@@ -607,7 +564,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                               color: cs.onSurface,
                             ),
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 8),
                           Container(
                             constraints: const BoxConstraints(maxHeight: 200),
                             decoration: BoxDecoration(
@@ -650,7 +607,9 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                n.secure ? s.wifiPasswordRequiredLabel : s.wifiOpenNetworkLabel,
+                                                n.secure
+                                                    ? s.wifiPasswordRequiredLabel
+                                                    : s.wifiOpenNetworkLabel,
                                                 style: TextStyle(
                                                   fontSize: 11,
                                                   color: cs.onSurfaceVariant,
@@ -668,15 +627,13 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                             ),
                           ),
                         ],
-
-                        const SizedBox(height: 10),
                       ],
                     ),
                   ),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
 
-                  // WiFi manual entry card (SSID + password)
+                  // SSID + password inputs
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(18),
@@ -703,7 +660,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                             color: cs.onSurface,
                           ),
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         TextField(
                           controller: _ssidCtrl,
                           style: const TextStyle(fontSize: 15),
@@ -724,8 +681,8 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                           ),
                         ),
 
-                        // Password section
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
+
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
@@ -765,7 +722,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                               const SizedBox(height: 6),
                               Text(
                                 s.wifiRequiredForNetwork,
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: _kRed,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -811,7 +768,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
 
                   // Status
                   if (_status != null) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
@@ -846,7 +803,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
 
                   // Error
                   if (_error != null) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
@@ -857,12 +814,12 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.error_outline, size: 16, color: _kRed),
+                          const Icon(Icons.error_outline, size: 16, color: _kRed),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               _error!,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 12,
                                 color: _kRed,
                               ),
@@ -877,7 +834,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                 ],
               ),
             ),
-
             // Bottom action bar
             Container(
               padding: EdgeInsets.fromLTRB(
@@ -892,40 +848,21 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
               ),
               child: SafeArea(
                 top: false,
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: (_busy || _wifiConfirmed)
-                        ? null
-                        : _connect,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _kRed,
-                      disabledBackgroundColor: _kRed.withValues(alpha: 0.45),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(100),
-                      ),
-                      elevation: 4,
-                      shadowColor: _kRed.withValues(alpha: 0.25),
-                    ),
-                    child: _busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                            : Text(
-                                _wifiConfirmed ? s.wifiConnectedLabel : s.wifiConnectNowLabel,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                  ),
+                child: ProgressActionButton(
+                  height: 52,
+                  borderRadius: BorderRadius.circular(100),
+                  backgroundColor: _kRed,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: _kRed.withValues(alpha: 0.45),
+                  label: _wifiConfirmed
+                      ? s.wifiConnectedLabel
+                      : s.wifiConnectNowLabel,
+                  isLoading: _busy,
+                  statusMessage: (_status?.trim().isNotEmpty == true)
+                      ? _status!.replaceAll(RegExp(r'[.…]+$'), '').trim()
+                      : s.progressConfiguringFrameBusy,
+                  progress: null,
+                  onPressed: (_busy || _wifiConfirmed) ? null : _connect,
                 ),
               ),
             ),

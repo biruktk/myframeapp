@@ -9,16 +9,17 @@ class FrameForgetService {
   static final FrameForgetService instance = FrameForgetService._();
 
   /// Removes the frame locally and unbinds it from the signed-in account so
-  /// other devices drop it on the next pull / pull-to-refresh.
+  /// other devices / family members drop it on the next pull.
   Future<void> forgetFrame(String deviceId) async {
     final id = deviceId.trim();
     if (id.isEmpty) return;
 
-    // Prefer account unbind (also forgets locally). Falls back to local-only.
-    final unbound = await AccountSyncService.instance.deleteFrame(id);
-    if (!unbound) {
+    // Account unbind (owner / family-owner) + local wipe. Always ends with
+    // local removal so Home does not keep a zombie row.
+    await AccountSyncService.instance.deleteFrame(id);
+    try {
       await DeviceStore.instance.forgetPairedFrame(id);
-    }
+    } catch (_) {}
     await BleFrameDeviceTransport.instance.releaseSession();
   }
 

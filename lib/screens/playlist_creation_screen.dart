@@ -58,8 +58,9 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
     final remaining = _maxPhotos - _paths.length;
     if (remaining <= 0) {
       if (mounted) {
+        final s = AppStrings.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Maximum $_maxPhotos photos allowed.')),
+          SnackBar(content: Text(s.maxPhotosAllowed(_maxPhotos))),
         );
       }
       return;
@@ -71,8 +72,9 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
     final stored = await GalleryImageCache.persistPaths(files.map((f) => f.path));
     final allowed = stored.take(remaining).toList();
     if (stored.length > remaining && mounted) {
+      final s = AppStrings.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Only $remaining more allowed (max $_maxPhotos).')),
+        SnackBar(content: Text(s.onlyMoreAllowed(remaining, _maxPhotos))),
       );
     }
     setState(() => _paths.addAll(allowed));
@@ -85,7 +87,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
     if (paired == null || !paired.canUploadToServer) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please connect a frame first.')),
+        SnackBar(content: Text(AppStrings.of(context).connectFrameFirst)),
       );
       return;
     }
@@ -96,7 +98,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
     setState(() => _isUploading = true);
 
     final name = _nameController.text.trim().isEmpty
-        ? 'My New Playlist'
+        ? AppStrings.of(context).myNewPlaylist
         : _nameController.text.trim();
 
     final allBytes = <Uint8List>[];
@@ -142,11 +144,12 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final s = AppStrings.of(context);
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          'Create Playlist',
+          s.createPlaylistFlowTitle,
           style: TextStyle(color: cs.onSurface, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.transparent,
@@ -163,7 +166,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                 children: [
                   CircularProgressIndicator(color: cs.primary),
                   const SizedBox(height: 16),
-                  Text('Preparing Playlist...',
+                  Text(s.preparingPlaylist,
                       style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurface)),
                 ],
               ),
@@ -178,7 +181,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                       controller: _nameController,
                       style: TextStyle(color: cs.onSurface),
                       decoration: InputDecoration(
-                        labelText: 'Playlist Name',
+                        labelText: s.playlistNameLabel,
                         filled: true,
                         fillColor: cs.surface,
                         border: OutlineInputBorder(
@@ -234,7 +237,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Selected Photos (${_paths.length}/$_maxPhotos)',
+                          '${s.selectedPhotos(_paths.length)} ($_maxPhotos)',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -244,7 +247,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                         if (_paths.length < _maxPhotos)
                           OutlinedButton.icon(
                             icon: const Icon(Icons.add, size: 18),
-                            label: const Text('Add More'),
+                            label: Text(s.addMore),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: cs.onSurface,
                               side: BorderSide(color: cs.primary, width: 1.5),

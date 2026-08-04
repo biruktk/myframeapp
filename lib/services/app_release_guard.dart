@@ -139,7 +139,7 @@ class _FriendlyErrorPanel extends StatelessWidget {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Go back and try again.',
+                  'Unable to load this view. Go back and try again.',
                   style: TextStyle(fontSize: 14, color: Color(0xFF757575)),
                   textAlign: TextAlign.center,
                 ),

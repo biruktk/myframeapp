@@ -657,12 +657,12 @@ class AppStrings {
     ja: 'マイフレーム',
   );
   String get myFramesSubtitle => _l6(
-    en: 'Manage your AI artistic photo frames.',
-    zh: '管理您的 AI 艺术相框。',
-    es: 'Gestiona tus marcos artísticos con IA.',
-    fr: 'Gérez vos cadres artistiques IA.',
-    de: 'Verwalten Sie Ihre KI-Kunstbilderrahmen.',
-    ja: 'AI アートフォトフレームを管理します。',
+    en: 'Send photos instantly',
+    zh: '即刻传送美好照片',
+    es: 'Envía fotos al instante',
+    fr: 'Envoyez des photos instantanément',
+    de: 'Fotos sofort senden',
+    ja: '写真をすぐに送信',
   );
   String get activeFrameLabel => _l6(
     en: 'Active',
@@ -751,12 +751,12 @@ class AppStrings {
     ja: '個人',
   );
   String get galleryAlbumsTab => _l6(
-    en: 'Albums',
-    zh: '相册集',
-    es: 'Álbumes',
-    fr: 'Albums',
-    de: 'Alben',
-    ja: 'アルバム',
+    en: 'Playlists',
+    zh: '播放列表',
+    es: 'Listas',
+    fr: 'Playlists',
+    de: 'Playlists',
+    ja: 'プレイリスト',
   );
   String get galleryAddPhotos => _l6(
     en: 'Add photos',
@@ -800,28 +800,28 @@ class AppStrings {
     ja: 'アルバム設定',
   );
   String get addToExistingAlbum => _l6(
-    en: 'Add to Existing Album',
-    zh: '添加到已有相册',
-    es: 'Añadir a álbum existente',
-    fr: 'Ajouter à un album',
-    de: 'Zu Album hinzufügen',
-    ja: '既存アルバムへ',
+    en: 'Add to Existing Playlist',
+    zh: '添加到已有播放列表',
+    es: 'Añadir a lista existente',
+    fr: 'Ajouter à une playlist',
+    de: 'Zu Playlist hinzufügen',
+    ja: '既存プレイリストへ',
   );
   String get createNewAlbum => _l6(
-    en: 'Create New Album',
-    zh: '新建相册',
-    es: 'Crear álbum',
-    fr: 'Créer un album',
-    de: 'Neues Album',
-    ja: '新規アルバム',
+    en: 'Create New Playlist',
+    zh: '新建播放列表',
+    es: 'Crear lista',
+    fr: 'Créer une playlist',
+    de: 'Neue Playlist',
+    ja: '新規プレイリスト',
   );
   String get galleryAlbumsEmptyHint => _l6(
-    en: 'Organise your pictures into albums and send them straight to your frame. Create your first album to get started.',
-    zh: '将照片整理成相册并直接发送到相框。创建第一个相册开始使用。',
-    es: 'Organiza tus fotos en álbumes y envíalas directamente a tu marco. Crea tu primer álbum.',
-    fr: 'Organisez vos photos en albums et envoyez-les directement à votre cadre. Créez votre premier album.',
-    de: 'Ordne deine Bilder in Alben und sende sie direkt an deinen Rahmen. Erstelle dein erstes Album.',
-    ja: '写真をアルバムに整理してフレームに送信しましょう。最初のアルバムを作成してください。',
+    en: 'Organise your pictures into playlists and send them straight to your frame. Create your first playlist to get started.',
+    zh: '将照片整理成播放列表并直接发送到相框。创建第一个播放列表开始使用。',
+    es: 'Organiza tus fotos en listas y envíalas directamente a tu marco. Crea tu primera lista.',
+    fr: 'Organisez vos photos en playlists et envoyez-les directement à votre cadre. Créez votre première playlist.',
+    de: 'Ordne deine Bilder in Playlists und sende sie direkt an deinen Rahmen. Erstelle deine erste Playlist.',
+    ja: '写真をプレイリストに整理してフレームに送信しましょう。最初のプレイリストを作成してください。',
   );
   String get galleryRecentlySentEmptyHint => _l6(
     en: 'Pictures you send to your frame are saved here. Send your first photo to see it appear on this tab.',
@@ -832,20 +832,20 @@ class AppStrings {
     ja: 'フレームに送信した写真はここに保存されます。最初の写真を送信してください。',
   );
   String get addToAlbumNoAlbumsYet => _l6(
-    en: 'No albums yet — use “Create New Album” in this sheet or in Gallery ▸ Albums.',
-    zh: '还没有相册 — 请在本页「新建相册」或 图库 ▸ 相册集 中创建。',
-    es: 'Aún no hay álbumes — créalo aquí o en Galería ▸ Álbumes.',
-    fr: 'Pas encore d’album — créez-en un ici ou dans Galerie ▸ Albums.',
-    de: 'Noch keine Alben — legen Sie hier oder unter Galerie ▸ Alben an.',
-    ja: 'アルバムがありません — この画面またはギャラリー ▸ アルバムで作成してください。',
+    en: 'No playlists yet — use “Create New Playlist” in this sheet or in Gallery ▸ Playlists.',
+    zh: '还没有播放列表 — 请在本页「新建播放列表」或 图库 ▸ 播放列表 中创建。',
+    es: 'Aún no hay listas — créala aquí o en Galería ▸ Listas.',
+    fr: 'Pas encore de playlist — créez-en une ici ou dans Galerie ▸ Playlists.',
+    de: 'Noch keine Playlists — legen Sie hier oder unter Galerie ▸ Playlists an.',
+    ja: 'プレイリストがありません — この画面またはギャラリー ▸ プレイリストで作成してください。',
   );
   String albumCreatedMessage(String name) => _l6(
-    en: 'Album created: $name',
-    zh: '已创建相册：$name',
-    es: 'Álbum creado: $name',
-    fr: 'Album créé : $name',
-    de: 'Album erstellt: $name',
-    ja: 'アルバムを作成しました: $name',
+    en: 'Playlist created: $name',
+    zh: '已创建播放列表：$name',
+    es: 'Lista creada: $name',
+    fr: 'Playlist créée : $name',
+    de: 'Playlist erstellt: $name',
+    ja: 'プレイリストを作成しました: $name',
   );
   String get albumAddFromPersonal => _l6(
     en: 'Add from Personal',
@@ -864,20 +864,20 @@ class AppStrings {
     ja: '新しい写真を追加',
   );
   String get albumPersonalLibraryEmpty => _l6(
-    en: 'Add photos on the Personal tab first, then you can put them in this album.',
-    zh: '请先在「个人」标签添加照片，再加入此相册。',
+    en: 'Add photos on the Personal tab first, then you can put them in this playlist.',
+    zh: '请先在「个人」标签添加照片，再加入此播放列表。',
     es: 'Añade fotos en Personal primero.',
     fr: 'Ajoutez des photos dans l’onglet Perso.',
     de: 'Fügen Sie zuerst Fotos unter „Persönlich“ hinzu.',
     ja: '先に「個人」タブで写真を追加してください。',
   );
   String get albumNothingLeftToAdd => _l6(
-    en: 'Every photo in Personal is already in this album.',
-    zh: '个人库中的照片已全部在此相册中。',
-    es: 'Todas las fotos de Personal ya están en el álbum.',
-    fr: 'Toutes les photos Perso sont déjà dans l’album.',
-    de: 'Alle Fotos aus „Persönlich“ sind bereits im Album.',
-    ja: '個人の写真はすべてこのアルバムに入っています。',
+    en: 'Every photo in Personal is already in this playlist.',
+    zh: '个人库中的照片已全部在此播放列表中。',
+    es: 'Todas las fotos de Personal ya están en la lista.',
+    fr: 'Toutes les photos Perso sont déjà dans la playlist.',
+    de: 'Alle Fotos aus „Persönlich“ sind bereits in der Playlist.',
+    ja: '個人の写真はすべてこのプレイリストに入っています。',
   );
   String get albumSelectPhotosTitle => _l6(
     en: 'Choose photos',
@@ -896,12 +896,12 @@ class AppStrings {
     ja: '追加',
   );
   String albumAddedCount(int n) => _l6(
-    en: 'Added $n photo(s) to album',
-    zh: '已向相册添加 $n 张照片',
-    es: 'Se añadieron $n foto(s)',
-    fr: '$n photo(s) ajoutée(s)',
-    de: '$n Foto(s) hinzugefügt',
-    ja: 'アルバムに $n 枚追加しました',
+    en: 'Added $n photo(s) to playlist',
+    zh: '已向播放列表添加 $n 张照片',
+    es: 'Se añadieron $n foto(s) a la lista',
+    fr: '$n photo(s) ajoutée(s) à la playlist',
+    de: '$n Foto(s) zur Playlist hinzugefügt',
+    ja: 'プレイリストに $n 枚追加しました',
   );
   String get albumDetailSelect => _l6(
     en: 'Select',
@@ -919,37 +919,53 @@ class AppStrings {
     de: 'Fotos hinzufügen',
     ja: '写真を追加',
   );
+  String get allPlaylistsShortcut => _l6(
+    en: 'All Playlists',
+    zh: '全部播放列表',
+    es: 'Todas las listas',
+    fr: 'Toutes les playlists',
+    de: 'Alle Playlists',
+    ja: 'すべてのプレイリスト',
+  );
+  String get playlistAddPhotosBeforeSend => _l6(
+    en: 'Add photos to this playlist before sending.',
+    zh: '发送前请先为此播放列表添加照片。',
+    es: 'Añade fotos a esta lista antes de enviar.',
+    fr: 'Ajoutez des photos avant d’envoyer.',
+    de: 'Füge zuerst Fotos hinzu, bevor du sendest.',
+    ja: '送信する前に写真を追加してください。',
+  );
   String get albumEmptyInAlbum => _l6(
-    en: 'No photos in this album yet. Tap + to add.',
-    zh: '此相册还没有照片，点 + 添加。',
-    es: 'Este álbum aún no tiene fotos. Pulsa +.',
+    en: 'No photos in this playlist yet. Tap + to add.',
+    zh: '此播放列表还没有照片，点 + 添加。',
+    es: 'Esta lista aún no tiene fotos. Pulsa +.',
     fr: 'Aucune photo. Touchez + pour ajouter.',
     de: 'Noch keine Fotos. Tippe auf +.',
     ja: 'まだ写真がありません。+ で追加。',
   );
   String get albumRemoveFromAlbumTitle => _l6(
-    en: 'Remove from album?',
-    zh: '从相册移除？',
-    es: '¿Quitar del álbum?',
-    fr: 'Retirer de l’album ?',
-    de: 'Aus Album entfernen?',
-    ja: 'アルバムから外しますか？',
+    en: 'Remove from playlist?',
+    zh: '从播放列表移除？',
+    es: '¿Quitar de la lista?',
+    fr: 'Retirer de la playlist ?',
+    de: 'Aus Playlist entfernen?',
+    ja: 'プレイリストから外しますか？',
   );
   String get albumRemoveFromAlbumBody => _l6(
-    en: 'Photos stay in your Personal library. They are only removed from this album.',
-    zh: '照片仍保留在「个人」库，仅从本相册移除。',
-    es: 'Las fotos siguen en Personal; solo se quitan del álbum.',
-    fr: 'Les photos restent dans Perso ; elles quittent seulement cet album.',
-    de: 'Die Fotos bleiben unter „Persönlich“; sie werden nur aus diesem Album entfernt.',
-    ja: '写真は「個人」に残り、このアルバムからだけ外れます。',
+    en: 'Photos stay in your Personal library. They are only removed from this playlist.',
+    zh: '照片仍保留在「个人」库，仅从本播放列表移除。',
+    es: 'Las fotos siguen en Personal; solo se quitan de la lista.',
+    fr: 'Les photos restent dans Perso ; elles quittent seulement cette playlist.',
+    de: 'Die Fotos bleiben unter „Persönlich“; sie werden nur aus dieser Playlist entfernt.',
+    ja: '写真は「個人」に残り、このプレイリストからだけ外れます。',
   );
   String albumRemovedFromAlbumCount(int n) => _l6(
-    en: 'Removed $n from album',
-    zh: '已从相册移除 $n 张',
-    es: 'Se quitaron $n del álbum',
-    fr: '$n retirée(s) de l’album',
-    de: '$n aus Album entfernt',
-    ja: 'アルバムから $n 枚を外しました',
+    en: 'Removed $n from playlist',
+    zh: '已从播放列表移除 $n 张',
+    es: 'Se quitaron $n de la lista',
+    fr: '$n retirée(s) de la playlist',
+    de: '$n aus Playlist entfernt',
+    ja: 'プレイリストから $n 枚を外しました',
   );
   String albumSelectedCount(int n) => _l6(
     en: '$n selected',
@@ -960,28 +976,28 @@ class AppStrings {
     ja: '$n 枚を選択',
   );
   String get albumRenameTooltip => _l6(
-    en: 'Rename album',
-    zh: '重命名相册',
-    es: 'Renombrar álbum',
-    fr: 'Renommer l’album',
-    de: 'Album umbenennen',
-    ja: 'アルバム名を変更',
+    en: 'Rename playlist',
+    zh: '重命名播放列表',
+    es: 'Renombrar lista',
+    fr: 'Renommer la playlist',
+    de: 'Playlist umbenennen',
+    ja: 'プレイリスト名を変更',
   );
   String get albumRenameTitle => _l6(
-    en: 'Rename album',
-    zh: '重命名相册',
-    es: 'Renombrar álbum',
-    fr: 'Renommer l’album',
-    de: 'Album umbenennen',
-    ja: 'アルバム名を変更',
+    en: 'Rename playlist',
+    zh: '重命名播放列表',
+    es: 'Renombrar lista',
+    fr: 'Renommer la playlist',
+    de: 'Playlist umbenennen',
+    ja: 'プレイリスト名を変更',
   );
   String albumRenamedTo(String name) => _l6(
-    en: 'Album renamed to “$name”',
-    zh: '相册已更名为「$name」',
-    es: 'Álbum renombrado: «$name»',
-    fr: 'Album renommé : « $name »',
-    de: 'Album umbenannt in „$name“',
-    ja: 'アルバム名を「$name」に変更しました',
+    en: 'Playlist renamed to “$name”',
+    zh: '播放列表已更名为「$name」',
+    es: 'Lista renombrada: «$name»',
+    fr: 'Playlist renommée : « $name »',
+    de: 'Playlist umbenannt in „$name“',
+    ja: 'プレイリスト名を「$name」に変更しました',
   );
 
   String get displaySettingsSection => _l6(
@@ -1057,12 +1073,12 @@ class AppStrings {
     ja: '写真は安全に暗号化されます。',
   );
   String get newAlbumNameHint => _l6(
-    en: 'Album name',
-    zh: '相册名称',
-    es: 'Nombre',
-    fr: 'Nom',
-    de: 'Name',
-    ja: 'アルバム名',
+    en: 'Playlist name',
+    zh: '播放列表名称',
+    es: 'Nombre de la lista',
+    fr: 'Nom de la playlist',
+    de: 'Playlist-Name',
+    ja: 'プレイリスト名',
   );
 
   String get settingsSectionAccount => _l6(
@@ -2939,6 +2955,78 @@ class AppStrings {
     de: 'Zuerst Rahmen verbinden, dann erneut teilen.',
     ja: '先にフレームを接続してから、もう一度共有してください。',
   );
+  String get shareSheetTitle => _l6(
+    en: 'Sharing to MyFrame',
+    zh: '发送到 MyFrame',
+    es: 'Compartir a MyFrame',
+    fr: 'Partager vers MyFrame',
+    de: 'An MyFrame senden',
+    ja: 'MyFrameに共有',
+  );
+  String get shareSheetOnePhoto => _l6(
+    en: '1 Photo',
+    zh: '1 张照片',
+    es: '1 foto',
+    fr: '1 photo',
+    de: '1 Foto',
+    ja: '写真 1枚',
+  );
+  String shareSheetNPhotos(int n) => _l6(
+    en: '$n Photos',
+    zh: '$n 张照片',
+    es: '$n fotos',
+    fr: '$n photos',
+    de: '$n Fotos',
+    ja: '写真 $n枚',
+  );
+  String get shareSheetDestination => _l6(
+    en: 'Send to',
+    zh: '发送到',
+    es: 'Enviar a',
+    fr: 'Envoyer à',
+    de: 'Senden an',
+    ja: '送信先',
+  );
+  String get shareSheetSend => _l6(
+    en: 'Send',
+    zh: '发送',
+    es: 'Enviar',
+    fr: 'Envoyer',
+    de: 'Senden',
+    ja: '送信',
+  );
+  String get shareSheetSending => _l6(
+    en: 'Sending…',
+    zh: '发送中…',
+    es: 'Enviando…',
+    fr: 'Envoi…',
+    de: 'Senden…',
+    ja: '送信中…',
+  );
+  String shareSheetSendingTo(String name) => _l6(
+    en: 'Sending to $name…',
+    zh: '正在发送到 $name…',
+    es: 'Enviando a $name…',
+    fr: 'Envoi vers $name…',
+    de: 'Senden an $name…',
+    ja: '$name に送信中…',
+  );
+  String get shareSheetPhotoSent => _l6(
+    en: 'Photo Sent',
+    zh: '照片已发送',
+    es: 'Foto enviada',
+    fr: 'Photo envoyée',
+    de: 'Foto gesendet',
+    ja: '写真を送信しました',
+  );
+  String get shareSheetPlaylistSent => _l6(
+    en: 'Playlist Sent',
+    zh: '播放列表已发送',
+    es: 'Lista enviada',
+    fr: 'Playlist envoyée',
+    de: 'Playlist gesendet',
+    ja: 'プレイリストを送信しました',
+  );
   String get overlayOptions => _l6(
     en: 'Overlay options',
     zh: '叠加信息',
@@ -3419,12 +3507,12 @@ class AppStrings {
     ja: 'プランと容量',
   );
   String get plansAndStorageSub => _l6(
-    en: 'Free 300MB, Pro AI + more storage',
-    zh: '免费 300MB，Pro 含 AI 与更大空间',
-    es: '300MB gratis, Pro con IA',
-    fr: '300 Mo gratuit, Pro + plus de stockage',
-    de: '300MB kostenlos, Pro mit KI & mehr Speicher',
-    ja: '無料300MB、ProはAIと大容量',
+    en: 'Free 300MB, Pro with more storage',
+    zh: '免费 300MB，Pro 享更大空间',
+    es: '300MB gratis, Pro con más almacenamiento',
+    fr: '300 Mo gratuit, Pro avec plus de stockage',
+    de: '300MB kostenlos, Pro mit mehr Speicher',
+    ja: '無料300MB、Proは大容量',
   );
   String get helpSettingsTitle => _l6(
     en: 'Help',
@@ -4199,12 +4287,20 @@ class AppStrings {
     ja: 'contact@myframe.ink',
   );
   String get supportEmailSub => _l6(
-    en: 'Copy or share this address to reach support',
-    zh: '复制或分享此邮箱以联系支持',
-    es: 'Copia o comparte el correo',
-    fr: "Copiez l’e-mail d’assistance",
-    de: 'E-Mail kopieren/teilen',
-    ja: 'メールをコピー/共有',
+    en: 'Tap to open your email app',
+    zh: '点击打开邮件应用',
+    es: 'Toca para abrir tu correo',
+    fr: 'Appuyez pour ouvrir votre messagerie',
+    de: 'Tippen, um die Mail-App zu öffnen',
+    ja: 'タップしてメールアプリを開く',
+  );
+  String get supportEmailSubject => _l6(
+    en: 'MyFrame Support Request',
+    zh: 'MyFrame 支持请求',
+    es: 'Solicitud de soporte MyFrame',
+    fr: 'Demande d’assistance MyFrame',
+    de: 'MyFrame-Supportanfrage',
+    ja: 'MyFrame サポートリクエスト',
   );
   String get supportEmailCopied => _l6(
     en: 'Email copied to clipboard',
@@ -4213,6 +4309,14 @@ class AppStrings {
     fr: 'E-mail copié',
     de: 'E-Mail kopiert',
     ja: 'コピーしました',
+  );
+  String get supportEmailOpenFailed => _l6(
+    en: 'Could not open email app. Address copied instead.',
+    zh: '无法打开邮件应用，已改为复制邮箱地址。',
+    es: 'No se pudo abrir el correo. Se copió la dirección.',
+    fr: 'Impossible d’ouvrir l’app mail. Adresse copiée.',
+    de: 'Mail-App nicht geöffnet. Adresse kopiert.',
+    ja: 'メールアプリを開けませんでした。アドレスをコピーしました。',
   );
   String get faqUnavailableTitle => _l6(
     en: 'Help unavailable',
@@ -4939,12 +5043,12 @@ class AppStrings {
     ja: '家族',
   );
   String get familySubtitle => _l6(
-    en: 'Invite members and manage shared frames.',
-    zh: '邀请成员并管理共享相框。',
-    es: 'Invita y comparte marcos.',
-    fr: 'Invitez et partagez les cadres.',
-    de: 'Mitglieder einladen und Rahmen teilen.',
-    ja: 'メンバーを招待し共有フレームを管理。',
+    en: 'Invite family members to share photos to your frames from anywhere.',
+    zh: '邀请家人加入，随时随地向相框发送照片。',
+    es: 'Invita a tu familia a enviar fotos a tus marcos desde cualquier lugar.',
+    fr: 'Invitez votre famille à envoyer des photos à vos cadres où qu’ils soient.',
+    de: 'Lade Familienmitglieder ein, Fotos von überall an deine Rahmen zu senden.',
+    ja: '家族を招待して、どこからでもフレームに写真を送れます。',
   );
   String get inviteFamily => _l6(
     en: 'Invite family',
@@ -4979,27 +5083,114 @@ class AppStrings {
     ja: 'MyFrameの家族: 家族タブでコードを共有 · https://myframe.ink/join',
   );
 
-  /// Body for SMS / share sheets (InkJoy-like: code + link).
+  /// Body for SMS / share sheets — follows UI locale (zh / en).
+  /// Prefer [ShareService.familyInviteShareBody] for new call sites.
   String familyInviteShareBody(
     String familyName,
     String inviteCode,
     String webUrl,
   ) {
-    return switch (locale) {
-      AppLocale.zh =>
-        '邀请你加入「$familyName」。\n邀请码：$inviteCode\n在 MyFrame 应用：「家庭」→「使用邀请码加入」\n$webUrl',
-      AppLocale.es =>
-        'Únete a «$familyName» en MyFrame.\nCódigo: $inviteCode\nApp → Family → Join with code\n$webUrl',
-      AppLocale.fr =>
-        'Rejoins «$familyName» sur MyFrame.\nCode : $inviteCode\nApp ▸ Family ▸ Join with code\n$webUrl',
-      AppLocale.de =>
-        'Komm zu «$familyName» bei MyFrame.\nCode: $inviteCode\nApp ▸ Family ▸ Join with code\n$webUrl',
-      AppLocale.ja =>
-        '「$familyName」の MyFrame に参加してください。\n招待コード：$inviteCode\nアプリ：家族 → 招待コードで参加\n$webUrl',
-      _ =>
-        'Join "$familyName" on MyFrame.\nInvite code: $inviteCode\nIn the app: Family → Join with code.\n$webUrl',
-    };
+    final code = inviteCode.trim().toUpperCase();
+    final lang = locale == AppLocale.zh ? 'zh' : 'en';
+    var url = webUrl.trim();
+    if (url.isNotEmpty) {
+      final re = RegExp(r'([?&])lang=[^&]*', caseSensitive: false);
+      if (re.hasMatch(url)) {
+        url = url.replaceFirstMapped(re, (m) => '${m[1]}lang=$lang');
+      } else {
+        url = url.contains('?') ? '$url&lang=$lang' : '$url?lang=$lang';
+      }
+    }
+    if (locale == AppLocale.zh) {
+      return '点击链接或输入邀请码【$code】加入我的家庭相框，一起分享精彩照片！\n$url';
+    }
+    return 'Use invite code [$code] or tap the link to join my MyFrame family and share photos together!\n$url';
   }
+
+  String get familyInviteShareSubject => _l6(
+    en: 'Join my MyFrame Family',
+    zh: '加入我的 MyFrame 艺术相框家庭',
+    es: 'Únete a mi familia MyFrame',
+    fr: 'Rejoignez ma famille MyFrame',
+    de: 'Tritt meiner MyFrame-Familie bei',
+    ja: 'MyFrameの家族に参加',
+  );
+
+  String familyMemberRemoved(String name) => _l6(
+    en: 'Removed $name from the family.',
+    zh: '已从家庭圈移除 $name',
+    es: 'Se eliminó a $name de la familia.',
+    fr: '$name a été retiré(e) de la famille.',
+    de: '$name wurde aus der Familie entfernt.',
+    ja: '$name を家族から削除しました。',
+  );
+
+  String get familyRemoveMemberTitle => _l6(
+    en: 'Remove member?',
+    zh: '移除成员？',
+    es: '¿Quitar miembro?',
+    fr: 'Retirer le membre ?',
+    de: 'Mitglied entfernen?',
+    ja: 'メンバーを削除しますか？',
+  );
+
+  String familyRemoveMemberBody(String name) => _l6(
+    en:
+        'Unlink $name from this family? They will no longer be able to access shared frames.',
+    zh: '确定要从家庭圈中移除「$name」吗？移除后对方将无法继续访问共享相框。',
+    es:
+        '¿Desvincular a $name de esta familia? Ya no podrá acceder a los marcos compartidos.',
+    fr:
+        'Dissocier $name de cette famille ? Il/elle n’aura plus accès aux cadres partagés.',
+    de:
+        '$name aus der Familie entfernen? Der Zugriff auf geteilte Rahmen endet.',
+    ja: '$name をこの家族から外しますか？共有フレームにはアクセスできなくなります。',
+  );
+
+  String get familyRemoveMemberConfirm => _l6(
+    en: 'Remove',
+    zh: '确定移除',
+    es: 'Quitar',
+    fr: 'Retirer',
+    de: 'Entfernen',
+    ja: '削除する',
+  );
+
+  String get familyMembersEmptyHint => _l6(
+    en: 'No other members yet. Share the invite code so family can join.',
+    zh: '还没有其他成员。分享邀请码，家人即可加入。',
+    es: 'Aún no hay más miembros. Comparte el código de invitación.',
+    fr: 'Pas encore d’autres membres. Partagez le code d’invitation.',
+    de: 'Noch keine weiteren Mitglieder. Teile den Einladungscode.',
+    ja: 'まだ他のメンバーはいません。招待コードを共有してください。',
+  );
+
+  String get familyMembersNeedCloudHint => _l6(
+    en: 'Create or join a cloud family to see members linked to your frames.',
+    zh: '创建或加入云端家庭后，即可查看与相框关联的成员。',
+    es: 'Crea o únete a una familia en la nube para ver los miembros.',
+    fr: 'Créez ou rejoignez une famille cloud pour voir les membres.',
+    de: 'Erstelle oder tritt einer Cloud-Familie bei, um Mitglieder zu sehen.',
+    ja: 'クラウド家族を作成または参加すると、メンバーが表示されます。',
+  );
+
+  String get familyMemberUnlinkedSub => _l6(
+    en: 'They can no longer access shared frames.',
+    zh: '对方将无法继续访问共享相框。',
+    es: 'Ya no podrá acceder a los marcos compartidos.',
+    fr: 'Plus d’accès aux cadres partagés.',
+    de: 'Kein Zugriff mehr auf geteilte Rahmen.',
+    ja: '共有フレームにはアクセスできなくなります。',
+  );
+
+  String get familyMemberRemoveFailed => _l6(
+    en: 'Could not unlink this member. Try again.',
+    zh: '无法移除该成员，请重试。',
+    es: 'No se pudo desvincular. Inténtalo de nuevo.',
+    fr: 'Impossible de dissocier ce membre. Réessayez.',
+    de: 'Mitglied konnte nicht entfernt werden. Erneut versuchen.',
+    ja: 'メンバーを外せませんでした。もう一度お試しください。',
+  );
 
   String joinFamilyDefaultLabel(String normalizedCode) {
     final tail = normalizedCode.length <= 4
@@ -5153,77 +5344,221 @@ class AppStrings {
     ja: '参加',
   );
   String get joinFamilySuccess => _l6(
-    en: 'Saved. You\'ll appear in their list when sync is enabled.',
-    zh: '已保存（同步开启后可显示在其列表）。',
-    es: 'Guardado.',
-    fr: 'Enregistré.',
-    de: 'Gespeichert.',
-    ja: '保存しました。',
+    en: 'You joined the family. Shared frames will appear on Home.',
+    zh: '已加入家庭。共享相框将出现在首页。',
+    es: 'Te uniste. Los marcos compartidos aparecerán en Inicio.',
+    fr: 'Vous avez rejoint. Les cadres partagés apparaîtront sur l’accueil.',
+    de: 'Beigetreten. Geteilte Rahmen erscheinen auf dem Startbildschirm.',
+    ja: '家族に参加しました。共有フレームがホームに表示されます。',
+  );
+  String get joinFamilySuccessTitle => _l6(
+    en: 'Welcome to the family',
+    zh: '已加入家庭',
+    es: 'Bienvenido a la familia',
+    fr: 'Bienvenue dans la famille',
+    de: 'Willkommen in der Familie',
+    ja: '家族へようこそ',
   );
   String get joinFamilyCodeTooShort => _l6(
-    en: 'Enter the full 8-character invite code.',
-    zh: '请输入完整的 8 位邀请码。',
-    es: 'Introduce el código de 8 caracteres.',
-    fr: 'Saisissez le code à 8 caractères.',
-    de: 'Bitte den vollständigen 8-stelligen Code eingeben.',
-    ja: '8文字の招待コードを入力してください。',
+    en: 'Invite codes are exactly 8 characters. Check for missing letters.',
+    zh: '邀请码为 8 位字符，请检查是否漏输。',
+    es: 'El código tiene exactamente 8 caracteres.',
+    fr: 'Le code fait exactement 8 caractères.',
+    de: 'Codes haben genau 8 Zeichen.',
+    ja: '招待コードは正確に8文字です。',
+  );
+  String get joinFamilyCodeTooShortTitle => _l6(
+    en: 'Code incomplete',
+    zh: '邀请码不完整',
+    es: 'Código incompleto',
+    fr: 'Code incomplet',
+    de: 'Code unvollständig',
+    ja: 'コードが不完全',
   );
   String get joinFamilyOwnCodeHint => _l6(
-    en: 'That\'s your own invite code — share it instead of entering it here.',
-    zh: '这是你自己的邀请码，请分享给别人，不要在这里输入。',
-    es: 'Ese es tu propio código.',
-    fr: 'C’est votre code d’invitation.',
-    de: 'Das ist dein eigener Code.',
-    ja: 'それは自分の招待コードです。',
+    en: 'That\'s your own invite code — share it with family instead of joining here.',
+    zh: '这是你自己的邀请码，请分享给家人，而不是在这里加入。',
+    es: 'Ese es tu propio código — compártelo en lugar de unirte aquí.',
+    fr: 'C’est votre code — partagez-le au lieu de rejoindre ici.',
+    de: 'Das ist dein eigener Code — teile ihn, statt beizutreten.',
+    ja: 'それは自分の招待コードです。参加せず共有してください。',
+  );
+  String get joinFamilyOwnCodeTitle => _l6(
+    en: 'That\'s your code',
+    zh: '这是你的邀请码',
+    es: 'Es tu código',
+    fr: 'C’est votre code',
+    de: 'Dein eigener Code',
+    ja: '自分のコードです',
+  );
+  String get joinFamilyAlreadyMember => _l6(
+    en: 'You already joined this family. Shared frames should be on Home.',
+    zh: '你已经加入了这个家庭。共享相框应已出现在首页。',
+    es: 'Ya eres miembro. Los marcos deberían estar en Inicio.',
+    fr: 'Vous êtes déjà membre. Les cadres devraient être sur l’accueil.',
+    de: 'Du bist bereits Mitglied. Rahmen sollten auf dem Startbildschirm sein.',
+    ja: 'すでにこの家族のメンバーです。共有フレームはホームにあります。',
+  );
+  String get joinFamilyAlreadyMemberTitle => _l6(
+    en: 'Already joined',
+    zh: '已加入',
+    es: 'Ya unido',
+    fr: 'Déjà membre',
+    de: 'Bereits beigetreten',
+    ja: 'すでに参加済み',
   );
   String get joinFamilyNetworkError => _l6(
-    en: 'Could not join — check login and internet, then try again.',
-    zh: '加入失败，请检查登录与网络。',
-    es: 'No se pudo unir.',
-    fr: 'Échec de la jonction.',
-    de: 'Beitritt fehlgeschlagen.',
-    ja: '参加できませんでした。',
+    en: 'Couldn\'t reach the server. Check your connection and try again.',
+    zh: '无法连接服务器，请检查网络后重试。',
+    es: 'No se pudo conectar. Revisa tu red e inténtalo de nuevo.',
+    fr: 'Serveur injoignable. Vérifiez le réseau et réessayez.',
+    de: 'Server nicht erreichbar. Verbindung prüfen und erneut versuchen.',
+    ja: 'サーバーに接続できません。ネットワークを確認して再試行してください。',
+  );
+  String get joinFamilyNetworkErrorTitle => _l6(
+    en: 'Connection issue',
+    zh: '网络异常',
+    es: 'Problema de conexión',
+    fr: 'Problème de connexion',
+    de: 'Verbindungsproblem',
+    ja: '接続エラー',
   );
   String get joinFamilyCodeRequired => _l6(
-    en: 'Enter an invite code first.',
-    zh: '请先输入邀请码。',
-    es: 'Introduce un código primero.',
-    fr: 'Saisissez d’abord un code.',
-    de: 'Bitte zuerst einen Code eingeben.',
-    ja: '先に招待コードを入力してください。',
+    en: 'Paste or type the 8-character invite code first.',
+    zh: '请先粘贴或输入 8 位邀请码。',
+    es: 'Primero pega o escribe el código de 8 caracteres.',
+    fr: 'Collez ou saisissez d’abord le code à 8 caractères.',
+    de: 'Bitte zuerst den 8‑stelligen Code eingeben.',
+    ja: '先に8文字の招待コードを入力してください。',
+  );
+  String get joinFamilyCodeRequiredTitle => _l6(
+    en: 'Code needed',
+    zh: '需要邀请码',
+    es: 'Código requerido',
+    fr: 'Code requis',
+    de: 'Code erforderlich',
+    ja: 'コードが必要です',
   );
   String get joinFamilyNotFound => _l6(
-    en: 'No family matches that invite code.',
-    zh: '找不到该邀请码对应的家庭。',
-    es: 'Ninguna familia coincide con ese código.',
-    fr: 'Aucune famille ne correspond à ce code.',
-    de: 'Keine Familie zu diesem Code gefunden.',
-    ja: 'その招待コードの家族が見つかりません。',
+    en: 'No family matches that code. Ask them to share a fresh invite or tap New code.',
+    zh: '找不到该邀请码。请让对方重新分享，或点击「新邀请码」。',
+    es: 'Ninguna familia coincide. Pide un código nuevo.',
+    fr: 'Aucune famille trouvée. Demandez un nouveau code.',
+    de: 'Keine Familie gefunden. Bitte um einen neuen Code bitten.',
+    ja: '一致する家族がありません。新しいコードを共有してもらってください。',
+  );
+  String get joinFamilyNotFoundTitle => _l6(
+    en: 'Code not found',
+    zh: '邀请码无效',
+    es: 'Código no encontrado',
+    fr: 'Code introuvable',
+    de: 'Code nicht gefunden',
+    ja: 'コードが見つかりません',
   );
   String get joinFamilyInvalidCode => _l6(
-    en: 'That invite code is invalid.',
-    zh: '邀请码无效。',
-    es: 'Código de invitación no válido.',
-    fr: 'Code d’invitation invalide.',
-    de: 'Ungültiger Einladungscode.',
-    ja: '招待コードが無効です。',
+    en: 'That invite code isn\'t valid. Double-check characters — O/0 and I/1 look alike.',
+    zh: '邀请码无效。请核对字符（注意 O/0、I/1 易混淆）。',
+    es: 'Código no válido. Revisa caracteres parecidos (O/0, I/1).',
+    fr: 'Code invalide. Vérifiez les caractères (O/0, I/1).',
+    de: 'Ungültiger Code. Zeichen prüfen (O/0, I/1).',
+    ja: '招待コードが無効です。似た文字（O/0、I/1）を確認してください。',
+  );
+  String get joinFamilyInvalidCodeTitle => _l6(
+    en: 'Invalid code',
+    zh: '无效邀请码',
+    es: 'Código inválido',
+    fr: 'Code invalide',
+    de: 'Ungültiger Code',
+    ja: '無効なコード',
   );
   String get joinFamilyNeedLogin => _l6(
-    en: 'Sign in to join a family with this code.',
-    zh: '请先登录后再使用邀请码加入。',
-    es: 'Inicia sesión para unirte.',
-    fr: 'Connectez-vous pour rejoindre.',
-    de: 'Zum Beitreten bitte anmelden.',
-    ja: '参加するにはサインインしてください。',
+    en: 'Sign in to your MyFrame account before joining a family.',
+    zh: '请先登录 MyFrame 账号，再加入家庭。',
+    es: 'Inicia sesión en MyFrame antes de unirte.',
+    fr: 'Connectez-vous à MyFrame avant de rejoindre.',
+    de: 'Bitte bei MyFrame anmelden, bevor du beitrittst.',
+    ja: '家族に参加する前に MyFrame にサインインしてください。',
+  );
+  String get joinFamilyNeedLoginTitle => _l6(
+    en: 'Sign in required',
+    zh: '需要登录',
+    es: 'Inicio de sesión requerido',
+    fr: 'Connexion requise',
+    de: 'Anmeldung erforderlich',
+    ja: 'サインインが必要です',
+  );
+  String get joinFamilyBirthdayRequiredTitle => _l6(
+    en: 'Birthday required',
+    zh: '需要生日',
+    es: 'Cumpleaños requerido',
+    fr: 'Date de naissance requise',
+    de: 'Geburtstag erforderlich',
+    ja: '誕生日が必要です',
+  );
+  String get familyCodeRegenerateFailedTitle => _l6(
+    en: 'Couldn\'t refresh code',
+    zh: '无法更新邀请码',
+    es: 'No se pudo actualizar',
+    fr: 'Impossible d’actualiser',
+    de: 'Code nicht aktualisiert',
+    ja: 'コードを更新できません',
+  );
+  String get familyCodeRegenerateFailed => _l6(
+    en: 'We couldn\'t create a new invite code. Check your connection and try again.',
+    zh: '无法生成新邀请码，请检查网络后重试。',
+    es: 'No se pudo crear un código nuevo. Revisa la conexión.',
+    fr: 'Impossible de créer un nouveau code. Vérifiez le réseau.',
+    de: 'Neuer Code fehlgeschlagen. Verbindung prüfen.',
+    ja: '新しい招待コードを作成できませんでした。接続を確認してください。',
+  );
+  String get familyCodeRegeneratedTitle => _l6(
+    en: 'New code ready',
+    zh: '新邀请码已生成',
+    es: 'Nuevo código listo',
+    fr: 'Nouveau code prêt',
+    de: 'Neuer Code bereit',
+    ja: '新しいコードの準備完了',
+  );
+  String get familyCloudCreateFailedTitle => _l6(
+    en: 'Couldn\'t create family',
+    zh: '无法创建家庭',
+    es: 'No se pudo crear la familia',
+    fr: 'Création impossible',
+    de: 'Familie nicht erstellt',
+    ja: '家族を作成できません',
+  );
+  String get familyCloudCreateFailed => _l6(
+    en: 'Cloud family setup failed. Check login and internet, then try again.',
+    zh: '云端家庭创建失败，请检查登录与网络后重试。',
+    es: 'Falló la creación. Revisa inicio de sesión y red.',
+    fr: 'Échec de création. Vérifiez connexion et réseau.',
+    de: 'Erstellung fehlgeschlagen. Login und Netz prüfen.',
+    ja: 'クラウド家族の作成に失敗しました。ログインとネットワークを確認してください。',
+  );
+  String get familyCloudCreateSuccessTitle => _l6(
+    en: 'Family created',
+    zh: '家庭已创建',
+    es: 'Familia creada',
+    fr: 'Famille créée',
+    de: 'Familie erstellt',
+    ja: '家族を作成しました',
+  );
+  String get familyCloudCreateSuccess => _l6(
+    en: 'Your invite code is ready. Share it so family can send to your frames from anywhere.',
+    zh: '邀请码已就绪。分享给家人，他们即可随时向你的相框发送照片。',
+    es: 'Tu código está listo. Compártelo para que envíen fotos a tus marcos.',
+    fr: 'Votre code est prêt. Partagez-le pour envoyer des photos à vos cadres.',
+    de: 'Dein Code ist bereit. Teile ihn, damit Familie Fotos an deine Rahmen senden kann.',
+    ja: '招待コードの準備ができました。共有すると家族がどこからでもフレームに送れます。',
   );
 
   String get familyCloudCreateHint => _l6(
-    en: 'Sign in sync: create your cloud family so codes work across devices.',
-    zh: '登录后创建云端家庭，邀请码可多设备同步。',
-    es: 'Crea familia en la nube iniciando sesión.',
-    fr: 'Créez la famille cloud pour sincroniser.',
-    de: 'Cloud‑Familie erstellen (mit Login).',
-    ja: 'サインインしてクラウドの家族グループを作成',
+    en: 'Create a cloud family to share your frames. Members who join can send photos to those frames from anywhere.',
+    zh: '创建云端家庭以共享相框。加入的成员可随时随地向这些相框发送照片。',
+    es: 'Crea una familia en la nube para compartir marcos. Los miembros pueden enviar fotos desde cualquier lugar.',
+    fr: 'Créez une famille cloud pour partager vos cadres. Les membres peuvent envoyer des photos de n’importe où.',
+    de: 'Cloud‑Familie erstellen, um Rahmen zu teilen. Mitglieder können von überall Fotos senden.',
+    ja: 'クラウドの家族を作成してフレームを共有。メンバーはどこからでも写真を送れます。',
   );
   String get familyCloudCreateLabel => _l6(
     en: 'Create cloud family',
@@ -5358,6 +5693,43 @@ class AppStrings {
     fr: 'Envoi $cur / $total…',
     de: 'Sende $cur von $total…',
     ja: '送信中 $cur / $total…',
+  );
+
+  /// Compact button label: "Sending (1/3)"
+  String progressSendingCount(int cur, int total) => _l6(
+    en: 'Sending ($cur/$total)',
+    zh: '正在发送 ($cur/$total)',
+    es: 'Enviando ($cur/$total)',
+    fr: 'Envoi ($cur/$total)',
+    de: 'Senden ($cur/$total)',
+    ja: '送信中 ($cur/$total)',
+  );
+
+  String get progressSendingPhotos => _l6(
+    en: 'Sending photos',
+    zh: '正在发送照片',
+    es: 'Enviando fotos',
+    fr: 'Envoi des photos',
+    de: 'Fotos senden',
+    ja: '写真を送信中',
+  );
+
+  String progressConfiguringFrame(int pct) => _l6(
+    en: 'Configuring frame ($pct%)',
+    zh: '正在设置相框 ($pct%)',
+    es: 'Configurando marco ($pct%)',
+    fr: 'Configuration du cadre ($pct%)',
+    de: 'Rahmen wird eingerichtet ($pct%)',
+    ja: 'フレーム設定中 ($pct%)',
+  );
+
+  String get progressConfiguringFrameBusy => _l6(
+    en: 'Configuring frame',
+    zh: '正在设置相框',
+    es: 'Configurando marco',
+    fr: 'Configuration du cadre',
+    de: 'Rahmen wird eingerichtet',
+    ja: 'フレーム設定中',
   );
   String get slideshowBatchTitle => _l6(
     en: 'Slideshow queue',
@@ -5964,12 +6336,12 @@ class AppStrings {
         ja: '家族招待の使い方は？',
       ),
       answer: _l6(
-        en: 'Family tab shows your invite code and QR link (myframe.ink/join). Share it so others install MyFrame and join your group. They can then send to your paired frame.',
-        zh: '「家庭」页显示邀请码和二维码链接（myframe.ink/join）。分享给家人安装 MyFrame 并加入您的家庭组，即可向已配对的相框发送照片。',
-        es: 'La pestaña Familia muestra código y QR (myframe.ink/join) para unirse.',
-        fr: 'L’onglet Famille affiche code et QR (myframe.ink/join).',
-        de: 'Register Familie zeigt Code und QR (myframe.ink/join).',
-        ja: '家族タブのコード/QR（myframe.ink/join）を共有して参加してもらいます。',
+        en: 'Family tab shows your invite code and QR (myframe.ink/join). When someone joins, they get access to your provisioned frames and can send photos from their phone anywhere — like WeChat friend invite, without needing the frame nearby or BLE pairing.',
+        zh: '「家庭」页显示邀请码和二维码（myframe.ink/join）。家人加入后即可访问您已配网的相框，随时随地从手机发送照片——类似微信好友邀请，无需靠近相框或蓝牙配对。',
+        es: 'Comparte el código/QR. Al unirse, pueden enviar fotos a tus marcos desde cualquier lugar.',
+        fr: 'Partagez le code/QR. Une fois rejoints, ils envoient des photos à vos cadres de n’importe où.',
+        de: 'Code/QR teilen. Nach Beitritt können Mitglieder Fotos von überall an deine Rahmen senden.',
+        ja: 'コード/QRを共有。参加後、メンバーはどこからでもあなたのフレームに写真を送れます。',
       ),
     ),
     FaqItem(
@@ -6512,6 +6884,146 @@ class AppStrings {
         ja: 'プレイリストに重複した写真があります — 各スロットに異なる画像を選択してください。',
       );
 
+  String get maxImagesAtATime => _l6(
+        en: 'Max 10 images can be selected at a time.',
+        zh: '一次最多选择 10 张图片。',
+        es: 'Máximo 10 imágenes a la vez.',
+        fr: 'Maximum 10 images à la fois.',
+        de: 'Maximal 10 Bilder auf einmal.',
+        ja: '一度に最大10枚まで選択できます。',
+      );
+
+  String get preparingPlaylist => _l6(
+        en: 'Preparing Playlist…',
+        zh: '正在准备播放列表…',
+        es: 'Preparando lista…',
+        fr: 'Préparation de la playlist…',
+        de: 'Playlist wird vorbereitet…',
+        ja: 'プレイリストを準備中…',
+      );
+
+  String albumDeleteConfirm(String name) => _l6(
+        en: 'Delete "$name" and all its photos?',
+        zh: '删除「$name」及其全部照片？',
+        es: '¿Eliminar "$name" y todas sus fotos?',
+        fr: 'Supprimer « $name » et toutes ses photos ?',
+        de: '„$name“ und alle Fotos löschen?',
+        ja: '「$name」とその写真をすべて削除しますか？',
+      );
+
+  /// Playlist delete confirmation (Gallery ▸ Playlists).
+  String get deleteAlbumTitle => _l6(
+        en: 'Delete Playlist',
+        zh: '删除播放列表',
+        es: 'Eliminar lista',
+        fr: 'Supprimer la playlist',
+        de: 'Playlist löschen',
+        ja: 'プレイリストを削除',
+      );
+
+  String get deleteAlbumStopsPlaylistBody => _l6(
+        en: 'Deleting the playlist will stop it on the frame.',
+        zh: '删除播放列表将停止相框上的轮播。',
+        es: 'Eliminar la lista detendrá la reproducción en el marco.',
+        fr: 'Supprimer la playlist arrêtera la lecture sur le cadre.',
+        de: 'Das Löschen der Playlist stoppt die Wiedergabe am Rahmen.',
+        ja: 'プレイリストを削除するとフレーム上の再生が停止します。',
+      );
+
+  String deleteAlbumConfirmDetail(String name) => _l6(
+        en: 'Delete "$name"?\n\nDeleting the playlist will stop it on the frame.',
+        zh: '删除「$name」？\n\n删除播放列表将停止相框上的轮播。',
+        es: '¿Eliminar "$name"?\n\nEliminar la lista detendrá la reproducción en el marco.',
+        fr: 'Supprimer « $name » ?\n\nSupprimer la playlist arrêtera la lecture sur le cadre.',
+        de: '„$name“ löschen?\n\nDas Löschen stoppt die Wiedergabe am Rahmen.',
+        ja: '「$name」を削除しますか？\n\nプレイリストを削除するとフレーム上の再生が停止します。',
+      );
+
+  String get albumDeletedToast => _l6(
+        en: 'Playlist deleted',
+        zh: '播放列表已删除',
+        es: 'Lista eliminada',
+        fr: 'Playlist supprimée',
+        de: 'Playlist gelöscht',
+        ja: 'プレイリストを削除しました',
+      );
+
+  String get deletingAlbum => _l6(
+        en: 'Deleting…',
+        zh: '正在删除…',
+        es: 'Eliminando…',
+        fr: 'Suppression…',
+        de: 'Wird gelöscht…',
+        ja: '削除中…',
+      );
+
+  String get deletePhotoTitle => _l6(
+        en: 'Delete Photo?',
+        zh: '删除照片？',
+        es: '¿Eliminar foto?',
+        fr: 'Supprimer la photo ?',
+        de: 'Foto löschen?',
+        ja: '写真を削除しますか？',
+      );
+
+  String get deletePhotoAccountBody => _l6(
+        en:
+            'This permanently deletes the photo from your account. It is also removed from any albums. The frame display is not stopped.',
+        zh: '将从账号永久删除此照片，并同步从所有相册移除。不会停止相框当前显示。',
+        es:
+            'Esto elimina la foto de tu cuenta y de cualquier álbum. La pantalla del marco no se detiene.',
+        fr:
+            'Cela supprime définitivement la photo de votre compte et de tous les albums. L’affichage du cadre n’est pas arrêté.',
+        de:
+            'Dies löscht das Foto dauerhaft aus dem Konto und aus allen Alben. Die Rahmenanzeige wird nicht gestoppt.',
+        ja: 'アカウントとすべてのアルバムからこの写真を完全に削除します。フレーム表示は停止しません。',
+      );
+
+  String get photoDeletedToast => _l6(
+        en: 'Photo deleted',
+        zh: '照片已删除',
+        es: 'Foto eliminada',
+        fr: 'Photo supprimée',
+        de: 'Foto gelöscht',
+        ja: '写真を削除しました',
+      );
+
+  String get frameConnectedBanner => _l6(
+        en: 'Your Frame is Connected!',
+        zh: '相框已连接！',
+        es: '¡Tu marco está conectado!',
+        fr: 'Votre cadre est connecté !',
+        de: 'Dein Rahmen ist verbunden!',
+        ja: 'フレームが接続されました！',
+      );
+
+  String get frameConnectedHint => _l6(
+        en: 'Give your frame a name and start sending photos.',
+        zh: '为相框命名，然后开始发送照片。',
+        es: 'Ponle un nombre al marco y empieza a enviar fotos.',
+        fr: 'Donnez un nom à votre cadre et envoyez des photos.',
+        de: 'Gib dem Rahmen einen Namen und sende Fotos.',
+        ja: 'フレームに名前を付けて写真の送信を始めましょう。',
+      );
+
+  String get frameNameHintExample => _l6(
+        en: 'e.g. Living Room Frame',
+        zh: '例如：客厅相框',
+        es: 'p. ej. Marco del salón',
+        fr: 'ex. Cadre salon',
+        de: 'z. B. Wohnzimmer-Rahmen',
+        ja: '例：リビングのフレーム',
+      );
+
+  String get nameYourFrameTitle => _l6(
+        en: 'Name Your Frame',
+        zh: '命名你的相框',
+        es: 'Nombra tu marco',
+        fr: 'Nommez votre cadre',
+        de: 'Rahmen benennen',
+        ja: 'フレームに名前を付ける',
+      );
+
   String get saveFrameProfileFailed => _l6(
         en: 'Could not save frame profile. Try again.',
         zh: '无法保存相框配置。请重试。',
@@ -6771,10 +7283,10 @@ class AppStrings {
         ja: 'ネットワークを選ぶ（またはSSID入力）、パスワードを入れて接続 — 認証情報はBluetoothでフレームへ送信されます。',
       );
   String get wifiCurrentNetwork => _l6(
-        en: 'This phone’s Wi‑Fi',
-        zh: '本机 Wi‑Fi',
-        es: 'Wi‑Fi de este teléfono',
-        fr: 'Wi‑Fi de ce téléphone',
+        en: 'Current Phone Wi‑Fi',
+        zh: '当前手机 Wi‑Fi',
+        es: 'Wi‑Fi del teléfono',
+        fr: 'Wi‑Fi du téléphone',
         de: 'WLAN dieses Telefons',
         ja: 'このスマホのWi‑Fi',
       );

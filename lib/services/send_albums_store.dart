@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'gallery_image_cache.dart';
+import 'local_storage_service.dart';
 
 /// Named albums used from the Send flow (paths on device).
 class SendAlbumEntry {
@@ -26,37 +25,53 @@ class SendAlbumsStore {
   SendAlbumsStore._();
   static final SendAlbumsStore instance = SendAlbumsStore._();
 
-  static const _k = 'send_albums_v1';
-  static const _kAuthUserId = 'settings_auth_user_id';
-
-  static Future<String> _scopedKey() async {
-    final p = await SharedPreferences.getInstance();
-    final uid = p.getString(_kAuthUserId) ?? 'guest';
-    return '${_k}_$uid';
-  }
-
   List<SendAlbumEntry> _albums = [];
+
+  /// Local timestamp id → cloud id after [rebindAlbumId].
+  final Map<String, String> _idAliases = {};
 
   List<SendAlbumEntry> get albums => List.unmodifiable(_albums);
 
-  Future<void> load() async {
-    final p = await SharedPreferences.getInstance();
-    final key = await _scopedKey();
-    final raw = p.getString(key);
+  /// Follow rebind aliases so UI that still holds a local id finds the album.
+  String resolveAlbumId(String albumId) {
+    var cur = albumId.trim();
+    if (cur.isEmpty) return cur;
+    final seen = <String>{};
+    while (_idAliases.containsKey(cur) && seen.add(cur)) {
+      cur = _idAliases[cur]!;
+    }
+    return cur;
+  }
+
+  SendAlbumEntry? albumById(String albumId) {
+    final id = resolveAlbumId(albumId);
+    for (final a in _albums) {
+      if (a.id == id) return a;
+    }
+    return null;
+  }
+
+  Future<void> load({String? userId}) async {
+    final raw = await LocalStorageService.instance.getString(
+      LocalStorageService.sendAlbumsBase,
+      userId: userId,
+    );
     if (raw == null || raw.isEmpty) {
       _albums = [];
       return;
     }
     try {
       final list = jsonDecode(raw) as List<dynamic>;
-      _albums = list.map((e) => SendAlbumEntry.fromJson(Map<String, dynamic>.from(e as Map))).toList();
-      await _pruneMissingPaths();
+      _albums = list
+          .map((e) => SendAlbumEntry.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      await _pruneMissingPaths(userId: userId);
     } catch (_) {
       _albums = [];
     }
   }
 
-  Future<void> _pruneMissingPaths() async {
+  Future<void> _pruneMissingPaths({String? userId}) async {
     var changed = false;
     final next = <SendAlbumEntry>[];
     for (final a in _albums) {
@@ -72,13 +87,17 @@ class SendAlbumsStore {
     }
     if (changed) {
       _albums = next;
-      await _persist();
+      await _persist(userId: userId);
     }
   }
 
   Future<void> createAlbum(String name, List<String> initialPaths) async {
     await load();
-    final stored = await GalleryImageCache.persistPaths(initialPaths);
+    // Prefer fast stage — picker already durable-copied; avoid JPEG re-encode lag.
+    final stored = await GalleryImageCache.persistPaths(
+      initialPaths,
+      normalizeJpeg: false,
+    );
     final id = '${DateTime.now().millisecondsSinceEpoch}';
     _albums.insert(
       0,
@@ -89,8 +108,12 @@ class SendAlbumsStore {
 
   Future<void> addPathsToAlbum(String albumId, List<String> more) async {
     await load();
-    final stored = await GalleryImageCache.persistPaths(more);
-    final i = _albums.indexWhere((a) => a.id == albumId);
+    final stored = await GalleryImageCache.persistPaths(
+      more,
+      normalizeJpeg: false,
+    );
+    final id = resolveAlbumId(albumId);
+    final i = _albums.indexWhere((a) => a.id == id);
     if (i < 0) return;
     final cur = List<String>.from(_albums[i].paths);
     for (final t in stored) {
@@ -100,10 +123,38 @@ class SendAlbumsStore {
     await _persist();
   }
 
+  /// Replace membership in-place (used when re-sending an updated playlist).
+  /// Returns false if the album id is missing.
+  Future<bool> replaceAlbumPaths(String albumId, List<String> paths) async {
+    await load();
+    final id = resolveAlbumId(albumId);
+    final i = _albums.indexWhere((a) => a.id == id);
+    if (i < 0) return false;
+    final stored = await GalleryImageCache.persistPaths(
+      paths,
+      normalizeJpeg: false,
+    );
+    // Dedupe by path so create+send never doubles the same file.
+    final unique = <String>[];
+    for (final p in stored) {
+      final t = p.trim();
+      if (t.isEmpty || unique.contains(t)) continue;
+      unique.add(t);
+    }
+    _albums[i] = SendAlbumEntry(
+      id: _albums[i].id,
+      name: _albums[i].name,
+      paths: unique,
+    );
+    await _persist();
+    return true;
+  }
+
   /// Removes paths from the album only (does not delete files or Personal library entries).
   Future<void> removePathsFromAlbum(String albumId, Iterable<String> toRemove) async {
     await load();
-    final i = _albums.indexWhere((a) => a.id == albumId);
+    final id = resolveAlbumId(albumId);
+    final i = _albums.indexWhere((a) => a.id == id);
     if (i < 0) return;
     final removeSet = toRemove.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
     if (removeSet.isEmpty) return;
@@ -113,32 +164,75 @@ class SendAlbumsStore {
     await _persist();
   }
 
+  /// Cascade-remove a personal photo path from every local album (account delete).
+  Future<int> removePathFromAllAlbums(String path) async {
+    await load();
+    final target = path.trim();
+    if (target.isEmpty) return 0;
+    var touched = 0;
+    for (var i = 0; i < _albums.length; i++) {
+      final cur = List<String>.from(_albums[i].paths);
+      final before = cur.length;
+      cur.removeWhere((p) => p.trim() == target);
+      if (cur.length == before) continue;
+      _albums[i] = SendAlbumEntry(
+        id: _albums[i].id,
+        name: _albums[i].name,
+        paths: cur,
+      );
+      touched++;
+    }
+    if (touched > 0) await _persist();
+    return touched;
+  }
+
   Future<void> deleteAlbum(String albumId) async {
     await load();
-    final id = albumId.trim();
-    _albums.removeWhere((a) => a.id == id);
+    final id = resolveAlbumId(albumId);
+    final raw = albumId.trim();
+    _albums.removeWhere((a) => a.id == id || a.id == raw);
     await _persist();
-    // Tombstone so a later cloud sync cannot re-import this album.
-    if (id.isNotEmpty) {
-      final p = await SharedPreferences.getInstance();
-      final key = 'send_albums_deleted_ids_v1';
-      final deleted = List<String>.from(p.getStringList(key) ?? const []);
-      if (!deleted.contains(id)) {
-        deleted.insert(0, id);
-        await p.setStringList(key, deleted.take(200).toList());
-      }
+    await tombstoneAlbumId(id);
+    if (raw.isNotEmpty && raw != id) await tombstoneAlbumId(raw);
+    // Also tombstone any alias that pointed at this album.
+    final pointing = _idAliases.entries
+        .where((e) => e.value == id || e.key == id || e.key == raw)
+        .map((e) => e.key)
+        .toList();
+    for (final k in pointing) {
+      await tombstoneAlbumId(k);
+      _idAliases.remove(k);
+    }
+  }
+
+  /// Record an album id that must never be re-imported from cloud sync.
+  Future<void> tombstoneAlbumId(String albumId) async {
+    final id = albumId.trim();
+    if (id.isEmpty) return;
+    final deleted = await LocalStorageService.instance.getStringList(
+      LocalStorageService.sendAlbumsDeletedBase,
+    );
+    if (!deleted.contains(id)) {
+      deleted.insert(0, id);
+      await LocalStorageService.instance.setStringList(
+        LocalStorageService.sendAlbumsDeletedBase,
+        deleted.take(200).toList(),
+      );
     }
   }
 
   /// IDs of albums deleted from this account — never re-import on sync.
   Future<Set<String>> deletedAlbumIds() async {
-    final p = await SharedPreferences.getInstance();
-    return (p.getStringList('send_albums_deleted_ids_v1') ?? const []).toSet();
+    final deleted = await LocalStorageService.instance.getStringList(
+      LocalStorageService.sendAlbumsDeletedBase,
+    );
+    return deleted.toSet();
   }
 
   Future<void> renameAlbum(String albumId, String newName) async {
     await load();
-    final i = _albums.indexWhere((a) => a.id == albumId);
+    final id = resolveAlbumId(albumId);
+    final i = _albums.indexWhere((a) => a.id == id);
     if (i < 0) return;
     final n = newName.trim().isEmpty ? 'Album' : newName.trim();
     _albums[i] = SendAlbumEntry(
@@ -149,10 +243,12 @@ class SendAlbumsStore {
     await _persist();
   }
 
-  Future<void> _persist() async {
-    final p = await SharedPreferences.getInstance();
-    final key = await _scopedKey();
-    await p.setString(key, jsonEncode(_albums.map((e) => e.toJson()).toList()));
+  Future<void> _persist({String? userId}) async {
+    await LocalStorageService.instance.setString(
+      LocalStorageService.sendAlbumsBase,
+      jsonEncode(_albums.map((e) => e.toJson()).toList()),
+      userId: userId,
+    );
   }
 
   /// Apply cloud playlist / album metadata.
@@ -169,11 +265,11 @@ class SendAlbumsStore {
     final next = <SendAlbumEntry>[];
     final seen = <String>{};
 
-    // Merge caller map with persisted gallery id→path cache.
     final idToPath = <String, String>{};
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('personal_gallery_cloud_ids_v1');
+      final raw = await LocalStorageService.instance.getString(
+        LocalStorageService.galleryCloudIdsBase,
+      );
       if (raw != null && raw.isNotEmpty) {
         final m = jsonDecode(raw) as Map<String, dynamic>;
         for (final e in m.entries) {
@@ -204,10 +300,14 @@ class SendAlbumsStore {
           }
         }
       }
-      // If server has photo ids but none resolved yet, keep prior local paths
-      // only when the album already had content (avoid wiping during race).
-      if (paths.isEmpty && existing != null && existing.paths.isNotEmpty) {
-        paths.addAll(existing.paths);
+      // Only keep prior local membership when cloud resolved nothing yet
+      // (avoid duplicating the same photo as local path + downloaded cloud path).
+      if (paths.isEmpty && existing != null) {
+        for (final p in existing.paths) {
+          final t = p.trim();
+          if (t.isEmpty || paths.contains(t)) continue;
+          if (await _fileExists(t)) paths.add(t);
+        }
       }
       next.add(
         SendAlbumEntry(
@@ -220,9 +320,6 @@ class SendAlbumsStore {
 
     for (final a in _albums) {
       if (seen.contains(a.id) || deleted.contains(a.id)) continue;
-      // Keep only not-yet-pushed local albums (timestamp ids). Cloud albums
-      // missing from the server list were deleted on another device — drop them.
-      // Server delete also notifies frames to stop that playlist.
       final looksLocal = RegExp(r'^\d{10,}$').hasMatch(a.id);
       if (looksLocal) next.add(a);
     }
@@ -242,22 +339,64 @@ class SendAlbumsStore {
     final to = toId.trim();
     if (from.isEmpty || to.isEmpty || from == to) return;
     final i = _albums.indexWhere((a) => a.id == from);
-    if (i < 0) return;
+    if (i < 0) {
+      // Already rebound or missing — still record alias for stale UI ids.
+      _idAliases[from] = to;
+      await tombstoneAlbumId(from);
+      return;
+    }
     final cur = _albums[i];
-    _albums[i] = SendAlbumEntry(
-      id: to,
-      name: (name ?? cur.name).trim().isEmpty ? cur.name : (name ?? cur.name),
-      paths: List<String>.from(cur.paths),
-    );
+    // If cloud id already exists as another row, merge paths into it.
+    final existingTo = _albums.indexWhere((a) => a.id == to);
+    if (existingTo >= 0 && existingTo != i) {
+      final dest = _albums[existingTo];
+      final merged = List<String>.from(dest.paths);
+      for (final p in cur.paths) {
+        if (!merged.contains(p)) merged.add(p);
+      }
+      _albums[existingTo] = SendAlbumEntry(
+        id: to,
+        name: (name ?? dest.name).trim().isEmpty ? dest.name : (name ?? dest.name),
+        paths: merged,
+      );
+      _albums.removeAt(i);
+    } else {
+      _albums[i] = SendAlbumEntry(
+        id: to,
+        name: (name ?? cur.name).trim().isEmpty ? cur.name : (name ?? cur.name),
+        paths: List<String>.from(cur.paths),
+      );
+    }
+    _idAliases[from] = to;
     await _persist();
+    // Never re-import the ephemeral local id after it has been replaced.
+    await tombstoneAlbumId(from);
+  }
+
+  void resetMemory() {
+    _albums = [];
+    _idAliases.clear();
+  }
+
+  /// Wipe albums + tombstones for [userId] **before** clearing the JWT.
+  Future<void> clearAllForUser(String userId) async {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    await LocalStorageService.instance.remove(
+      LocalStorageService.sendAlbumsBase,
+      userId: uid,
+    );
+    await LocalStorageService.instance.remove(
+      LocalStorageService.sendAlbumsDeletedBase,
+      userId: uid,
+    );
+    _albums = [];
+    _idAliases.clear();
   }
 
   Future<void> clearAllForAccount() async {
-    await load();
-    _albums = [];
-    await _persist();
-    final p = await SharedPreferences.getInstance();
-    await p.remove('send_albums_deleted_ids_v1');
+    final uid = await LocalStorageService.instance.currentUserId();
+    await clearAllForUser(uid);
   }
 
   static Future<bool> _fileExists(String path) async {

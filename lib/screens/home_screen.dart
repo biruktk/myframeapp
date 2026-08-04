@@ -14,10 +14,12 @@ import '../services/app_release_guard.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
 import '../services/family_group_store.dart';
+import '../services/share_service.dart';
 import '../services/frame_api_client.dart';
 import '../services/sync_pipeline.dart';
 import '../services/usage_metrics_store.dart';
 import '../settings/app_settings.dart';
+import '../widgets/shell_navigation.dart';
 import 'device_discovery_screen.dart';
 import 'device_details_screen.dart';
 
@@ -29,7 +31,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final GlobalKey _addKey = GlobalKey();
   UsageMetrics? _metrics;
   OverlayEntry? _coachEntry;
@@ -37,24 +39,62 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _pollTimer;
   Map<String, FrameStatus> _frameStatuses = {};
   final FrameApiClient _apiClient = FrameApiClient();
+  var _familyFramesRefreshing = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     DeviceStore.instance.revision.addListener(_onDeviceStoreRevision);
+    ShellNavigation.activeTab.addListener(_onShellTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
       _startPolling();
+      unawaited(_syncFamilyFramesIfSignedIn());
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     DeviceStore.instance.revision.removeListener(_onDeviceStoreRevision);
+    ShellNavigation.activeTab.removeListener(_onShellTabChanged);
     _removeCoach();
     _pollTimer?.cancel();
     _apiClient.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        ShellNavigation.activeTab.value == 0) {
+      unawaited(_syncFamilyFramesIfSignedIn());
+    }
+  }
+
+  void _onShellTabChanged() {
+    if (!mounted) return;
+    if (ShellNavigation.activeTab.value == 0) {
+      unawaited(_syncFamilyFramesIfSignedIn());
+    }
+  }
+
+  /// Invitees inherit owner frames via GET /api/frames — refresh when Home is shown.
+  Future<void> _syncFamilyFramesIfSignedIn() async {
+    if (!mounted || _familyFramesRefreshing) return;
+    final app = AppSettingsScope.of(context);
+    final tok = app.authToken.trim();
+    if (tok.isEmpty) return;
+    _familyFramesRefreshing = true;
+    try {
+      await DeviceStore.instance.syncServerFrames(bearerToken: tok);
+      if (mounted) await _load();
+    } catch (_) {
+      /* keep local */
+    } finally {
+      _familyFramesRefreshing = false;
+    }
   }
 
   void _startPolling() {
@@ -213,7 +253,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _shareInvite(AppStrings s) async {
+  Future<void> _shareInvite(AppStrings _) async {
     if (!mounted) return;
     final app = AppSettingsScope.of(context);
     await FamilyGroupStore.instance.ensureLoaded(ownerDisplayName: () {
@@ -225,12 +265,20 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     if (!mounted) return;
     final g = FamilyGroupStore.instance;
-    final url =
-        'https://${VpsDefaults.hostnameInk}/join?code=${Uri.encodeComponent(g.inviteCode)}';
+    final s = AppStrings.of(context);
+    final url = ShareService.withShareLang(
+      'https://${VpsDefaults.hostnameInk}/join?code=${Uri.encodeComponent(g.inviteCode)}',
+      s,
+    );
     await platformShareText(
       context,
-      text: s.familyInviteShareBody(g.familyName, g.inviteCode, url),
-      subject: '${s.inviteFamily} · ${g.familyName}',
+      text: ShareService.familyInviteShareBody(
+        strings: s,
+        familyName: g.familyName,
+        inviteCode: g.inviteCode,
+        webUrl: url,
+      ),
+      subject: ShareService.familyInviteSubject(s, g.familyName),
     );
   }
 
@@ -261,7 +309,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (ok != true || !mounted) return;
     await FrameForgetService.instance.forgetFrame(f.deviceId);
+    if (!mounted) return;
     await _load();
+    // Stop Home's family-frame sync from flashing the deleted card.
+    if (mounted) setState(() {});
   }
 
   void _showOfflineDialog() {

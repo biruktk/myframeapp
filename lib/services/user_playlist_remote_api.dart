@@ -49,12 +49,16 @@ class UserPlaylistRemoteApi {
   Future<CloudPlaylist?> updatePlaylistPhotos({
     required String playlistId,
     required List<String> photoIds,
+    String? assignedFrameId,
   }) async {
     if (_tok.isEmpty) return null;
+    final body = <String, dynamic>{'photoIds': photoIds};
+    final af = assignedFrameId?.trim() ?? '';
+    if (af.isNotEmpty) body['assignedFrameId'] = af;
     final res = await http.patch(
       _u('/api/user/playlists/$playlistId'),
       headers: _hdr,
-      body: jsonEncode({'photoIds': photoIds}),
+      body: jsonEncode(body),
     );
     if (res.statusCode < 200 || res.statusCode >= 300) return null;
     final map = jsonDecode(res.body);

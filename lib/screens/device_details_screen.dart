@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../services/account_sync_service.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
+import '../services/frame_forget_service.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 
 class DeviceDetailsScreen extends StatefulWidget {
@@ -179,11 +179,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     );
     if (go != true || !mounted) return;
 
-    final mac = _resolveMac;
-    if (mac != null) {
-      await _api.deleteFrame(mac: mac, pairingToken: p.pairingToken);
-    }
-    await AccountSyncService.instance.deleteFrame(p.deviceId);
+    // Same path as Home "Remove" — account unbind + local wipe (owner/family-owner).
+    await FrameForgetService.instance.forgetFrame(p.deviceId);
     if (!mounted) return;
     Navigator.of(context).pop();
   }
@@ -205,6 +202,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     final isOnline = st?.isEffectivelyOnline ?? false;
     final battery = st?.battery ?? 100;
     final storageRatio = st?.storageFraction ?? 0;
+    // Forced current firmware display for this release.
     const firmware = 'v0.5.0';
 
     return Scaffold(

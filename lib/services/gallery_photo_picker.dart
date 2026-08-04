@@ -5,15 +5,16 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../l10n/app_strings.dart';
-import 'gallery_image_normalizer.dart';
+import 'gallery_image_cache.dart';
 import 'permission_gate.dart';
 
 const int kMaxMultiPick = 10;
 
 /// Shared gallery multi-pick; avoids reopening picker on iOS cancel.
 ///
-/// Every returned [XFile] is a durable **JPEG** under app documents (HEIC / P3
-/// screenshots are normalized before the editor or upload sees them).
+/// Returns durable paths under app documents via a **fast file copy** (no
+/// serial JPEG re-encode). Album grids can paint immediately; upload paths
+/// normalize later as needed.
 class GalleryPhotoPicker {
   GalleryPhotoPicker._();
 
@@ -48,25 +49,25 @@ class GalleryPhotoPicker {
       if (list.length > kMaxMultiPick) {
         list = list.sublist(0, kMaxMultiPick);
         if (context.mounted) {
+          final s = AppStrings.of(context);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               behavior: SnackBarBehavior.floating,
-              content: Text('Max 10 images can be selected at a time.'),
-              duration: Duration(seconds: 3),
+              content: Text(s.maxImagesAtATime),
+              duration: const Duration(seconds: 3),
             ),
           );
         }
       }
 
-      final normalized = <XFile>[];
-      for (final x in list) {
-        final jpegPath = await GalleryImageNormalizer.persistAsJpeg(x.path);
-        if (jpegPath != null) {
-          normalized.add(XFile(jpegPath, mimeType: 'image/jpeg'));
-        }
-      }
+      if (list.isEmpty) return const [];
 
-      if (list.isNotEmpty && normalized.isEmpty && context.mounted) {
+      // Fast durable copies only — JPEG re-encode used to block UI for ~30s.
+      final staged = await GalleryImageCache.stageQuickCopies(
+        list.map((x) => x.path),
+      );
+
+      if (staged.isEmpty && context.mounted) {
         final s = AppStrings.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -74,21 +75,22 @@ class GalleryPhotoPicker {
             content: Text(s.decodeError),
           ),
         );
-      } else if (list.isNotEmpty &&
-          normalized.length < list.length &&
-          context.mounted) {
-        final skipped = list.length - normalized.length;
+        return const [];
+      }
+
+      if (staged.length < list.length && context.mounted) {
+        final skipped = list.length - staged.length;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,
-            content: Text(
-              'Skipped $skipped photo(s) that could not be converted to JPEG.',
-            ),
+            content: Text('Skipped $skipped photo(s) that could not be saved.'),
           ),
         );
       }
 
-      return normalized;
+      return staged
+          .map((path) => XFile(path, mimeType: 'image/jpeg'))
+          .toList(growable: false);
     } finally {
       _open = false;
     }

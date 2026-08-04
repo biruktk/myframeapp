@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+import 'local_storage_service.dart';
 
 /// In-app activity feed (Settings → Notifications). Tracks what the user did in MyFrame.
 class InAppNotification {
@@ -57,7 +58,6 @@ class InAppNotificationStore extends ChangeNotifier {
 
   static final InAppNotificationStore instance = InAppNotificationStore._();
 
-  static const _kKey = 'in_app_notifications_v1';
   static const _maxItems = 100;
 
   final List<InAppNotification> _items = [];
@@ -65,16 +65,29 @@ class InAppNotificationStore extends ChangeNotifier {
 
   List<InAppNotification> get items => List.unmodifiable(_items);
 
-  Future<void> ensureLoaded() async {
+  /// Clear memory only (logout). Disk keys stay under the previous userId.
+  void resetMemory() {
+    _items.clear();
+    _loaded = false;
+    notifyListeners();
+  }
+
+  Future<void> ensureLoaded({String? userId}) async {
     if (_loaded) return;
-    final p = await SharedPreferences.getInstance();
-    final raw = p.getString(_kKey);
+    final raw = await LocalStorageService.instance.getString(
+      LocalStorageService.notificationsBase,
+      userId: userId,
+    );
     if (raw != null && raw.isNotEmpty) {
       try {
         final list = jsonDecode(raw) as List<dynamic>;
         for (final e in list) {
           if (e is Map<String, dynamic>) {
             _items.add(InAppNotification.fromJson(e));
+          } else if (e is Map) {
+            _items.add(
+              InAppNotification.fromJson(Map<String, dynamic>.from(e)),
+            );
           }
         }
       } catch (_) {}
@@ -83,10 +96,20 @@ class InAppNotificationStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _persist() async {
-    final p = await SharedPreferences.getInstance();
+  /// Reload notifications for the newly authenticated account.
+  Future<void> reloadForUser(String userId) async {
+    _items.clear();
+    _loaded = false;
+    await ensureLoaded(userId: userId);
+  }
+
+  Future<void> _persist({String? userId}) async {
     final encoded = jsonEncode(_items.map((e) => e.toJson()).toList());
-    await p.setString(_kKey, encoded);
+    await LocalStorageService.instance.setString(
+      LocalStorageService.notificationsBase,
+      encoded,
+      userId: userId,
+    );
   }
 
   Future<void> add({

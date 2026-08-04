@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import '../settings/app_settings.dart';
+import 'app_diag_log.dart';
 import 'device_store.dart';
 import 'frame_mac_util.dart';
 import 'send_albums_store.dart';
@@ -54,8 +55,9 @@ class AccountSyncService {
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(interval, (_) {
       unawaited(syncAccountState(
-        force: true,
-        replaceFrames: true,
+        force: false,
+        replaceFrames: false,
+        pruneMissingFrames: false,
         appSettings: appSettings,
       ));
     });
@@ -105,11 +107,12 @@ class AccountSyncService {
     await prefs.setInt(_kSettingsUpdatedAtKey, atMs);
   }
 
-  /// Home pull-to-refresh: LWW settings + replace frames from server + gallery.
+  /// Home pull-to-refresh: LWW settings + merge frames (never wipe local pairing).
   Future<void> pullToRefresh({AppSettings? appSettings}) async {
     await syncAccountState(
       force: true,
       replaceFrames: true,
+      pruneMissingFrames: false,
       appSettings: appSettings,
       reconcileSettingsLww: true,
     );
@@ -119,12 +122,14 @@ class AccountSyncService {
     String authToken, {
     AppSettings? appSettings,
   }) async {
-    // Fresh session: drop stale local frames, then take server as authority.
-    await DeviceStore.instance.clear();
+    // Keep any local wall-frame pairing on this phone. Merge server frames on
+    // top — never DeviceStore.clear() here (that forced users to re-pair).
+    await DeviceStore.instance.load();
     await syncAccountState(
       force: true,
       authTokenOverride: authToken,
       replaceFrames: true,
+      pruneMissingFrames: false,
       appSettings: appSettings,
     );
   }
@@ -173,12 +178,60 @@ class AccountSyncService {
     await prefs.setStringList(_kUnboundMacsKey, list);
   }
 
+  /// True when [raw] matches a MAC the user explicitly deleted (incl. BLE/STA ±2).
+  Future<bool> isUnboundFrameId(String? raw) async {
+    final slug = FrameMacUtil.normalizeSlug(raw ?? '')?.toUpperCase() ??
+        (raw ?? '').trim().toUpperCase();
+    if (slug.isEmpty) return false;
+    final unbound = await _unboundMacs();
+    if (unbound.contains(slug)) return true;
+    final si = int.tryParse(slug, radix: 16);
+    if (si == null) return false;
+    for (final k in unbound) {
+      final ki = int.tryParse(k, radix: 16);
+      if (ki != null && (ki - si).abs() == 2) return true;
+    }
+    return false;
+  }
+
+  /// Drop frames the user deleted so pull/sync cannot resurrect them.
+  Future<List<Map<String, dynamic>>> filterOutUnboundFrames(
+    List<Map<String, dynamic>> frames,
+  ) async {
+    if (frames.isEmpty) return frames;
+    final out = <Map<String, dynamic>>[];
+    for (final f in frames) {
+      final keys = [
+        f['frame_id'],
+        f['ble_mac'],
+        f['station_mac'],
+        f['id'],
+        f['bleMac'],
+        f['stationMac'],
+      ];
+      var banned = false;
+      for (final k in keys) {
+        if (await isUnboundFrameId(k?.toString())) {
+          banned = true;
+          break;
+        }
+      }
+      if (!banned) out.add(f);
+    }
+    return out;
+  }
+
   /// Pull when server sync_version is strictly newer than local.
   /// Settings use last-write-wins via [sync_updated_at] vs local timestamp.
+  ///
+  /// [pruneMissingFrames] overrides whether local frames absent from the server
+  /// list are removed. Pass `false` after family join so a partial profile
+  /// response cannot wipe frames that [DeviceStore.syncServerFrames] just added.
   Future<Map<String, dynamic>?> syncAccountState({
     bool force = false,
     bool replaceFrames = false,
     bool reconcileSettingsLww = true,
+    bool? pruneMissingFrames,
     String? authTokenOverride,
     AppSettings? appSettings,
   }) {
@@ -219,15 +272,13 @@ class AccountSyncService {
           );
         }
 
-        // Push local-only frames only when the server is not ahead and this is
-        // not a forced pull — otherwise a deleted frame on another device would
-        // get re-bound from a stale local copy.
-        if (!replaceFrames && !force && !serverNewer) {
-          await _pushLocalFramesMissingOnServer(
-            (body['bound_frames'] as List?) ?? const [],
-            token,
-          );
-        }
+        // Always push local wall frames that the cloud is missing — even when
+        // server sync_version is ahead — so an empty bound_frames list cannot
+        // leave this phone as the only copy with no cloud backup.
+        await _pushLocalFramesMissingOnServer(
+          (body['bound_frames'] as List?) ?? const [],
+          token,
+        );
 
         if (!force && !serverNewer && !replaceFrames) {
           return body;
@@ -242,11 +293,20 @@ class AccountSyncService {
                   ? (body['configurations'] as Map)['primary_frame_id'] as String?
                   : null);
 
+          final cast = frames
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(
+                    e.map((k, v) => MapEntry(k.toString(), v)),
+                  ))
+              .toList();
+          final filtered = await filterOutUnboundFrames(cast);
+
           await DeviceStore.instance.applyBoundFramesFromServer(
-            frames.cast<Map<String, dynamic>>(),
+            filtered,
             primaryFrameId: primary,
             bearerToken: token,
-            pruneMissing: replaceFrames || serverNewer || force,
+            // Sticky pairing: never prune locals from an empty/partial list.
+            pruneMissing: pruneMissingFrames ?? false,
           );
 
           if (primary != null && primary.trim().isNotEmpty) {
@@ -513,15 +573,24 @@ class AccountSyncService {
   }
 
   /// Unbind frame on the server, drop it locally, and pull server as authority.
+  ///
+  /// Owner / family-owner delete must not come back via the next Home sync.
   Future<bool> deleteFrame(String frameId) async {
     final token = await _authToken();
+    final raw = frameId.trim();
     final slug =
-        (FrameMacUtil.normalizeSlug(frameId) ?? frameId).trim().toUpperCase();
-    if (slug.isEmpty) return false;
+        (FrameMacUtil.normalizeSlug(raw) ?? raw).trim().toUpperCase();
+    if (slug.isEmpty && raw.isEmpty) return false;
 
     // Unbind BLE + STA siblings so the other phone cannot rehydrate a double.
-    final siblings = <String>{slug};
-    final asInt = int.tryParse(slug, radix: 16);
+    final siblings = <String>{};
+    if (slug.isNotEmpty) siblings.add(slug);
+    if (raw.isNotEmpty) {
+      final rawSlug =
+          (FrameMacUtil.normalizeSlug(raw) ?? raw).trim().toUpperCase();
+      if (rawSlug.isNotEmpty) siblings.add(rawSlug);
+    }
+    final asInt = int.tryParse(slug.isNotEmpty ? slug : raw, radix: 16);
     if (asInt != null) {
       final minus = (asInt - 2).toRadixString(16).toUpperCase().padLeft(12, '0');
       final plus = (asInt + 2).toRadixString(16).toUpperCase().padLeft(12, '0');
@@ -529,14 +598,23 @@ class AccountSyncService {
       if (plus.length == 12) siblings.add(plus);
     }
 
+    // Ban first so concurrent syncServerFrames cannot resurrect the row.
     for (final id in siblings) {
       await _rememberUnbound(id);
+    }
+
+    // Always clear local Home list (exact + related ids).
+    try {
+      await DeviceStore.instance.forgetPairedFrame(raw.isNotEmpty ? raw : slug);
+    } catch (_) {}
+    for (final id in siblings) {
       try {
         await DeviceStore.instance.forgetPairedFrame(id);
       } catch (_) {}
     }
 
     if (token.isEmpty) return true;
+
     var anyOk = false;
     try {
       for (final id in siblings) {
@@ -546,12 +624,35 @@ class AccountSyncService {
         final res = await _client
             .post(uri, headers: _headers(token))
             .timeout(const Duration(seconds: 12));
-        if (res.statusCode == 200) anyOk = true;
+        if (res.statusCode == 200) {
+          anyOk = true;
+        } else {
+          AppDiagLog.verbose(
+            '[account-sync] unbind $id -> HTTP ${res.statusCode} ${res.body}',
+          );
+        }
       }
-      await syncAccountState(force: true, replaceFrames: true);
+      // Pull with prune, but unbound filter blocks resurrection if server lags.
+      await syncAccountState(
+        force: true,
+        replaceFrames: true,
+        pruneMissingFrames: true,
+        authTokenOverride: token,
+      );
+      // Final local sweep — sync must not have brought it back.
+      for (final id in siblings) {
+        try {
+          await DeviceStore.instance.forgetPairedFrame(id);
+        } catch (_) {}
+      }
+      try {
+        await DeviceStore.instance.forgetPairedFrame(raw.isNotEmpty ? raw : slug);
+      } catch (_) {}
       return anyOk;
-    } catch (_) {
-      return false;
+    } catch (e, st) {
+      AppDiagLog.verbose('[account-sync] deleteFrame failed: $e\n$st');
+      // Local delete still succeeded; keep unbound ban.
+      return true;
     }
   }
 

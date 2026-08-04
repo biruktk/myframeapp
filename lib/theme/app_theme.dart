@@ -10,7 +10,7 @@ enum AppAccent {
 class AppAuthTheme {
   AppAuthTheme._();
 
-  static const Color primaryRed = Color(0xFFDC2626);
+  static const Color primaryRed = Color(0xFFE53935);
   static const Color bgLight = Color(0xFFF8F9FA);
 
   static InputDecoration inputStyle({
@@ -22,9 +22,9 @@ class AppAuthTheme {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final fill = isDark ? cs.surfaceContainerHighest : Colors.grey.shade50;
+    final fill = isDark ? cs.surfaceContainerHighest : const Color(0xFFF5F5F7);
     final borderColor = cs.outlineVariant;
-    final enabledBorderColor = isDark ? cs.outline : Colors.grey.shade200;
+    final enabledBorderColor = isDark ? cs.outline : const Color(0xFFEEEEEE);
     final labelColor = cs.onSurfaceVariant;
     final iconColor = cs.onSurfaceVariant;
 
@@ -60,15 +60,23 @@ class AppAuthTheme {
   }
 }
 
-/// Themes aligned with `ra/ui/mobile-app-dualmode.html` (red) plus green variant.
+/// Themes: solid red accents on white / soft-grey surfaces — no pink seed tints.
 class AppTheme {
   AppTheme._();
 
-  /// Brand red (website + app redesign).
-  static const Color primaryRed = Color(0xFFDC2626);
-  static const Color primaryRedDark = Color(0xFFB91C1C);
+  /// Brand red (solid accent — never used as a washed container fill).
+  static const Color primaryRed = Color(0xFFE53935);
+  static const Color primaryRedDark = Color(0xFFC62828);
   static const Color primaryGreen = Color(0xFF16A34A);
   static const Color primaryGreenDark = Color(0xFF15803D);
+
+  /// Neutral greys (cards, chips, placeholders, segmented tracks).
+  static const Color neutralGrey50 = Color(0xFFF8F9FA);
+  static const Color neutralGrey100 = Color(0xFFF5F5F7);
+  static const Color neutralGrey150 = Color(0xFFF1F3F5);
+  static const Color neutralGrey200 = Color(0xFFEEEEEE);
+  static const Color charcoal = Color(0xFF1A1A1A);
+  static const Color charcoalMuted = Color(0xFF5F6368);
 
   /// Legacy alias — prefer [seed] / theme [ColorScheme.primary].
   static const Color primary = primaryRed;
@@ -83,12 +91,93 @@ class AppTheme {
   static Color seedDark(AppAccent accent) =>
       accent == AppAccent.green ? primaryGreenDark : primaryRedDark;
 
+  /// Light scheme with **explicit** neutrals so [ColorScheme.fromSeed] cannot
+  /// inject pink `primaryContainer` / surface-container tints from a red seed.
+  static ColorScheme _lightScheme(Color primary) {
+    return ColorScheme(
+      brightness: Brightness.light,
+      primary: primary,
+      onPrimary: Colors.white,
+      primaryContainer: neutralGrey100,
+      onPrimaryContainer: charcoal,
+      secondary: charcoalMuted,
+      onSecondary: Colors.white,
+      secondaryContainer: neutralGrey150,
+      onSecondaryContainer: charcoal,
+      tertiary: primary,
+      onTertiary: Colors.white,
+      tertiaryContainer: neutralGrey100,
+      onTertiaryContainer: charcoal,
+      error: const Color(0xFFB3261E),
+      onError: Colors.white,
+      errorContainer: const Color(0xFFF5F5F7),
+      onErrorContainer: charcoal,
+      surface: Colors.white,
+      onSurface: charcoal,
+      onSurfaceVariant: charcoalMuted,
+      surfaceContainerLowest: Colors.white,
+      surfaceContainerLow: neutralGrey50,
+      surfaceContainer: neutralGrey100,
+      surfaceContainerHigh: neutralGrey150,
+      surfaceContainerHighest: neutralGrey200,
+      outline: const Color(0xFFD1D5DB),
+      outlineVariant: neutralGrey200,
+      shadow: Colors.black,
+      scrim: Colors.black,
+      inverseSurface: charcoal,
+      onInverseSurface: Colors.white,
+      inversePrimary: primary,
+      surfaceTint: Colors.transparent,
+    );
+  }
+
+  static ColorScheme _darkScheme(Color primary) {
+    const surface = Color(0xFF1F2937);
+    const onSurface = Color(0xFFF3F4F6);
+    const onVar = Color(0xFF9CA3AF);
+    return ColorScheme(
+      brightness: Brightness.dark,
+      primary: primary,
+      onPrimary: Colors.white,
+      primaryContainer: const Color(0xFF374151),
+      onPrimaryContainer: onSurface,
+      secondary: onVar,
+      onSecondary: Colors.white,
+      secondaryContainer: const Color(0xFF2D3748),
+      onSecondaryContainer: onSurface,
+      tertiary: primary,
+      onTertiary: Colors.white,
+      tertiaryContainer: const Color(0xFF374151),
+      onTertiaryContainer: onSurface,
+      error: const Color(0xFFF87171),
+      onError: Colors.black,
+      errorContainer: const Color(0xFF374151),
+      onErrorContainer: onSurface,
+      surface: surface,
+      onSurface: onSurface,
+      onSurfaceVariant: onVar,
+      surfaceContainerLowest: const Color(0xFF111827),
+      surfaceContainerLow: const Color(0xFF1A2332),
+      surfaceContainer: const Color(0xFF243044),
+      surfaceContainerHigh: const Color(0xFF2D3748),
+      surfaceContainerHighest: const Color(0xFF374151),
+      outline: const Color(0xFF4B5563),
+      outlineVariant: const Color(0xFF374151),
+      shadow: Colors.black,
+      scrim: Colors.black,
+      inverseSurface: onSurface,
+      onInverseSurface: charcoal,
+      inversePrimary: primary,
+      surfaceTint: Colors.transparent,
+    );
+  }
+
   static InputDecorationTheme _inputDecoration({
     required ColorScheme cs,
     required bool dark,
   }) {
     final radius = BorderRadius.circular(12);
-    final fill = dark ? cs.surfaceContainerHighest : const Color(0xFFF9FAFB);
+    final fill = dark ? cs.surfaceContainerHighest : neutralGrey50;
     return InputDecorationTheme(
       filled: true,
       fillColor: fill,
@@ -122,66 +211,70 @@ class AppTheme {
 
   static ThemeData light(AppAccent accent, {bool comfort = false}) {
     final primary = seed(accent);
-    // Strong body text; secondary still passes WCAG-style contrast on off-white.
-    const onSurface = Color(0xFF0A0A0A);
-    const onSurfaceVariant = Color(0xFF374151);
-    final base = ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.light,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: primary,
-        brightness: Brightness.light,
-        primary: primary,
-        onPrimary: Colors.white,
-        surface: Colors.white,
-        onSurface: onSurface,
-        onSurfaceVariant: onSurfaceVariant,
-        outline: const Color(0xFFD1D5DB),
-        outlineVariant: const Color(0xFFE5E7EB),
-      ),
-      visualDensity: comfort ? VisualDensity.comfortable : VisualDensity.standard,
-    );
-    final cs = base.colorScheme;
+    final cs = _lightScheme(primary);
     final navH = comfort ? 76.0 : 68.0;
     final navLabel = comfort ? 13.0 : 11.0;
     final iconSz = comfort ? 26.0 : 22.0;
-    return base.copyWith(
-      scaffoldBackgroundColor: const Color(0xFFF3F4F6),
-      hintColor: onSurfaceVariant,
-      // Slightly snappier than [InkRipple] for list tiles and quick taps.
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      colorScheme: cs,
+      visualDensity: comfort ? VisualDensity.comfortable : VisualDensity.standard,
+      scaffoldBackgroundColor: neutralGrey150,
+      hintColor: charcoalMuted,
       splashFactory: InkSplash.splashFactory,
+      applyElevationOverlayColor: false,
       inputDecorationTheme: _inputDecoration(cs: cs, dark: false),
-      dialogTheme: DialogThemeData(
-        backgroundColor: cs.surface,
+      dialogTheme: const DialogThemeData(
+        backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
       ),
-      bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: cs.surface,
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        modalBackgroundColor: cs.surface,
+        modalBackgroundColor: Colors.white,
       ),
-      popupMenuTheme: PopupMenuThemeData(
-        color: cs.surface,
+      popupMenuTheme: const PopupMenuThemeData(
+        color: Colors.white,
         surfaceTintColor: Colors.transparent,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: primary,
+        foregroundColor: Colors.white,
+        elevation: 3,
+        focusElevation: 4,
+        hoverElevation: 4,
+        highlightElevation: 4,
+        extendedPadding: const EdgeInsets.symmetric(horizontal: 20),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       chipTheme: ChipThemeData(
-        backgroundColor: cs.surface,
+        backgroundColor: neutralGrey100,
         selectedColor: primary,
-        disabledColor: cs.surfaceContainerHighest,
-        side: BorderSide(color: cs.outlineVariant),
-        labelStyle: TextStyle(color: cs.onSurface),
+        disabledColor: neutralGrey200,
+        side: const BorderSide(color: neutralGrey200),
+        labelStyle: const TextStyle(color: charcoal),
         secondaryLabelStyle: const TextStyle(color: Colors.white),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: primary.withValues(alpha: 0.45),
+          disabledForegroundColor: Colors.white,
           minimumSize: Size(comfort ? 52 : 48, comfort ? 52 : 48),
-          padding: EdgeInsets.symmetric(horizontal: comfort ? 22 : 18, vertical: comfort ? 14 : 12),
+          padding: EdgeInsets.symmetric(
+            horizontal: comfort ? 22 : 18,
+            vertical: comfort ? 14 : 12,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          foregroundColor: charcoal,
+          side: const BorderSide(color: neutralGrey200),
           minimumSize: Size(comfort ? 52 : 48, comfort ? 52 : 48),
         ),
       ),
@@ -190,26 +283,27 @@ class AppTheme {
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: Colors.white,
-        foregroundColor: onSurface,
+        foregroundColor: charcoal,
         surfaceTintColor: Colors.transparent,
         titleTextStyle: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          color: onSurface,
+          color: charcoal,
         ),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFFE5E7EB)),
+          side: const BorderSide(color: neutralGrey200),
         ),
         color: Colors.white,
       ),
       listTileTheme: ListTileThemeData(
         minVerticalPadding: comfort ? 12 : 8,
-        iconColor: onSurfaceVariant,
-        textColor: onSurface,
+        iconColor: charcoalMuted,
+        textColor: charcoal,
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: navH,
@@ -222,13 +316,13 @@ class AppTheme {
           return TextStyle(
             fontSize: navLabel,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? primary : onSurfaceVariant,
+            color: selected ? primary : charcoalMuted,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((s) {
           final selected = s.contains(WidgetState.selected);
           return IconThemeData(
-            color: selected ? Colors.white : onSurfaceVariant,
+            color: selected ? Colors.white : charcoalMuted,
             size: iconSz,
           );
         }),
@@ -242,35 +336,21 @@ class AppTheme {
     const scaffold = Color(0xFF111827);
     const onSurfaceD = Color(0xFFF3F4F6);
     const onVarD = Color(0xFF9CA3AF);
-    final base = ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: primary,
-        brightness: Brightness.dark,
-        primary: primary,
-        onPrimary: Colors.white,
-        surface: surface,
-        onSurface: onSurfaceD,
-        onSurfaceVariant: onVarD,
-        outline: const Color(0xFF4B5563),
-        outlineVariant: const Color(0xFF374151),
-        surfaceContainerHighest: const Color(0xFF374151),
-        surfaceContainerHigh: const Color(0xFF2D3748),
-        surfaceContainerLow: const Color(0xFF1A2332),
-      ),
-    );
-    final cs = base.colorScheme;
+    final cs = _darkScheme(primary);
     final navH = comfort ? 76.0 : 68.0;
     final navLabel = comfort ? 13.0 : 11.0;
     final iconSz = comfort ? 26.0 : 22.0;
-    return base.copyWith(
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: cs,
       scaffoldBackgroundColor: scaffold,
       visualDensity: comfort ? VisualDensity.comfortable : VisualDensity.standard,
       hintColor: Colors.white70,
       splashFactory: InkSplash.splashFactory,
+      applyElevationOverlayColor: false,
       inputDecorationTheme: _inputDecoration(cs: cs, dark: true),
-      dialogTheme: DialogThemeData(
+      dialogTheme: const DialogThemeData(
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
       ),
@@ -282,6 +362,12 @@ class AppTheme {
       popupMenuTheme: const PopupMenuThemeData(
         color: surface,
         surfaceTintColor: Colors.transparent,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: primary,
+        foregroundColor: Colors.white,
+        elevation: 3,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       chipTheme: ChipThemeData(
         backgroundColor: cs.surfaceContainerHighest,
@@ -295,6 +381,8 @@ class AppTheme {
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          backgroundColor: primary,
+          foregroundColor: Colors.white,
           minimumSize: Size(comfort ? 52 : 48, comfort ? 52 : 48),
         ),
       ),
@@ -313,6 +401,7 @@ class AppTheme {
       ),
       cardTheme: CardThemeData(
         elevation: 0,
+        surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: Colors.grey.shade800),

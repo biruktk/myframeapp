@@ -59,11 +59,29 @@ class ShellNavigation {
   static void goToTab(int index) {
     if (index < 0 || index >= 5) return;
     _setTab?.call(index);
+    if (activeTab.value != index) activeTab.value = index;
   }
+
+  /// Current shell tab index (updated by [MainShell] and [goToTab]).
+  static final ValueNotifier<int> activeTab = ValueNotifier<int>(0);
 
   /// Switch to the Send tab (tab index 2).
   static void switchToSend() {
     goToTab(2);
+  }
+
+  /// After a successful cast: clear pushed routes (editor / playlist send),
+  /// then land on the Send Photo tab.
+  static void returnToSendAfterCast(BuildContext context) {
+    if (context.mounted) {
+      final nav = Navigator.of(context);
+      if (nav.canPop()) {
+        nav.popUntil((route) => route.isFirst);
+      }
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      switchToSend();
+    });
   }
 
   /// Bottom inset for shell tab bodies while [Scaffold.extendBody] is true:

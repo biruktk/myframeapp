@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/account_sync_service.dart';
 import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
+import '../services/family_group_store.dart';
 import '../services/in_app_notification_store.dart';
 import '../services/personal_gallery_store.dart';
 import '../services/send_albums_store.dart';
@@ -470,14 +471,28 @@ class AppSettings extends ChangeNotifier {
       await p.remove(_kAuthProvider);
     }
     if (!value) {
-      await clearAuthJwt();
-      // Aggressive logout: wipe account-scoped local state to prevent
-      // cross-account leakage (frames, albums, gallery, sync version, transit).
-      await DeviceStore.instance.clear();
-      await InAppNotificationStore.instance.clearAll();
-      await SendAlbumsStore.instance.clearAllForAccount();
-      await PersonalGalleryStore.instance.clear();
+      // Capture uid before JWT clear so we never wipe/write under `guest`.
+      final previousUserId = authUserId.trim();
+
+      // Drop in-memory caches so UI cannot show the previous account's data.
+      PersonalGalleryStore.instance.resetMemory();
+      SendAlbumsStore.instance.resetMemory();
+      InAppNotificationStore.instance.resetMemory();
+      FamilyGroupStore.instance.resetMemory();
+
+      // Keep DeviceStore pairing on disk — a wall frame must survive sign-out /
+      // app kill until the user taps Remove, or a different account signs in.
       await AccountSyncService.instance.wipeLocalSyncState();
+
+      await clearAuthJwt();
+
+      // Prefs/files for [previousUserId] remain under scoped keys and
+      // `users/<uid>/…` so a later login reloads only that account.
+      if (previousUserId.isNotEmpty) {
+        AppDiagLog.verbose(
+          '[Auth] signed out user=$previousUserId (scoped cache retained on disk)',
+        );
+      }
     }
   }
 
@@ -514,16 +529,36 @@ class AppSettings extends ChangeNotifier {
     final cleanToken = token.trim();
     final cleanUserId = userId.trim();
     if (cleanToken.isEmpty || cleanUserId.isEmpty) return;
+
+    final p = await SharedPreferences.getInstance();
+    final previousUserId = (p.getString(_kAuthUserId) ?? authUserId).trim();
+
+    // Different account → drop the previous user's wall-frame pairing.
+    if (previousUserId.isNotEmpty && previousUserId != cleanUserId) {
+      await DeviceStore.instance.clear();
+      await AccountSyncService.instance.wipeLocalSyncState();
+    }
+
+    // Clear any leftover in-memory state from a prior session before binding.
+    PersonalGalleryStore.instance.resetMemory();
+    SendAlbumsStore.instance.resetMemory();
+    InAppNotificationStore.instance.resetMemory();
+    FamilyGroupStore.instance.resetMemory();
+
     authToken = cleanToken;
     authUserId = cleanUserId;
     signedIn = true;
     authProvider = provider;
     notifyListeners();
-    final p = await SharedPreferences.getInstance();
     await p.setString(_kAuthToken, cleanToken);
     await p.setString(_kAuthUserId, cleanUserId);
     await p.setBool(_kSignedIn, true);
     await p.setString(_kAuthProvider, provider);
+
+    // Load ONLY this userId's collections (empty [] until backend sync).
+    await PersonalGalleryStore.instance.load(userId: cleanUserId);
+    await SendAlbumsStore.instance.load(userId: cleanUserId);
+    await InAppNotificationStore.instance.reloadForUser(cleanUserId);
   }
 
   /// Persists Bearer JWT returned by `/api/auth/login` or `/api/auth/register`.

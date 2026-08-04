@@ -4,13 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'frame_ble_mac_slug.dart';
 import 'device_store.dart';
+import 'local_storage_service.dart';
 
-/// Last slideshow playlist persisted per frame (BLE MAC slug).
+/// Last slideshow playlist persisted per frame (BLE MAC slug), scoped to user.
 class SlideshowPlaylistStore {
   SlideshowPlaylistStore._();
   static final SlideshowPlaylistStore instance = SlideshowPlaylistStore._();
 
-  static String _key(String macSlug) => 'slideshow_playlist_$macSlug';
+  Future<String> _key(String macSlug, {String? userId}) =>
+      LocalStorageService.instance.slideshowScopedKey(macSlug, userId: userId);
 
   Future<void> save({
     required PairedFrame? paired,
@@ -20,7 +22,7 @@ class SlideshowPlaylistStore {
     final mac = frameBleMacSlug(paired);
     final p = await SharedPreferences.getInstance();
     await p.setString(
-      _key(mac),
+      await _key(mac),
       jsonEncode({
         'imageIds': imageIds,
         'intervalMinutes': intervalMinutes,
@@ -29,14 +31,22 @@ class SlideshowPlaylistStore {
     );
   }
 
-  Future<({List<String> imageIds, int intervalMinutes})?> load(PairedFrame? paired) async {
+  Future<({List<String> imageIds, int intervalMinutes})?> load(
+    PairedFrame? paired,
+  ) async {
     final mac = frameBleMacSlug(paired);
     final p = await SharedPreferences.getInstance();
-    final raw = p.getString(_key(mac));
+    var raw = p.getString(await _key(mac));
+    // One-time read of pre-isolation key (not written again).
+    if (raw == null || raw.isEmpty) {
+      raw = p.getString('slideshow_playlist_$mac');
+    }
     if (raw == null || raw.isEmpty) return null;
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
-      final ids = (map['imageIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+      final ids =
+          (map['imageIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
+              [];
       final mins = map['intervalMinutes'] as int? ?? 60;
       return (imageIds: ids, intervalMinutes: mins);
     } catch (_) {

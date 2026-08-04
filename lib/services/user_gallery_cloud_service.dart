@@ -4,10 +4,10 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import 'gallery_image_cache.dart';
+import 'local_storage_service.dart';
 import 'personal_gallery_store.dart';
 import 'app_diag_log.dart';
 
@@ -47,8 +47,6 @@ class UserGalleryCloudService {
   static const _requestTimeout = Duration(seconds: 20);
   static const _uploadTimeout = Duration(seconds: 45);
   static const _syncOverallTimeout = Duration(seconds: 45);
-  static const _kSyncedIds = 'personal_gallery_cloud_ids_v1';
-  static const _kDeletedIds = 'personal_gallery_deleted_ids_v1';
 
   Future<void>? _inFlight;
   var _rerunRequested = false;
@@ -68,8 +66,9 @@ class UserGalleryCloudService {
       };
 
   Future<Map<String, String>> _loadIdToPath() async {
-    final prefs = await SharedPreferences.getInstance();
-    final rawMeta = prefs.getString(_kSyncedIds);
+    final rawMeta = await LocalStorageService.instance.getString(
+      LocalStorageService.galleryCloudIdsBase,
+    );
     if (rawMeta == null || rawMeta.isEmpty) return {};
     try {
       final m = jsonDecode(rawMeta) as Map<String, dynamic>;
@@ -80,8 +79,23 @@ class UserGalleryCloudService {
   }
 
   Future<void> _saveIdToPath(Map<String, String> idToPath) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kSyncedIds, jsonEncode(idToPath));
+    await LocalStorageService.instance.setString(
+      LocalStorageService.galleryCloudIdsBase,
+      jsonEncode(idToPath),
+    );
+  }
+
+  Future<List<String>> _loadDeletedIds() async {
+    return LocalStorageService.instance.getStringList(
+      LocalStorageService.galleryDeletedIdsBase,
+    );
+  }
+
+  Future<void> _saveDeletedIds(List<String> deleted) async {
+    await LocalStorageService.instance.setStringList(
+      LocalStorageService.galleryDeletedIdsBase,
+      deleted.take(500).toList(),
+    );
   }
 
   Future<List<CloudGalleryPhoto>> fetchPhotos(String authToken) async {
@@ -267,8 +281,7 @@ class UserGalleryCloudService {
     photos = List<CloudGalleryPhoto>.from(photos)
       ..sort((a, b) => b.atMs.compareTo(a.atMs));
 
-    final prefs = await SharedPreferences.getInstance();
-    final deleted = List<String>.from(prefs.getStringList(_kDeletedIds) ?? const []);
+    final deleted = await _loadDeletedIds();
     final deletedSet = deleted.toSet();
 
     var idToPath = await _loadIdToPath();
@@ -290,7 +303,7 @@ class UserGalleryCloudService {
       }
     }
     if (vanishedPaths.isNotEmpty) {
-      await prefs.setStringList(_kDeletedIds, deleted.take(500).toList());
+      await _saveDeletedIds(deleted);
     }
 
     for (final photo in photos) {
@@ -410,8 +423,8 @@ class UserGalleryCloudService {
   }
 
   /// Permanently deletes a gallery photo from the **account** (other phones
-  /// drop it on resync). If it was the last image in a frame slideshow, the
-  /// server stops that frame's rotation.
+  /// drop it on resync). Cascades out of account playlists on the server.
+  /// Does **not** stop an active frame slideshow (same as WeChat mini-app).
   /// [photoId] is the cloud upload id; [localPath] is used to resolve id from cache.
   Future<bool> deletePhoto({
     required String authToken,
@@ -420,29 +433,44 @@ class UserGalleryCloudService {
   }) async {
     final tok = authToken.trim();
     var id = (photoId ?? '').trim();
-    final prefs = await SharedPreferences.getInstance();
 
     if (id.isEmpty && localPath != null && localPath.isNotEmpty) {
-      final rawMeta = prefs.getString(_kSyncedIds);
-      if (rawMeta != null && rawMeta.isNotEmpty) {
-        try {
-          final m = jsonDecode(rawMeta) as Map<String, dynamic>;
-          for (final e in m.entries) {
-            if ('${e.value}' == localPath) {
-              id = e.key;
-              break;
-            }
+      final idToPath = await _loadIdToPath();
+      final base = p.basename(localPath);
+      final baseNoExt = p.basenameWithoutExtension(localPath);
+      for (final e in idToPath.entries) {
+        if (e.value == localPath || p.basename(e.value) == base) {
+          id = e.key;
+          break;
+        }
+      }
+      // Cloud downloads are stored as `<photoId>.<ext>`.
+      if (id.isEmpty &&
+          (baseNoExt.startsWith('gal_') || baseNoExt.startsWith('up_'))) {
+        id = baseNoExt;
+      }
+      // Last resort: match filename in the live gallery list.
+      if (id.isEmpty) {
+        final photos = await fetchPhotos(tok);
+        for (final photo in photos) {
+          final url = photo.url;
+          if (url.contains(base) ||
+              url.contains(Uri.encodeComponent(base)) ||
+              url.endsWith('/$baseNoExt.jpg') ||
+              url.contains(baseNoExt)) {
+            id = photo.id;
+            break;
           }
-        } catch (_) {}
+        }
       }
     }
     if (id.isEmpty) return false;
 
     // Tombstone first so a concurrent sync cannot re-add it.
-    final deleted = List<String>.from(prefs.getStringList(_kDeletedIds) ?? const []);
+    final deleted = await _loadDeletedIds();
     if (!deleted.contains(id)) {
       deleted.insert(0, id);
-      await prefs.setStringList(_kDeletedIds, deleted.take(500).toList());
+      await _saveDeletedIds(deleted);
     }
 
     try {

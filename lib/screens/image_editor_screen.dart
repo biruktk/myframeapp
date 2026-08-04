@@ -41,6 +41,7 @@ import '../services/usage_metrics_store.dart';
 import '../services/weather_service.dart';
 import '../settings/app_settings.dart';
 import '../widgets/connect_frame_dialog.dart';
+import '../widgets/progress_action_button.dart';
 import '../l10n/app_strings.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../models/pairing_nav_result.dart';
@@ -150,6 +151,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   String? _status;
   double? _castProgress;
   bool _castProgressIndeterminate = false;
+  int _sendCurrent = 0;
+  int _sendTotal = 0;
   final List<String> _castLogLines = [];
   bool _sendSucceeded = false;
   bool _decodeFailed = false;
@@ -316,14 +319,19 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       );
     }
 
-    // Show beautiful success overlay, then switch to Send tab
+    // Show beautiful success overlay, then land on Send Photo tab
+    // (unless another queued photo still needs the editor).
     await _showSendSuccessOverlay(status);
     if (!mounted) return;
-
+    final moreInQueue =
+        widget.queueTotal > 1 && widget.queueIndex < widget.queueTotal;
+    if (moreInQueue) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(true);
+      }
+      return;
+    }
     _leaveEditorAfterSend();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ShellNavigation.switchToSend();
-    });
   }
 
   Future<void> _showSendSuccessOverlay(String status) async {
@@ -430,15 +438,21 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       late final String destPath;
       if (trimmed != null && trimmed.isNotEmpty) {
         destPath = trimmed;
+        await File(destPath).writeAsBytes(jpeg, flush: true);
+        await PersonalGalleryStore.instance.load();
+        // Already in Personal (album create / picker) — do not insert a second entry.
+        if (!PersonalGalleryStore.instance.paths.contains(destPath)) {
+          await PersonalGalleryStore.instance.addPaths([destPath]);
+        }
       } else {
         final dir = await GalleryImageCache.galleryDirForSync();
         destPath = p.join(
           dir.path,
           'sent_${DateTime.now().millisecondsSinceEpoch}.jpg',
         );
+        await File(destPath).writeAsBytes(jpeg, flush: true);
+        await PersonalGalleryStore.instance.addPaths([destPath]);
       }
-      await File(destPath).writeAsBytes(jpeg, flush: true);
-      await PersonalGalleryStore.instance.addPaths([destPath]);
 
       // Immediate account gallery sync so the other phone sees the cast.
       if (!mounted) return;
@@ -490,7 +504,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   void _leaveEditorAfterSend() {
     if (!mounted) return;
-    Navigator.of(context).popUntil((r) => r.isFirst);
+    ShellNavigation.returnToSendAfterCast(context);
   }
 
   @override
@@ -694,10 +708,13 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   void _onPageChanged(int index) {
     if (!_isPlaylist || _perStates == null) return;
+    final length = _perStates!.length;
+    if (length == 0) return;
+    final safe = index < 0 ? 0 : (index >= length ? length - 1 : index);
     _saveCurrentPerState();
     setState(() {
-      _playlistIndex = index;
-      _restorePerState(index);
+      _playlistIndex = safe;
+      _restorePerState(safe);
     });
   }
 
@@ -953,6 +970,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       _status = _strings?.preparingImage ?? 'Preparing image for frame…';
       _castProgress = null;
       _castProgressIndeterminate = true;
+      _sendCurrent = 0;
+      _sendTotal = _isPlaylist ? (_perStates?.length ?? 0) : 1;
     });
     try {
       if (!mounted) return;
@@ -970,7 +989,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           _restorePerState(i);
           setState(() {
             _playlistIndex = i;
+            _sendCurrent = i + 1;
+            _sendTotal = total;
             _status = '${s.slideshowSendingProgress(i + 1, total)}';
+            _castProgress = ((i + 0.15) / total).clamp(0.05, 0.95);
+            _castProgressIndeterminate = false;
           });
           await SchedulerBinding.instance.endOfFrame;
           if (!mounted) break;
@@ -1129,10 +1152,6 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       if (!mounted) return;
       if (cast.ok) {
         await _finishSuccessfulSend(cast.message, sentJpeg: _previewBytes);
-        if (!mounted) return;
-        if (widget.queueTotal > 1 && widget.queueIndex < widget.queueTotal) {
-          Navigator.of(context).pop(true);
-        }
         return;
       }
       setState(() {
@@ -1166,6 +1185,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
           _uploading = false;
           _castProgress = null;
           _castProgressIndeterminate = false;
+          _sendCurrent = 0;
+          _sendTotal = 0;
         });
       }
     }
@@ -1354,6 +1375,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                             SizedBox(
                               height: 160,
                               child: PageView.builder(
+                                key: ValueKey('editor-playlist-${_perStates!.length}'),
                                 controller: _pageController,
                                 onPageChanged: _onPageChanged,
                                 itemCount: _perStates!.length,
@@ -2978,46 +3000,50 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     flex: 6,
-                    child: SizedBox(
+                    child: ProgressActionButton(
                       height: 54,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _kEditorRed,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                        ),
-                        onPressed: _uploading
-                            ? null
-                            : () async {
-                                if (_frameOnline == false) {
-                                  await showFrameOfflineSendDialog(context);
-                                  await _loadPairing();
-                                  return;
-                                }
-                                await _send();
-                              },
-                        child: _uploading
-                            ? const SizedBox(
-                                width: 22,
-                                height: 22,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.4,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : Text(
-                                _isPlaylist
-                                    ? s.sendPlaylistLabel(_perStates?.length ?? 0)
-                                    : s.sendLabel,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      backgroundColor: _kEditorRed,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor:
+                          _kEditorRed.withValues(alpha: 0.55),
+                      label: _isPlaylist
+                          ? s.sendPlaylistLabel(_perStates?.length ?? 0)
+                          : s.sendLabel,
+                      isLoading: _uploading,
+                      statusMessage: (_uploading && _sendTotal > 1)
+                          ? s.progressSendingPhotos
+                          : (_status?.trim().isNotEmpty == true
+                              ? _status!
+                                  .replaceAll(RegExp(r'[.…]+$'), '')
+                                  .trim()
+                              : s.progressSendingPhotos),
+                      currentStep: (_uploading &&
+                              _sendTotal > 1 &&
+                              _sendCurrent > 0)
+                          ? _sendCurrent
+                          : null,
+                      totalSteps:
+                          (_uploading && _sendTotal > 1) ? _sendTotal : null,
+                      progress: _uploading
+                          ? (_castProgressIndeterminate
+                              ? null
+                              : (_castProgress ??
+                                  (_sendTotal > 0 && _sendCurrent > 0
+                                      ? (_sendCurrent / _sendTotal)
+                                          .clamp(0.05, 1.0)
+                                      : null)))
+                          : null,
+                      onPressed: _uploading
+                          ? null
+                          : () async {
+                              if (_frameOnline == false) {
+                                await showFrameOfflineSendDialog(context);
+                                await _loadPairing();
+                                return;
+                              }
+                              await _send();
+                            },
                     ),
                   ),
                 ],

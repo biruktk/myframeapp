@@ -14,6 +14,7 @@ import '../services/share_incoming_service.dart';
 import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
 import 'shell_navigation.dart';
+import 'share_target_bottom_sheet.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -26,6 +27,7 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
   final ValueNotifier<int> sendGalleryPickNonce = ValueNotifier<int>(0);
   final ValueNotifier<List<String>> sendSharedPathsNonce = ValueNotifier<List<String>>(const []);
+  bool _shareSheetOpen = false;
 
   @override
   void initState() {
@@ -97,12 +99,34 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
     _consumeSharedPaths();
   }
 
-  void _consumeSharedPaths() {
-    final paths = ShareIncomingService.instance.takePendingPaths();
-    if (paths.isEmpty) return;
-    openSendWithSharedPaths(paths);
+  Future<void> _consumeSharedPaths() async {
+    if (_shareSheetOpen) return;
+    final items = ShareIncomingService.instance.takePendingItems();
+    if (items.isEmpty) return;
+    _shareSheetOpen = true;
+    try {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) {
+          _shareSheetOpen = false;
+          return;
+        }
+        try {
+          await showShareTargetBottomSheet(context, items: items);
+        } finally {
+          _shareSheetOpen = false;
+          // Drain any share that arrived while the sheet was open.
+          if (mounted && ShareIncomingService.instance.hasPending) {
+            _consumeSharedPaths();
+          }
+        }
+      });
+    } catch (_) {
+      _shareSheetOpen = false;
+      ShareIncomingService.instance.requeueItems(items);
+    }
   }
 
+  /// Legacy path: jump to Send tab with shared paths (album / sequential editor).
   void openSendWithSharedPaths(List<String> paths) {
     if (paths.isEmpty) return;
     _setIndex(2);
@@ -127,6 +151,9 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
       ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
     }
     setState(() => _index = i);
+    if (ShellNavigation.activeTab.value != i) {
+      ShellNavigation.activeTab.value = i;
+    }
   }
 
   @override

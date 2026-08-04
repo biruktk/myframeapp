@@ -96,11 +96,14 @@ class BlufiProvisioningService {
           message: 'Bluetooth is off',
         );
       }
-      // Ensure no stale scan session competes with GATT provisioning.
+      // Ensure no stale scan / GATT session competes with provisioning
+      // (common after WeChat mini-program Wi‑Fi setup on the same frame).
       try {
         await FlutterBluePlus.stopScan();
         _d('pre-provision: stopped active BLE scan');
       } catch (_) {}
+      await _clearConnectedSessions();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
 
       final candidates = await _scanProvisionCandidates(paired);
       if (candidates.isEmpty) {
@@ -297,6 +300,8 @@ class BlufiProvisioningService {
       try {
         await FlutterBluePlus.stopScan();
       } catch (_) {}
+      await _clearConnectedSessions();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
       final candidates = await _scanProvisionCandidates(paired);
       if (candidates.isEmpty) {
         return const BlufiProvisionResult(
@@ -384,20 +389,49 @@ class BlufiProvisioningService {
     }
   }
 
+  /// Drop any prior GATT session (WeChat / stale FBP) before a fresh connect.
+  Future<void> _forceDisconnectQuiet(BluetoothDevice remote) async {
+    try {
+      await remote.disconnect();
+      _d('pre-connect disconnect → ${remote.remoteId.str}');
+    } catch (e) {
+      _d('pre-connect disconnect ignored: $e');
+    }
+  }
+
+  Future<void> _clearConnectedSessions() async {
+    try {
+      final connected = FlutterBluePlus.connectedDevices;
+      for (final d in connected) {
+        try {
+          await d.disconnect();
+          _d('cleared connected session ${d.remoteId.str}');
+        } catch (_) {}
+      }
+    } catch (e) {
+      _d('clearConnectedSessions: $e');
+    }
+  }
+
   Future<void> _connectWithRetry(BluetoothDevice remote) async {
     Object? lastError;
+    // Always start from a clean session — WeChat mini-program often leaves the
+    // ESP32 GATT locked if it did not closeBLEConnection / closeBluetoothAdapter.
+    await _forceDisconnectQuiet(remote);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
     for (var attempt = 1; attempt <= 3; attempt++) {
       try {
         _d('connect → ${remote.remoteId.str} attempt=$attempt timeout=14s');
-        await remote.connect(timeout: const Duration(seconds: 14));
+        await remote.connect(
+          timeout: const Duration(seconds: 14),
+          autoConnect: false,
+        );
         await _negotiateMtu(remote);
         return;
       } catch (e) {
         lastError = e;
         _d('connect attempt=$attempt failed: $e');
-        try {
-          await remote.disconnect();
-        } catch (_) {}
+        await _forceDisconnectQuiet(remote);
         await Future<void>.delayed(Duration(milliseconds: 350 * attempt));
       }
     }

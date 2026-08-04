@@ -1,6 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../config/feature_flags.dart';
 import '../l10n/app_strings.dart';
+import '../services/device_store.dart';
+import '../services/ota_update_store.dart';
+import '../services/sleep_mode_store.dart';
 import '../settings/app_settings.dart';
 import 'settings_account_screen.dart';
 import 'settings_notifications_screen.dart';
@@ -24,15 +30,54 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  var _sleepEnabled = true;
-  var _autoOtaEnabled = true;
-  TimeOfDay _sleepStart = const TimeOfDay(hour: 23, minute: 0);
-  TimeOfDay _sleepEnd = const TimeOfDay(hour: 7, minute: 0);
-  final _firmwareVersion = 'v0.5.0';
+  var _sleepEnabled = false;
+  var _autoOtaEnabled = false;
+  TimeOfDay _sleepStart = SleepModeStore.defaultStart;
+  TimeOfDay _sleepEnd = SleepModeStore.defaultEnd;
+  final _firmwareVersion = 'v0.5.0'; // Forced current firmware display
+  var _sleepReady = false;
+  var _otaReady = false;
 
   @override
   void initState() {
     super.initState();
+    DeviceStore.instance.revision.addListener(_onFramesChanged);
+    unawaited(_loadDeviceToggles());
+  }
+
+  @override
+  void dispose() {
+    DeviceStore.instance.revision.removeListener(_onFramesChanged);
+    super.dispose();
+  }
+
+  void _onFramesChanged() {
+    // Newly connected frame auto-enables sleep / OTA when unset.
+    unawaited(_loadDeviceToggles());
+  }
+
+  Future<void> _loadDeviceToggles() async {
+    await Future.wait([
+      SleepModeStore.instance.resolveForUi(),
+      OtaUpdateStore.instance.resolveForUi(),
+    ]);
+    if (!mounted) return;
+    final sleep = SleepModeStore.instance;
+    final ota = OtaUpdateStore.instance;
+    // Keep AppSettings OTA flags aligned with the resolved UI value.
+    final app = AppSettingsScope.of(context);
+    if (app.automaticFrameFirmwareUpdates != ota.enabled) {
+      await app.setAutomaticFrameFirmwareUpdates(ota.enabled);
+    }
+    if (!mounted) return;
+    setState(() {
+      _sleepEnabled = sleep.enabled;
+      _sleepStart = sleep.startTime;
+      _sleepEnd = sleep.endTime;
+      _sleepReady = true;
+      _autoOtaEnabled = ota.enabled;
+      _otaReady = true;
+    });
   }
 
   String _languageSubtitle(AppSettings app, AppStrings s) {
@@ -65,6 +110,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   String _otaSubtitle(AppStrings s) {
     return '${s.firmwareCurrentVersion} $_firmwareVersion · ${_autoOtaEnabled ? s.otaAutoCheckOn : s.otaAutoCheckOff}';
+  }
+
+  Future<void> _onSleepToggle(bool value) async {
+    setState(() => _sleepEnabled = value);
+    await SleepModeStore.instance.setEnabled(value);
+  }
+
+  Future<void> _onOtaToggle(bool value) async {
+    setState(() => _autoOtaEnabled = value);
+    await OtaUpdateStore.instance.setEnabled(value);
+    if (!mounted) return;
+    await AppSettingsScope.of(context).setAutomaticFrameFirmwareUpdates(value);
   }
 
   Future<void> _confirmSignOut(BuildContext context) async {
@@ -112,6 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final picked = await showTimePicker(context: ctx, initialTime: _sleepStart);
                 if (picked != null) {
                   setState(() => _sleepStart = picked);
+                  await SleepModeStore.instance.setSchedule(start: picked);
                   if (ctx.mounted) Navigator.pop(ctx);
                 }
               },
@@ -126,6 +184,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final picked = await showTimePicker(context: ctx, initialTime: _sleepEnd);
                 if (picked != null) {
                   setState(() => _sleepEnd = picked);
+                  await SleepModeStore.instance.setSchedule(end: picked);
                   if (ctx.mounted) Navigator.pop(ctx);
                 }
               },
@@ -213,11 +272,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context: context,
               icon: Icons.bedtime_outlined,
               title: s.sleepMode,
-              subtitle: _sleepSubtitle(s),
+              subtitle: _sleepReady ? _sleepSubtitle(s) : '…',
               trailing: Switch.adaptive(
                 value: _sleepEnabled,
                 activeTrackColor: _red,
-                onChanged: (v) => setState(() => _sleepEnabled = v),
+                onChanged: _sleepReady
+                    ? (v) => unawaited(_onSleepToggle(v))
+                    : null,
               ),
               onTap: _sleepEnabled ? _showSleepPicker : null,
             ),
@@ -226,11 +287,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context: context,
               icon: Icons.system_update_alt,
               title: s.otaFirmwareUpdate,
-              subtitle: _otaSubtitle(s),
+              subtitle: _otaReady ? _otaSubtitle(s) : '…',
               trailing: Switch.adaptive(
                 value: _autoOtaEnabled,
                 activeTrackColor: _red,
-                onChanged: (v) => setState(() => _autoOtaEnabled = v),
+                onChanged: _otaReady
+                    ? (v) => unawaited(_onOtaToggle(v))
+                    : null,
               ),
               onTap: _checkOtaUpdate,
             ),
@@ -266,16 +329,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const SettingsAppPreferencesScreen()),
               ),
             ),
-            _divider(cs),
-            _tile(
-              context: context,
-              icon: Icons.auto_awesome,
-              title: s.aiGenerateNavTitle,
-              subtitle: s.aiGenerateSub,
-              onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const SettingsAiGenerateScreen()),
+            if (FeatureFlags.enableAIFeatures) ...[
+              _divider(cs),
+              _tile(
+                context: context,
+                icon: Icons.auto_awesome,
+                title: s.aiGenerateNavTitle,
+                subtitle: s.aiGenerateSub,
+                onTap: () => Navigator.push<void>(
+                  context, MaterialPageRoute<void>(builder: (_) => const SettingsAiGenerateScreen()),
+                ),
               ),
-            ),
+            ],
           ]),
           const SizedBox(height: 16),
           _sectionHeader(s.settingsSectionHelp, cs),

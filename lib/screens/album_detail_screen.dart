@@ -6,26 +6,30 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/personal_gallery_store.dart';
+import '../services/photo_delete_service.dart';
 import '../services/send_albums_store.dart';
 import '../services/gallery_send_flow.dart';
-import '../services/frame_api_client.dart';
+import '../services/album_delete_service.dart';
+import '../services/playlist_send_nav.dart';
 import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
+import '../widgets/app_status_toast.dart';
+import '../widgets/busy_status_dialog.dart';
 import '../widgets/pick_personal_photos_dialog.dart';
-
-bool _localFileExists(String path) {
-  try {
-    return File(path).existsSync();
-  } catch (_) {
-    return false;
-  }
-}
+import '../widgets/safe_render_boundary.dart';
 
 /// Full-screen album: grid like Personal, tap to view, add via FAB, single / multi delete.
 class AlbumDetailScreen extends StatefulWidget {
-  const AlbumDetailScreen({super.key, required this.albumId});
+  const AlbumDetailScreen({
+    super.key,
+    required this.albumId,
+    this.autoPromptAddPhotos = false,
+  });
 
   final String albumId;
+
+  /// After create: open the system photo picker as soon as the detail loads.
+  final bool autoPromptAddPhotos;
 
   @override
   State<AlbumDetailScreen> createState() => _AlbumDetailScreenState();
@@ -43,7 +47,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   void initState() {
     super.initState();
     _titleFocus.addListener(_onTitleFocusChanged);
-    _reload();
+    unawaited(_bootstrap());
+  }
+
+  Future<void> _bootstrap() async {
+    await _reload();
+    if (!mounted || !widget.autoPromptAddPhotos) return;
+    await _addNewPhotos();
   }
 
   @override
@@ -94,24 +104,63 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   Future<void> _reload() async {
     await SendAlbumsStore.instance.load();
     if (!mounted) return;
-    SendAlbumEntry? found;
-    for (final x in SendAlbumsStore.instance.albums) {
-      if (x.id == widget.albumId) {
-        found = x;
-        break;
-      }
-    }
+    final found = SendAlbumsStore.instance.albumById(widget.albumId);
     if (found == null) {
-      Navigator.of(context).pop();
+      // Album was deleted (e.g. during a failed legacy resend). Pop safely
+      // after this frame so we never race Navigator during a parent popUntil.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      });
       return;
     }
     setState(() {
       _album = found;
-      _selected.removeWhere((p) => !found!.paths.contains(p));
+      _selected.removeWhere((p) => !found.paths.contains(p));
       if (!_editingTitle) {
-        _titleCtrl.text = found!.name;
+        _titleCtrl.text = found.name;
       }
     });
+  }
+
+  /// Instantly show newly picked paths in the grid (before persist/sync).
+  void _applyOptimisticPaths(List<String> newPaths) {
+    final a = _album;
+    if (a == null || !mounted || newPaths.isEmpty) return;
+    final merged = List<String>.from(a.paths);
+    for (final p in newPaths) {
+      final t = p.trim();
+      if (t.isEmpty || merged.contains(t)) continue;
+      merged.add(t);
+    }
+    setState(() {
+      _album = SendAlbumEntry(id: a.id, name: a.name, paths: merged);
+    });
+    _prefetchThumbs(newPaths);
+  }
+
+  void _prefetchThumbs(List<String> paths) {
+    if (!mounted) return;
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    // Decode near cell size (~1/3 screen width) so thumbs paint fast.
+    final cachePx = (MediaQuery.sizeOf(context).width / 3 * dpr).round().clamp(120, 512);
+    for (final path in paths) {
+      try {
+        final provider = ResizeImage(FileImage(File(path)), width: cachePx);
+        unawaited(precacheImage(provider, context));
+      } catch (_) {}
+    }
+  }
+
+  void _syncAlbumInBackground(String albumId) {
+    // Only push this album — do not await a full gallery download/sync (was ~30s).
+    unawaited(() async {
+      try {
+        await SyncPipeline.instance.onAlbumsChanged(albumId: albumId);
+      } catch (_) {}
+    }());
   }
 
   Future<void> _addNewPhotos() async {
@@ -119,15 +168,32 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final list = await GalleryPhotoPicker.pickMulti(context);
     if (list.isEmpty) return;
     final paths = list.map((e) => e.path).toList();
+
+    _applyOptimisticPaths(paths);
+
     await PersonalGalleryStore.instance.addPaths(paths);
     await SendAlbumsStore.instance.addPathsToAlbum(albumId, paths);
-    // Await so album photoIds are uploaded before UI returns.
-    await SyncPipeline.instance.onGalleryLocalChanged();
-    await SyncPipeline.instance.onAlbumsChanged(albumId: albumId);
-    await _reload();
+    _syncAlbumInBackground(albumId);
+
     if (!mounted) return;
-    final s = AppStrings.of(context);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.albumAddedCount(paths.length))));
+    // Mini-app: after selection, open send page immediately (previews can load later).
+    final sendPaths = List<String>.from(_album?.paths ?? paths);
+    if (sendPaths.length >= 2) {
+      await PlaylistSendNav.openPlaylistSend(
+        context,
+        paths: sendPaths,
+        playlistName: _album?.name,
+        albumId: albumId,
+      );
+    } else {
+      await PlaylistSendNav.openAfterPick(
+        context,
+        paths: sendPaths,
+        playlistName: _album?.name,
+        albumId: albumId,
+      );
+    }
+    if (mounted) await _reload();
   }
 
   Future<void> _addFromPersonal() async {
@@ -160,12 +226,63 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       builder: (ctx) => PickPersonalPhotosDialog(available: available, strings: s),
     );
     if (picked == null || picked.isEmpty || !mounted) return;
+
+    _applyOptimisticPaths(picked);
+
     await SendAlbumsStore.instance.addPathsToAlbum(widget.albumId, picked);
-    await SyncPipeline.instance.onAlbumsChanged(albumId: widget.albumId);
-    await _reload();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s.albumAddedCount(picked.length))));
+    _syncAlbumInBackground(widget.albumId);
+
+    if (!mounted) return;
+    final sendPaths = List<String>.from(_album?.paths ?? picked);
+    if (sendPaths.length >= 2) {
+      await PlaylistSendNav.openPlaylistSend(
+        context,
+        paths: sendPaths,
+        playlistName: _album?.name,
+        albumId: widget.albumId,
+      );
+    } else {
+      await PlaylistSendNav.openAfterPick(
+        context,
+        paths: sendPaths,
+        playlistName: _album?.name,
+        albumId: widget.albumId,
+      );
     }
+    if (mounted) await _reload();
+  }
+
+  Future<void> _sendPlaylist() async {
+    final a = _album;
+    if (a == null) return;
+    final s = AppStrings.of(context);
+    if (_editingTitle) await _commitInlineTitle();
+    if (!mounted) return;
+
+    if (!await PlaylistSendNav.ensureReadyToSend(context)) return;
+    if (!mounted) return;
+
+    final paths = a.paths.where((p) {
+      try {
+        return File(p).existsSync();
+      } catch (_) {
+        return false;
+      }
+    }).toList();
+    if (paths.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(s.playlistAddPhotosBeforeSend)),
+      );
+      return;
+    }
+
+    await PlaylistSendNav.openPlaylistSend(
+      context,
+      paths: paths,
+      playlistName: a.name,
+      albumId: a.id,
+    );
+    await _reload();
   }
 
   void _showAddSheet() {
@@ -203,56 +320,85 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     final list = paths.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
     if (list.isEmpty) return;
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(s.albumRemoveFromAlbumTitle),
-        content: Text(s.albumRemoveFromAlbumBody),
+        title: Text(s.deletePhotoTitle),
+        content: Text(s.deletePhotoAccountBody),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.remove)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: cs.error,
+              foregroundColor: cs.onError,
+            ),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(s.deleteAction),
+          ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    await SendAlbumsStore.instance.removePathsFromAlbum(widget.albumId, list);
+    final tok = AppSettingsScope.of(context).authToken;
+    await PhotoDeleteService.deleteMany(paths: list, bearerToken: tok);
     setState(() {
       _selected.removeWhere(list.contains);
       if (_selected.isEmpty) _selecting = false;
     });
     await _reload();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(s.albumRemovedFromAlbumCount(list.length))),
+    AppStatusToast.show(
+      context,
+      title: s.photoDeletedToast,
+      message: s.deletePhotoAccountBody,
+      tone: AppStatusTone.info,
+      icon: Icons.delete_outline_rounded,
     );
   }
 
   Future<void> _confirmDeleteAlbum() async {
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final name = _album?.name ?? '';
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(s.deleteAction),
-        content: Text('Delete "${_album?.name ?? ''}" and all its photos?'),
+        title: Text(s.deleteAlbumTitle),
+        content: Text(s.deleteAlbumConfirmDetail(name)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.deleteAction)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: cs.error,
+              foregroundColor: cs.onError,
+            ),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(s.deleteAction),
+          ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    await SendAlbumsStore.instance.deleteAlbum(widget.albumId);
     final tok = AppSettingsScope.of(context).authToken;
-    if (tok.trim().isNotEmpty) {
-      unawaited(
-        FrameApiClient().deleteUserAlbum(
-          bearerToken: tok,
+    await BusyStatusDialog.run<void>(
+      context,
+      message: s.deletingAlbum,
+      action: () async {
+        await AlbumDeleteService.deletePowerful(
           albumId: widget.albumId,
-        ),
-      );
-    }
-    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: widget.albumId));
+          bearerToken: tok,
+        );
+      },
+    );
     if (!mounted) return;
+    AppStatusToast.show(
+      context,
+      title: s.albumDeletedToast,
+      message: s.deleteAlbumStopsPlaylistBody,
+      tone: AppStatusTone.success,
+      icon: Icons.delete_outline_rounded,
+    );
     Navigator.of(context).pop();
   }
 
@@ -310,6 +456,11 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
               ),
             ] else ...[
               IconButton(
+                tooltip: s.sendPlaylistToFrame,
+                icon: const Icon(Icons.cast_connected_outlined),
+                onPressed: () => unawaited(_sendPlaylist()),
+              ),
+              IconButton(
                 tooltip: s.albumDetailSelect,
                 icon: const Icon(Icons.checklist_outlined),
                 onPressed: () async {
@@ -331,6 +482,9 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
         ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: _showAddSheet,
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Colors.white,
+          elevation: 3,
           icon: const Icon(Icons.add_photo_alternate_outlined),
           label: Text(s.albumDetailAddPhotosHint),
         ),
@@ -345,14 +499,14 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
                 ? Column(
                     children: [
                       Material(
-                        color: cs.primaryContainer.withValues(alpha: 0.35),
+                        color: cs.surfaceContainerHigh,
                         child: SizedBox(
                           width: double.infinity,
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
                             child: Text(
                               s.albumSelectedCount(_selected.length),
-                              style: TextStyle(fontWeight: FontWeight.w600, color: cs.onPrimaryContainer),
+                              style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurface),
                             ),
                           ),
                         ),
@@ -427,7 +581,10 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   }
 
   Widget _buildGrid(List<String> paths, ColorScheme cs) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cachePx = (MediaQuery.sizeOf(context).width / 3 * dpr).round().clamp(120, 512);
     return GridView.builder(
+      key: ValueKey('album-grid-${widget.albumId}-${paths.length}-${paths.join('|').hashCode}'),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 88),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
@@ -436,8 +593,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
       ),
       itemCount: paths.length,
       itemBuilder: (context, i) {
+        if (i < 0 || i >= paths.length) {
+          return ColoredBox(
+            color: cs.surfaceContainerHighest,
+            child: Icon(Icons.broken_image_outlined, color: cs.outline),
+          );
+        }
         final path = paths[i];
-        final exists = _localFileExists(path);
         final selected = _selected.contains(path);
         return Material(
           color: cs.surface,
@@ -460,18 +622,17 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (exists)
-                  Image.file(File(path), fit: BoxFit.cover)
-                else
-                  ColoredBox(
-                    color: cs.surfaceContainerHighest,
-                    child: Icon(Icons.broken_image_outlined, color: cs.outline),
-                  ),
+                SafeFileImage(
+                  key: ValueKey(path),
+                  path: path,
+                  fit: BoxFit.cover,
+                  cacheWidth: cachePx,
+                ),
                 if (_selecting && selected)
                   Container(
                     decoration: BoxDecoration(
                       border: Border.all(color: cs.primary, width: 3),
-                      color: cs.primary.withValues(alpha: 0.22),
+                      color: Colors.black.withValues(alpha: 0.18),
                     ),
                   ),
                 if (_selecting && selected)
@@ -544,20 +705,29 @@ class _AlbumPhotoViewerScreenState extends State<_AlbumPhotoViewerScreen> {
   Future<void> _removeCurrent() async {
     if (_paths.isEmpty) return;
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
     final path = _paths[_index];
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(s.albumRemoveFromAlbumTitle),
-        content: Text(s.albumRemoveFromAlbumBody),
+        title: Text(s.deletePhotoTitle),
+        content: Text(s.deletePhotoAccountBody),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
-          FilledButton(onPressed: () => Navigator.pop(c, true), child: Text(s.remove)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: cs.error,
+              foregroundColor: cs.onError,
+            ),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(s.deleteAction),
+          ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
-    await SendAlbumsStore.instance.removePathsFromAlbum(widget.albumId, [path]);
+    final tok = AppSettingsScope.of(context).authToken;
+    await PhotoDeleteService.deleteCompletely(path: path, bearerToken: tok);
     if (!mounted) return;
     setState(() {
       _paths.removeAt(_index);
@@ -566,20 +736,23 @@ class _AlbumPhotoViewerScreenState extends State<_AlbumPhotoViewerScreen> {
       Navigator.of(context).pop();
       return;
     }
-    if (_index >= _paths.length) {
-      _index = _paths.length - 1;
+    _index = clampImageIndex(_index, _paths.length);
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(_index);
     }
-    _pageController.jumpToPage(_index);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(s.albumRemovedFromAlbumCount(1))),
+    AppStatusToast.show(
+      context,
+      title: s.photoDeletedToast,
+      message: s.deletePhotoAccountBody,
+      tone: AppStatusTone.info,
+      icon: Icons.delete_outline_rounded,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
-    final cs = Theme.of(context).colorScheme;
     if (_paths.isEmpty) {
       return Scaffold(
         backgroundColor: Colors.black,
@@ -592,14 +765,15 @@ class _AlbumPhotoViewerScreenState extends State<_AlbumPhotoViewerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text('${_index + 1} / ${_paths.length}'),
+        title: Text('${clampImageIndex(_index, _paths.length) + 1} / ${_paths.length}'),
         actions: [
           IconButton(
             tooltip: s.sendToFrame,
             icon: const Icon(Icons.ios_share_outlined),
             onPressed: () {
               if (_paths.isEmpty) return;
-              unawaited(sendGalleryPhotoToFrame(context, path: _paths[_index]));
+              final i = clampImageIndex(_index, _paths.length);
+              unawaited(sendGalleryPhotoToFrame(context, path: _paths[i]));
             },
           ),
           IconButton(
@@ -610,20 +784,25 @@ class _AlbumPhotoViewerScreenState extends State<_AlbumPhotoViewerScreen> {
         ],
       ),
       body: PageView.builder(
+        key: ValueKey('album-viewer-${widget.albumId}-${_paths.length}-${_paths.join('|').hashCode}'),
         controller: _pageController,
         itemCount: _paths.length,
-        onPageChanged: (i) => setState(() => _index = i),
+        onPageChanged: (i) => setState(() => _index = clampImageIndex(i, _paths.length)),
         itemBuilder: (context, i) {
+          if (i < 0 || i >= _paths.length) {
+            return const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48));
+          }
           final p = _paths[i];
-          final ok = _localFileExists(p);
           return Center(
-            child: ok
-                ? InteractiveViewer(
-                    minScale: 0.5,
-                    maxScale: 4,
-                    child: Image.file(File(p), fit: BoxFit.contain),
-                  )
-                : Icon(Icons.broken_image_outlined, color: cs.outline, size: 48),
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4,
+              child: SafeFileImage(
+                key: ValueKey(p),
+                path: p,
+                fit: BoxFit.contain,
+              ),
+            ),
           );
         },
       ),
