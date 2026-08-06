@@ -16,6 +16,7 @@ import '../services/device_transport.dart' show FrameConnectionState;
 import '../services/family_group_store.dart';
 import '../services/share_service.dart';
 import '../services/frame_api_client.dart';
+import '../services/account_sync_service.dart';
 import '../services/sync_pipeline.dart';
 import '../services/usage_metrics_store.dart';
 import '../settings/app_settings.dart';
@@ -89,6 +90,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _familyFramesRefreshing = true;
     try {
       await DeviceStore.instance.syncServerFrames(bearerToken: tok);
+      // Also merge profile bound_frames (clears stale Remove bans for invitees).
+      await AccountSyncService.instance.syncAccountState(
+        force: true,
+        authTokenOverride: tok,
+        replaceFrames: true,
+        pruneMissingFrames: false,
+      );
       if (mounted) await _load();
     } catch (_) {
       /* keep local */
@@ -162,8 +170,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     Future<void> probeOne(PairedFrame f) async {
       FrameStatus? status;
-      // Cap MAC probes so pull-to-refresh cannot spin for minutes.
-      final macs = DeviceStore.statusMacCandidates(f).take(2);
+      // Probe BLE + STA siblings; cap so Home refresh stays snappy.
+      final macs = DeviceStore.statusMacCandidates(f).take(4);
       for (final mac in macs) {
         try {
           status = await _apiClient
@@ -173,9 +181,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       if (status != null) {
         updated[f.deviceId] = status;
-      } else {
-        updated.remove(f.deviceId);
       }
+      // Sticky: never wipe a last-known status on a transient probe miss.
+      // After Wi‑Fi setup the ESP turns BLE off — a failed probe must not
+      // flip the tile to "disconnected" every 10s poll.
     }
 
     try {
@@ -286,12 +295,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final st = _frameStatuses[f.deviceId];
     if (st != null) return st.isEffectivelyOnline;
     final active = DeviceStore.instance.cached;
-    if (BleFrameDeviceTransport.instance.connectionUi.value == FrameConnectionState.connected &&
+    if (BleFrameDeviceTransport.instance.connectionUi.value ==
+            FrameConnectionState.connected &&
         active != null &&
         active.deviceId.trim() == f.deviceId.trim()) {
       return true;
     }
-    // Unknown ≠ online. Never greenlight from wifiProvisioned / apiUrl alone.
+    // After BluFi Wi‑Fi success the firmware turns BLE off by design. Treat a
+    // freshly provisioned frame as online until status API proves otherwise.
+    if (f.isWifiProvisioned) {
+      final at = f.wifiProvisionedAtMs;
+      if (at != null) {
+        final ageMs = DateTime.now().millisecondsSinceEpoch - at;
+        if (ageMs >= 0 && ageMs < const Duration(minutes: 15).inMilliseconds) {
+          return true;
+        }
+      }
+    }
     return false;
   }
 
@@ -390,10 +410,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           final offlineC = total - onlineC;
 
           final active = DeviceStore.instance.cached;
+          // Only warn when status API explicitly says offline — not on unknown
+          // / sticky-miss right after BLE drops post Wi‑Fi.
+          final activeStatus =
+              active == null ? null : _frameStatuses[active.deviceId];
           final showOfflineBanner = active != null &&
-              _frameStatuses.isNotEmpty &&
-              onlineC == 0 &&
-              !_checkingFrameStatus;
+              activeStatus != null &&
+              !activeStatus.isEffectivelyOnline &&
+              !_checkingFrameStatus &&
+              onlineC == 0;
 
           return RefreshIndicator(
             color: const Color(0xFFE5252A),

@@ -186,17 +186,12 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   }
 
   static const _red = Color(0xFFE53935);
-  static const _bg = Color(0xFFF6F7F9);
-  static const _cardBorder = Color(0xFFEFEFEF);
-
-  String _storageText() {
-    final st = _status;
-    return '${st?.storageUsedFormatted ?? '0.0 GB'} / ${st?.storageTotalFormatted ?? '32.0 GB'}';
-  }
 
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     final p = _paired;
     final st = _status;
     final isOnline = st?.isEffectivelyOnline ?? false;
@@ -206,18 +201,21 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     const firmware = 'v0.5.0';
 
     return Scaffold(
-      backgroundColor: _bg,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
           s.deviceDetails,
-          style: const TextStyle(
-              color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18),
+          style: tt.titleMedium?.copyWith(
+            color: cs.onSurface,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
         ),
         centerTitle: false,
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.chevron_left, color: Colors.black, size: 28),
+          icon: Icon(Icons.chevron_left, color: cs.onSurface, size: 28),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -230,7 +228,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.edit_outlined, color: Colors.black87),
+                : Icon(Icons.edit_outlined, color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -257,7 +255,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                               child: LinearProgressIndicator(
                                 value: battery / 100.0,
                                 minHeight: 6,
-                                backgroundColor: const Color(0xFFEEEEEE),
+                                backgroundColor: cs.surfaceContainerHighest,
                                 valueColor: const AlwaysStoppedAnimation<Color>(
                                     Color(0xFF4CAF50)),
                               ),
@@ -266,10 +264,11 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                           const SizedBox(width: 12),
                           Text(
                             '$battery%',
-                            style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87),
+                            style: tt.bodyMedium?.copyWith(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: cs.onSurface,
+                            ),
                           ),
                         ],
                       ),
@@ -286,7 +285,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                               child: LinearProgressIndicator(
                                 value: storageRatio,
                                 minHeight: 6,
-                                backgroundColor: const Color(0xFFEEEEEE),
+                                backgroundColor: cs.surfaceContainerHighest,
                                 valueColor: const AlwaysStoppedAnimation<Color>(
                                     Color(0xFF4CAF50)),
                               ),
@@ -295,10 +294,11 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                           const SizedBox(width: 12),
                           Text(
                             _storageText(),
-                            style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.black87),
+                            style: tt.bodySmall?.copyWith(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: cs.onSurface,
+                            ),
                           ),
                         ],
                       ),
@@ -317,15 +317,35 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                       _deviceName,
                       onTap: p == null || _savingName ? null : _editFrameName,
                     ),
-                    _divider,
+                    Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: cs.outlineVariant),
                     _infoTile(s.macLabel, _macAddress),
-                    _divider,
+                    Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: cs.outlineVariant),
                     _infoTile(s.firmwareVersionLabel, firmware),
-                    _divider,
+                    Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: cs.outlineVariant),
                     _infoTile(s.networkNameLabel, _wifiSsid),
-                    _divider,
+                    Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: cs.outlineVariant),
                     _infoTile(s.lastSeenLabel, _lastSeen(s)),
-                    _divider,
+                    Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: cs.outlineVariant),
                     _infoTile(s.wifiSignalLabel,
                         isOnline ? s.connected : s.disconnected),
                   ],
@@ -362,6 +382,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   }
 
   Widget _heroCard(String name, String mac, bool online, AppStrings s) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return _card(
       child: Column(
         children: [
@@ -382,25 +404,29 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                 child: Text(
                   name,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87),
+                  style: tt.titleLarge?.copyWith(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: cs.onSurface,
+                  ),
                 ),
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
                 onPressed:
                     _paired == null || _savingName ? null : _editFrameName,
-                icon: const Icon(Icons.edit_outlined,
-                    size: 18, color: Colors.black54),
+                icon: Icon(Icons.edit_outlined,
+                    size: 18, color: cs.onSurfaceVariant),
               ),
             ],
           ),
           const SizedBox(height: 4),
           Text(
             mac,
-            style: const TextStyle(fontSize: 13, color: Colors.grey),
+            style: tt.bodyMedium?.copyWith(
+              fontSize: 13,
+              color: cs.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 8),
           Row(
@@ -409,7 +435,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
               Icon(
                 Icons.circle,
                 size: 8,
-                color: online ? const Color(0xFF4CAF50) : Colors.grey,
+                color: online ? const Color(0xFF4CAF50) : cs.onSurfaceVariant,
               ),
               const SizedBox(width: 6),
               Text(
@@ -417,7 +443,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: online ? const Color(0xFF4CAF50) : Colors.grey,
+                  color: online ? const Color(0xFF4CAF50) : cs.onSurfaceVariant,
                 ),
               ),
             ],
@@ -428,28 +454,30 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   }
 
   Widget _card({required Widget child, EdgeInsetsGeometry? padding}) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
       padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _cardBorder),
+        border: Border.all(color: cs.outlineVariant),
       ),
       child: child,
     );
   }
 
   Widget _sectionHeader(String title) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Text(
         title,
-        style: const TextStyle(
-          color: Colors.black87,
-          fontWeight: FontWeight.bold,
-          fontSize: 14,
-        ),
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: cs.onSurface,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
       ),
     );
   }
@@ -459,6 +487,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     required String label,
     required Widget child,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return Row(
       children: [
         Icon(icon, color: _red, size: 20),
@@ -466,7 +495,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
         SizedBox(
           width: 56,
           child: Text(label,
-              style: const TextStyle(fontSize: 14, color: Colors.black87)),
+              style: TextStyle(fontSize: 14, color: cs.onSurface)),
         ),
         const SizedBox(width: 16),
         Expanded(child: child),
@@ -475,13 +504,13 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   }
 
   Widget _infoTile(String title, String value, {VoidCallback? onTap}) {
+    final cs = Theme.of(context).colorScheme;
     final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title,
-              style: const TextStyle(fontSize: 14, color: Colors.black87)),
+          Text(title, style: TextStyle(fontSize: 14, color: cs.onSurface)),
           Flexible(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -491,16 +520,17 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
                   child: Text(
                     value,
                     textAlign: TextAlign.end,
-                    style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: cs.onSurface,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
                 if (onTap != null) ...[
                   const SizedBox(width: 6),
-                  const Icon(Icons.edit_outlined,
-                      size: 16, color: Colors.black45),
+                  Icon(Icons.edit_outlined,
+                      size: 16, color: cs.onSurfaceVariant),
                 ],
               ],
             ),
@@ -511,7 +541,9 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     if (onTap == null) return row;
     return InkWell(onTap: onTap, child: row);
   }
-}
 
-const _divider =
-    Divider(height: 1, indent: 16, endIndent: 16, color: Color(0xFFF0F0F0));
+  String _storageText() {
+    final st = _status;
+    return '${st?.storageUsedFormatted ?? '0.0 GB'} / ${st?.storageTotalFormatted ?? '32.0 GB'}';
+  }
+}

@@ -255,11 +255,17 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
         await AccountSyncService.instance.syncAccountState(
           force: true,
           authTokenOverride: tok,
-          replaceFrames: false,
+          replaceFrames: true,
           pruneMissingFrames: false,
         );
         // Second pass in case membership/frame pool lagged on the first read.
         await DeviceStore.instance.syncServerFrames(bearerToken: tok);
+        await AccountSyncService.instance.syncAccountState(
+          force: true,
+          authTokenOverride: tok,
+          replaceFrames: true,
+          pruneMissingFrames: false,
+        );
       }
       if (!mounted) return;
       setState(() {});

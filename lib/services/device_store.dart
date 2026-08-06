@@ -307,26 +307,25 @@ class DeviceStore {
 
       final mapped = <Map<String, dynamic>>[];
       for (final f in frames) {
-        final id = '${f['id'] ?? f['bleMac'] ?? f['ble_mac'] ?? ''}'.trim();
-        final ble = '${f['bleMac'] ?? f['ble_mac'] ?? id}'.trim();
-        final station = '${f['stationMac'] ?? f['station_mac'] ?? ''}'.trim();
+        final row = Map<String, dynamic>.from(
+          f.map((k, v) => MapEntry(k.toString(), v)),
+        );
+        final id = '${row['id'] ?? row['bleMac'] ?? row['ble_mac'] ?? ''}'.trim();
+        final ble = '${row['bleMac'] ?? row['ble_mac'] ?? id}'.trim();
+        final station = '${row['stationMac'] ?? row['station_mac'] ?? ''}'.trim();
         final name =
-            '${f['displayName'] ?? f['display_name'] ?? f['name'] ?? ''}'.trim();
-        final ssid = '${f['wifiSsid'] ?? f['wifi_ssid'] ?? ''}'.trim();
+            '${row['displayName'] ?? row['display_name'] ?? row['name'] ?? ''}'
+                .trim();
+        final ssid = '${row['wifiSsid'] ?? row['wifi_ssid'] ?? ''}'.trim();
         if (id.isEmpty && ble.isEmpty) continue;
-        // Honor Delete / Remove — never resurrect unbound MACs from /api/frames.
-        if (await _isUnboundMac(id) ||
-            await _isUnboundMac(ble) ||
-            await _isUnboundMac(station)) {
-          continue;
-        }
         mapped.add({
           'frame_id': id.isNotEmpty ? id : ble,
           'ble_mac': ble.isNotEmpty ? ble : id,
           if (station.isNotEmpty) 'station_mac': station,
           'frame_name': name,
           if (ssid.isNotEmpty) 'wifi_ssid': ssid,
-          'is_owner': f['isOwner'] == true || f['is_owner'] == true,
+          'is_owner': row['isOwner'] == true || row['is_owner'] == true,
+          'user_role': '${row['userRole'] ?? row['user_role'] ?? ''}',
         });
       }
 
@@ -334,6 +333,9 @@ class DeviceStore {
         _bumpRevision();
         return;
       }
+
+      // Family invite / re-share: cloud listing clears any prior local Remove ban.
+      await AccountSyncService.instance.clearUnboundBansForCloudFrames(mapped);
 
       await applyBoundFramesFromServer(
         mapped,
@@ -360,6 +362,10 @@ class DeviceStore {
     bool refreshServerCache = true,
   }) async {
     await load();
+
+    // Cloud is actively listing these frames for this account → lift Remove bans
+    // so family invitees see the owner's shared device on Home again.
+    await AccountSyncService.instance.clearUnboundBansForCloudFrames(serverFrames);
 
     final next = <PairedFrame>[];
     final seen = <String>{};
@@ -940,17 +946,17 @@ class DeviceStore {
     if (cleanPass.isNotEmpty) {
       await WifiCredentialCache.instance.remember(cleanSsid, cleanPass);
     }
-    // If the frame was already named, bind now that Wi‑Fi is set.
-    if (updated.isReadyForAccountSync) {
-      unawaited(
-        AccountSyncService.instance.pushBoundFrame(
-          updated.deviceId,
-          setPrimary: true,
-          frameName: updated.frameName,
-          wifiSsid: updated.wifiSsid,
-        ),
-      );
-    }
+    // Bind as soon as Wi‑Fi is confirmed. Name can be filled later — waiting
+    // for isReadyForAccountSync left a ~window where Home only trusted BLE,
+    // then flipped "disconnected" when the ESP turned BLE off after Wi‑Fi.
+    unawaited(
+      AccountSyncService.instance.pushBoundFrame(
+        updated.deviceId,
+        setPrimary: true,
+        frameName: updated.frameName,
+        wifiSsid: updated.wifiSsid,
+      ),
+    );
   }
 
   /// Clears saved Wi‑Fi credentials after a failed provision attempt so the UI

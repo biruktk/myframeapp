@@ -20,19 +20,22 @@ class StandardSettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
         elevation: 0,
-        color: Colors.white,
+        color: cs.surface,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: Colors.grey.shade200),
+          side: BorderSide(color: cs.outlineVariant),
         ),
         child: ListTile(
           onTap: onTap,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -43,25 +46,26 @@ class StandardSettingsTile extends StatelessWidget {
           ),
           title: Text(
             title,
-            style: TextStyle(
+            style: tt.titleMedium?.copyWith(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: isDestructive ? _primaryRed : Colors.black87,
+              color: isDestructive ? _primaryRed : cs.onSurface,
             ),
           ),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               subtitle,
-              style: TextStyle(
+              style: tt.bodyMedium?.copyWith(
                 fontSize: 13,
                 fontWeight: FontWeight.normal,
-                color: Colors.grey.shade600,
+                color: cs.onSurfaceVariant,
                 height: 1.3,
               ),
             ),
           ),
-          trailing: const Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+          trailing: Icon(Icons.chevron_right,
+              color: cs.onSurfaceVariant, size: 20),
         ),
       ),
     );

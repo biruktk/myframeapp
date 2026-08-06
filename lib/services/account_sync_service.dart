@@ -49,7 +49,7 @@ class AccountSyncService {
 
   /// Poll server every [interval] (default 2 minutes) while signed in.
   void startPeriodicSync({
-    Duration interval = const Duration(seconds: 10),
+    Duration interval = const Duration(minutes: 2),
     AppSettings? appSettings,
   }) {
     _pollTimer?.cancel();
@@ -174,8 +174,38 @@ class AccountSyncService {
     if (slug.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
     final list = List<String>.from(prefs.getStringList(_kUnboundMacsKey) ?? const []);
-    list.removeWhere((e) => e.toUpperCase() == slug);
+    final drop = <String>{slug};
+    final si = int.tryParse(slug, radix: 16);
+    if (si != null) {
+      final minus =
+          (si - 2).toRadixString(16).toUpperCase().padLeft(12, '0');
+      final plus =
+          (si + 2).toRadixString(16).toUpperCase().padLeft(12, '0');
+      if (minus.length == 12) drop.add(minus);
+      if (plus.length == 12) drop.add(plus);
+    }
+    list.removeWhere((e) => drop.contains(e.toUpperCase()));
     await prefs.setStringList(_kUnboundMacsKey, list);
+  }
+
+  /// Cloud re-granted access (family invite / re-share / re-bind). Drop local
+  /// delete bans for those MACs so Home can show the shared frame again.
+  Future<void> clearUnboundBansForCloudFrames(
+    Iterable<Map<String, dynamic>> frames,
+  ) async {
+    for (final f in frames) {
+      for (final k in [
+        f['frame_id'],
+        f['ble_mac'],
+        f['station_mac'],
+        f['id'],
+        f['bleMac'],
+        f['stationMac'],
+      ]) {
+        final raw = k?.toString().trim() ?? '';
+        if (raw.isNotEmpty) await _clearUnbound(raw);
+      }
+    }
   }
 
   /// True when [raw] matches a MAC the user explicitly deleted (incl. BLE/STA ±2).
@@ -194,31 +224,16 @@ class AccountSyncService {
     return false;
   }
 
-  /// Drop frames the user deleted so pull/sync cannot resurrect them.
+  /// Drop frames the user deleted so pull/sync cannot resurrect them —
+  /// unless the cloud is actively listing them again (family invite / re-share).
   Future<List<Map<String, dynamic>>> filterOutUnboundFrames(
     List<Map<String, dynamic>> frames,
   ) async {
     if (frames.isEmpty) return frames;
-    final out = <Map<String, dynamic>>[];
-    for (final f in frames) {
-      final keys = [
-        f['frame_id'],
-        f['ble_mac'],
-        f['station_mac'],
-        f['id'],
-        f['bleMac'],
-        f['stationMac'],
-      ];
-      var banned = false;
-      for (final k in keys) {
-        if (await isUnboundFrameId(k?.toString())) {
-          banned = true;
-          break;
-        }
-      }
-      if (!banned) out.add(f);
-    }
-    return out;
+    // Authenticated cloud list is the source of truth for current access.
+    // A prior local Remove must not permanently block a later family invite.
+    await clearUnboundBansForCloudFrames(frames);
+    return frames;
   }
 
   /// Pull when server sync_version is strictly newer than local.

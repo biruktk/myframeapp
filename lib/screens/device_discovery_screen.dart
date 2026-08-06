@@ -734,16 +734,17 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
           const SizedBox(height: 28),
           Text(
             _scanning ? s.scanningFrames : s.scanComplete,
-            style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: cs.onSurface,
+                  fontWeight: FontWeight.bold,
+                ),
           ),
           const SizedBox(height: 6),
           Text(
             s.searchingBluetoothFrames,
-            style: const TextStyle(fontSize: 14, color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
           ),
           const SizedBox(height: 12),
           if (_scanning) const LinearProgressIndicator(minHeight: 3),
@@ -829,11 +830,11 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                 ),
                 child: Text(
                   s.bleRestartScan,
-                  style: const TextStyle(
-                    color: Colors.black87,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
                 ),
               ),
             ),
@@ -862,8 +863,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
                                 row.displayTitle.isEmpty
                                     ? s.bleUnknownDeviceLabel
                                     : row.displayTitle,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w700, fontSize: 16),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleMedium
+                                    ?.copyWith(
+                                      color: cs.onSurface,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
                               ),
                               const SizedBox(height: 2),
                               Text(

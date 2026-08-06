@@ -382,12 +382,17 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                                   textAlign: TextAlign.center,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 18 * scale,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.black87,
-                                    height: 1.2,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleLarge
+                                      ?.copyWith(
+                                        fontSize: 18 * scale,
+                                        fontWeight: FontWeight.w800,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurface,
+                                        height: 1.2,
+                                      ),
                                 ),
                                 SizedBox(height: 6 * scale),
                                 Text(
@@ -395,11 +400,16 @@ class _OnboardingScreenState extends State<_OnboardingScreen> {
                                   textAlign: TextAlign.center,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 13 * scale,
-                                    color: Colors.grey,
-                                    height: 1.3,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium
+                                      ?.copyWith(
+                                        fontSize: 13 * scale,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                        height: 1.3,
+                                      ),
                                 ),
                               ],
                             ),

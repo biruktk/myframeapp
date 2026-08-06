@@ -132,9 +132,10 @@ class AppTheme {
   }
 
   static ColorScheme _darkScheme(Color primary) {
-    const surface = Color(0xFF1F2937);
-    const onSurface = Color(0xFFF3F4F6);
-    const onVar = Color(0xFF9CA3AF);
+    // High-contrast dark surfaces: crisp white / light-grey text on deep navy.
+    const surface = Color(0xFF121820);
+    const onSurface = Color(0xFFFFFFFF);
+    const onVar = Color(0xFFB0BEC5);
     return ColorScheme(
       brightness: Brightness.dark,
       primary: primary,
@@ -143,7 +144,7 @@ class AppTheme {
       onPrimaryContainer: onSurface,
       secondary: onVar,
       onSecondary: Colors.white,
-      secondaryContainer: const Color(0xFF2D3748),
+      secondaryContainer: const Color(0xFF1E2836),
       onSecondaryContainer: onSurface,
       tertiary: primary,
       onTertiary: Colors.white,
@@ -156,11 +157,11 @@ class AppTheme {
       surface: surface,
       onSurface: onSurface,
       onSurfaceVariant: onVar,
-      surfaceContainerLowest: const Color(0xFF111827),
-      surfaceContainerLow: const Color(0xFF1A2332),
-      surfaceContainer: const Color(0xFF243044),
-      surfaceContainerHigh: const Color(0xFF2D3748),
-      surfaceContainerHighest: const Color(0xFF374151),
+      surfaceContainerLowest: const Color(0xFF0B1016),
+      surfaceContainerLow: const Color(0xFF121820),
+      surfaceContainer: const Color(0xFF1A2332),
+      surfaceContainerHigh: const Color(0xFF243044),
+      surfaceContainerHighest: const Color(0xFF2D3748),
       outline: const Color(0xFF4B5563),
       outlineVariant: const Color(0xFF374151),
       shadow: Colors.black,
@@ -332,23 +333,51 @@ class AppTheme {
 
   static ThemeData dark(AppAccent accent, {bool comfort = false}) {
     final primary = seed(accent);
-    const surface = Color(0xFF1F2937);
-    const scaffold = Color(0xFF111827);
-    const onSurfaceD = Color(0xFFF3F4F6);
-    const onVarD = Color(0xFF9CA3AF);
+    const surface = Color(0xFF121820);
+    const scaffold = Color(0xFF121820);
+    const onSurfaceD = Color(0xFFFFFFFF);
+    const onVarD = Color(0xFFB0BEC5);
+    const bodyLight = Color(0xFFE0E0E0);
     final cs = _darkScheme(primary);
     final navH = comfort ? 76.0 : 68.0;
     final navLabel = comfort ? 13.0 : 11.0;
     final iconSz = comfort ? 26.0 : 22.0;
+    final baseText = ThemeData(brightness: Brightness.dark).textTheme;
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: cs,
       scaffoldBackgroundColor: scaffold,
       visualDensity: comfort ? VisualDensity.comfortable : VisualDensity.standard,
-      hintColor: Colors.white70,
+      hintColor: onVarD,
       splashFactory: InkSplash.splashFactory,
       applyElevationOverlayColor: false,
+      // Enforce high-contrast typography so screens that omit explicit colors
+      // still render readable white / light-grey text on dark backgrounds.
+      textTheme: baseText.copyWith(
+        displayLarge: baseText.displayLarge?.copyWith(color: onSurfaceD),
+        displayMedium: baseText.displayMedium?.copyWith(color: onSurfaceD),
+        displaySmall: baseText.displaySmall?.copyWith(color: onSurfaceD),
+        headlineLarge: baseText.headlineLarge?.copyWith(color: onSurfaceD),
+        headlineMedium: baseText.headlineMedium?.copyWith(color: onSurfaceD),
+        headlineSmall: baseText.headlineSmall?.copyWith(color: onSurfaceD),
+        titleLarge: baseText.titleLarge?.copyWith(
+          color: onSurfaceD,
+          fontWeight: FontWeight.bold,
+        ),
+        titleMedium: baseText.titleMedium?.copyWith(color: onSurfaceD),
+        titleSmall: baseText.titleSmall?.copyWith(color: onSurfaceD),
+        bodyLarge: baseText.bodyLarge?.copyWith(color: bodyLight),
+        bodyMedium: baseText.bodyMedium?.copyWith(color: bodyLight),
+        bodySmall: baseText.bodySmall?.copyWith(color: onVarD),
+        labelLarge: baseText.labelLarge?.copyWith(color: onSurfaceD),
+        labelMedium: baseText.labelMedium?.copyWith(color: onVarD),
+        labelSmall: baseText.labelSmall?.copyWith(color: onVarD),
+      ),
+      primaryTextTheme: baseText.apply(
+        bodyColor: onSurfaceD,
+        displayColor: onSurfaceD,
+      ),
       inputDecorationTheme: _inputDecoration(cs: cs, dark: true),
       dialogTheme: const DialogThemeData(
         backgroundColor: surface,
@@ -386,6 +415,13 @@ class AppTheme {
           minimumSize: Size(comfort ? 52 : 48, comfort ? 52 : 48),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: onSurfaceD,
+          side: BorderSide(color: cs.outline),
+          minimumSize: Size(comfort ? 52 : 48, comfort ? 52 : 48),
+        ),
+      ),
       appBarTheme: const AppBarTheme(
         centerTitle: false,
         elevation: 0,
@@ -398,19 +434,27 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: onSurfaceD,
         ),
+        iconTheme: IconThemeData(color: onSurfaceD),
+        actionsIconTheme: IconThemeData(color: onSurfaceD),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.grey.shade800),
+          side: BorderSide(color: cs.outlineVariant),
         ),
-        color: surface,
+        color: cs.surfaceContainer,
       ),
       listTileTheme: const ListTileThemeData(
         iconColor: onVarD,
         textColor: onSurfaceD,
+        titleTextStyle: TextStyle(
+          color: onSurfaceD,
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+        ),
+        subtitleTextStyle: TextStyle(color: onVarD, fontSize: 13),
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: navH,
@@ -423,13 +467,13 @@ class AppTheme {
           return TextStyle(
             fontSize: navLabel,
             fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            color: selected ? primary : Colors.grey.shade400,
+            color: selected ? primary : onVarD,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((s) {
           final selected = s.contains(WidgetState.selected);
           return IconThemeData(
-            color: selected ? Colors.white : Colors.grey.shade400,
+            color: selected ? Colors.white : onVarD,
             size: iconSz,
           );
         }),
