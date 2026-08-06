@@ -35,12 +35,12 @@ import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
 import '../services/frame_ble_mac_slug.dart';
 import '../services/frame_online_guard.dart';
+import '../services/frame_recovery_service.dart';
 import '../services/user_playlist_remote_api.dart';
 import '../services/transport_kind.dart';
 import '../services/usage_metrics_store.dart';
 import '../services/weather_service.dart';
 import '../settings/app_settings.dart';
-import '../widgets/connect_frame_dialog.dart';
 import '../widgets/progress_action_button.dart';
 import '../l10n/app_strings.dart';
 import '../navigation/pairing_flow_nav.dart';
@@ -133,7 +133,8 @@ class ImageEditorScreen extends StatefulWidget {
   State<ImageEditorScreen> createState() => _ImageEditorScreenState();
 }
 
-class _ImageEditorScreenState extends State<ImageEditorScreen> {
+class _ImageEditorScreenState extends State<ImageEditorScreen>
+    with WidgetsBindingObserver {
   final _processor = ImageProcessorService();
   final _api = FrameApiClient();
 
@@ -510,6 +511,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final cached = EditorSettingsCache.instance.last;
     _transport = TransportKind.wifi;
     _slideshow = cached?.slideshow ?? widget.slideshow;
@@ -616,6 +618,25 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
     if (!mounted) return;
     setState(() {});
     _invalidateProcessCache();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Refresh cached online state when returning to the editor so a freshly
+      // woken frame shows as online without an explicit status flip.
+      unawaited(_refreshFrameOnlineOnFocus());
+    }
+  }
+
+  Future<void> _refreshFrameOnlineOnFocus() async {
+    final paired = _paired;
+    if (paired == null) {
+      await _loadPairing();
+      return;
+    }
+    final online = await FrameOnlineGuard.isFrameEffectivelyOnline(paired);
+    if (mounted) setState(() => _frameOnline = online);
   }
 
   Future<void> _loadPairing() async {
@@ -758,6 +779,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _overlayText.removeListener(_onOverlayTextChanged);
     EditorSettingsCache.instance.update(
       EditorSettingsSnapshot(
@@ -940,11 +962,20 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
       });
       return;
     }
-    if (!await FrameOnlineGuard.ensureOnlineForSend(context, frame: frame)) {
-      if (mounted) setState(() => _frameOnline = false);
-      return;
+    final onlineNow = await FrameOnlineGuard.isFrameEffectivelyOnline(frame);
+    if (mounted) setState(() => _frameOnline = onlineNow);
+    // Optimistic delivery (WeChat mini-app model): a cached offline state never
+    // blocks upload. Wake the frame's MQTT session so the VPS `play` publish
+    // delivers the photo as soon as it is uploaded.
+    if (mounted) {
+      setState(() =>
+          _status = _strings?.uploadWakingFrame ?? 'Waking frame MQTT session…');
     }
-    if (mounted) setState(() => _frameOnline = true);
+    try {
+      await FrameRecoveryService.instance.prepareForCloudUpload(frame);
+    } catch (_) {
+      // Best-effort: the VPS still wakes the frame via the MQTT play publish.
+    }
     var activePaired = frame;
     if (!activePaired.isWifiProvisioned) {
       if (!mounted) return;
@@ -3037,11 +3068,6 @@ class _ImageEditorScreenState extends State<ImageEditorScreen> {
                       onPressed: _uploading
                           ? null
                           : () async {
-                              if (_frameOnline == false) {
-                                await showFrameOfflineSendDialog(context);
-                                await _loadPairing();
-                                return;
-                              }
                               await _send();
                             },
                     ),

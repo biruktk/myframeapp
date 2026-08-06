@@ -825,7 +825,6 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
             s: s,
             primary: primary,
             colorScheme: cs,
-            enabled: _frameOnline != false,
             onPickGallery: () => _onSendEntryTap(
               context,
               () => _startFlow(context, _SendSource.gallery),
@@ -835,7 +834,6 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
             icon: Icons.view_carousel_outlined,
             title: s.navPlaylist,
             subtitle: s.sendSlideshowOpensPlaylist,
-            enabled: _frameOnline != false,
             onTap: () => _onSendEntryTap(context, () async {
               if (!context.mounted) return;
               if (!await FrameOnlineGuard.ensureCanStartSendFlow(context)) {
@@ -866,7 +864,6 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
             icon: Icons.photo_camera_outlined,
             title: s.takePhoto,
             subtitle: s.takePhotoSub,
-            enabled: _frameOnline != false,
             onTap: () => _onSendEntryTap(
               context,
               () => _startFlow(context, _SendSource.camera),
@@ -884,7 +881,6 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
               title: s.aiGenerate,
               subtitle: s.aiGenerateSub,
               highlighted: true,
-              enabled: _frameOnline != false,
               onTap: () => _onSendEntryTap(
                 context,
                 () => _startFlow(context, _SendSource.ai),
@@ -908,23 +904,21 @@ class _SendHeroCard extends StatelessWidget {
     required this.primary,
     required this.colorScheme,
     required this.onPickGallery,
-    this.enabled = true,
   });
 
   final AppStrings s;
   final Color primary;
   final ColorScheme colorScheme;
   final VoidCallback onPickGallery;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    final accent = enabled ? primary : colorScheme.onSurfaceVariant;
+    final accent = primary;
     return Semantics(
       container: true,
       label: s.gallery,
       child: Opacity(
-        opacity: enabled ? 1 : 0.72,
+        opacity: 1,
         child: Container(
           margin: const EdgeInsets.only(bottom: 6),
           decoration: BoxDecoration(
@@ -964,7 +958,7 @@ class _SendHeroCard extends StatelessWidget {
                     const SizedBox(width: 14),
                     Expanded(
                       child: Text(
-                        enabled ? s.sendTabSubhead : s.frameOfflineLabel,
+                        s.sendTabSubhead,
                         style: TextStyle(
                           fontSize: 15,
                           height: 1.35,
@@ -984,8 +978,8 @@ class _SendHeroCard extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                   ),
                   style: FilledButton.styleFrom(
-                    backgroundColor: enabled ? primary : colorScheme.surfaceContainerHighest,
-                    foregroundColor: enabled ? colorScheme.onPrimary : colorScheme.onSurfaceVariant,
+                    backgroundColor: primary,
+                    foregroundColor: colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
                   ),
                 ),
@@ -1006,7 +1000,6 @@ class _SendRow extends StatelessWidget {
     required this.onTap,
     this.trailing,
     this.highlighted = false,
-    this.enabled = true,
   });
 
   final IconData icon;
@@ -1015,17 +1008,16 @@ class _SendRow extends StatelessWidget {
   final VoidCallback onTap;
   final Widget? trailing;
   final bool highlighted;
-  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final primary = cs.primary;
-    final accent = enabled ? primary : cs.onSurfaceVariant;
+    final accent = primary;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Opacity(
-        opacity: enabled ? 1 : 0.72,
+        opacity: 1,
         child: Material(
           color: cs.surface,
           borderRadius: BorderRadius.circular(16),
@@ -1037,8 +1029,8 @@ class _SendRow extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: highlighted && enabled ? primary : cs.outlineVariant,
-                  width: highlighted && enabled ? 1.5 : 1,
+                  color: highlighted ? primary : cs.outlineVariant,
+                  width: highlighted ? 1.5 : 1,
                 ),
               ),
               child: Row(

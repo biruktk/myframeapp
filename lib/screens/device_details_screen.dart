@@ -15,7 +15,8 @@ class DeviceDetailsScreen extends StatefulWidget {
   State<DeviceDetailsScreen> createState() => _DeviceDetailsScreenState();
 }
 
-class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
+class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
+    with WidgetsBindingObserver {
   PairedFrame? _paired;
   FrameStatus? _status;
   Timer? _pollTimer;
@@ -25,15 +26,24 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
     _startPolling();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _api.close();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _fetch();
+    }
   }
 
   void _startPolling() {
