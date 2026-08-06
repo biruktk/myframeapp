@@ -3,18 +3,27 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/vps_defaults.dart';
 import 'device_store.dart';
+import 'frame_api_client.dart';
 
-/// Local sleep-mode UI mock (same behavior as WeChat mini-app `pages/sleep/sleep.js`).
+/// Sleep Mode & Power Management store.
 ///
-/// Firmware sleep is not wired yet — this store is UI-only persistence.
+/// Persists the UI preference locally (SharedPreferences `sleep_settings_v1`)
+/// and, whenever a frame is paired and the user saves, relays the strict
+/// firmware protocol payloads to the frame over the server:
+///  - `wifi_sleep`:  `{mode:1|0, begintime:"23:00", endtime:"07:00"}`
+///  - `strategy_bin`: `{idle:0|1, strategy:1, host, port:8080,
+///    path:"/api/frame/strategy/images", updatetype:2, begintime, endtime,
+///    intervalminutes:30}`
+///
 /// When a frame is paired/connected and the user has never saved a preference,
 /// the toggle defaults **ON** with 23:00–07:00.
 class SleepModeStore {
   SleepModeStore._();
   static final SleepModeStore instance = SleepModeStore._();
 
-  static const _kKey = 'mock_sleep_settings_v1';
+  static const _kKey = 'sleep_settings_v1';
   static const defaultStart = TimeOfDay(hour: 23, minute: 0);
   static const defaultEnd = TimeOfDay(hour: 7, minute: 0);
 
@@ -56,6 +65,7 @@ class SleepModeStore {
 
   /// Same rule as mini-app `resolveMockSettingsForUi`:
   /// connected frame + no explicit user choice → ON with default window.
+  /// UI-only — does not push MQTT until the user actually saves.
   Future<void> resolveForUi() async {
     await ensureLoaded();
     await DeviceStore.instance.load();
@@ -67,7 +77,8 @@ class SleepModeStore {
     }
   }
 
-  /// User changed toggle or schedule — mark as explicit preference.
+  /// User changed toggle — mark as explicit preference.
+  /// Persists locally only; call [pushConfigToFrame] to relay to the frame.
   Future<void> setEnabled(bool value) async {
     await ensureLoaded();
     enabled = value;
@@ -97,9 +108,66 @@ class SleepModeStore {
         'endTime': _toHhMm(endTime),
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
         'userPreferenceSet': userPreferenceSet,
-        'mockOnly': true,
       }),
     );
+  }
+
+  /// `wifi_sleep` payload `data` per strict firmware protocol.
+  Map<String, dynamic> buildWifiSleepData() => {
+        'mode': enabled ? 1 : 0,
+        'begintime': _toHhMm(startTime),
+        'endtime': _toHhMm(endTime),
+      };
+
+  /// `strategy_bin` payload `data` per strict firmware protocol.
+  Map<String, dynamic> buildStrategyBinData() => {
+        'idle': enabled ? 1 : 0,
+        'strategy': 1,
+        'host': VpsDefaults.strategyHost,
+        'port': VpsDefaults.strategyPort,
+        'path': VpsDefaults.strategyPath,
+        'updatetype': 2,
+        'begintime': _toHhMm(startTime),
+        'endtime': _toHhMm(endTime),
+        'intervalminutes': 30,
+      };
+
+  /// Relay `wifi_sleep` + `strategy_bin` to the paired frame via the server.
+  /// Best-effort: returns false if no frame is paired or the relay is unreachable.
+  Future<bool> pushConfigToFrame() async {
+    await ensureLoaded();
+    await DeviceStore.instance.load();
+    final mac = _frameMac();
+    if (mac == null || mac.isEmpty) return false;
+    final api = FrameApiClient();
+    try {
+      final results = await Future.wait([
+        api.sendFrameCommand(
+          mac: mac,
+          action: 'wifi_sleep',
+          data: buildWifiSleepData(),
+        ),
+        api.sendFrameCommand(
+          mac: mac,
+          action: 'strategy_bin',
+          data: buildStrategyBinData(),
+        ),
+      ]);
+      return results.every((r) => r['ok'] == true);
+    } catch (_) {
+      return false;
+    } finally {
+      api.close();
+    }
+  }
+
+  /// First paired frame's MQTT (station/BLE) MAC, or null when unpaired.
+  String? _frameMac() {
+    for (final f in DeviceStore.instance.pairedFrames) {
+      final mac = DeviceStore.macForPairedFrame(f);
+      if (mac != null && mac.trim().isNotEmpty) return mac;
+    }
+    return null;
   }
 
   /// Mini-app: paired / home-connected frame. Flutter: any stored paired frame.

@@ -19,6 +19,7 @@ import 'settings_help_screen.dart';
 import 'settings_log_screen.dart';
 import 'device_discovery_screen.dart';
 import 'playlist_screen.dart';
+import 'sleep_settings_screen.dart';
 
 const _red = Color(0xFFE53935);
 
@@ -115,6 +116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _onSleepToggle(bool value) async {
     setState(() => _sleepEnabled = value);
     await SleepModeStore.instance.setEnabled(value);
+    unawaited(SleepModeStore.instance.pushConfigToFrame());
   }
 
   Future<void> _onOtaToggle(bool value) async {
@@ -141,57 +143,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await AppSettingsScope.of(context).setSignedIn(value: false);
   }
 
-  void _showSleepPicker() {
-    final s = AppStrings.of(context);
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              s.sleepModeSchedule,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            ListTile(
-              title: Text(s.sleepStartTime),
-              trailing: Text(
-                _formatTime(_sleepStart),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              onTap: () async {
-                final picked = await showTimePicker(context: ctx, initialTime: _sleepStart);
-                if (picked != null) {
-                  setState(() => _sleepStart = picked);
-                  await SleepModeStore.instance.setSchedule(start: picked);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                }
-              },
-            ),
-            ListTile(
-              title: Text(s.wakeUpTime),
-              trailing: Text(
-                _formatTime(_sleepEnd),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              onTap: () async {
-                final picked = await showTimePicker(context: ctx, initialTime: _sleepEnd);
-                if (picked != null) {
-                  setState(() => _sleepEnd = picked);
-                  await SleepModeStore.instance.setSchedule(end: picked);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
+  void _openSleepSettings() {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(builder: (_) => const SleepSettingsScreen()),
     );
   }
 
@@ -280,7 +235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ? (v) => unawaited(_onSleepToggle(v))
                     : null,
               ),
-              onTap: _sleepEnabled ? _showSleepPicker : null,
+              onTap: _sleepEnabled ? _openSleepSettings : null,
             ),
             _divider(cs),
             _tile(

@@ -256,6 +256,44 @@ class FrameApiClient {
     return null;
   }
 
+  /// POST `/api/frames/:mac/mqtt-command` — relay an app-issued MQTT command
+  /// (`wifi_sleep` / `strategy_bin`) to the frame per the firmware protocol and
+  /// return the server's send + ack result.
+  Future<Map<String, dynamic>> sendFrameCommand({
+    required String mac,
+    required String action,
+    required Map<String, dynamic> data,
+    String? pairingToken,
+    String? baseUrlOverride,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    final slug = cleanMac.length >= 12
+        ? cleanMac.substring(cleanMac.length - 12)
+        : cleanMac;
+    final t = timeout ?? const Duration(seconds: 10);
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final tok = pairingToken ?? VpsDefaults.pairingToken;
+    if (tok.trim().isNotEmpty) headers['x-pairing-token'] = tok.trim();
+    final body = jsonEncode({
+      'action': action,
+      'msgid': DateTime.now().millisecondsSinceEpoch.toString(),
+      'data': data,
+    });
+    for (final base in _frameStatusCandidateBases(baseUrlOverride)) {
+      try {
+        final res = await _http
+            .post(Uri.parse('$base/api/frames/$slug/mqtt-command'),
+                headers: headers, body: body)
+            .timeout(t);
+        if (res.statusCode == 200) {
+          return jsonDecode(res.body) as Map<String, dynamic>;
+        }
+      } catch (_) {}
+    }
+    return {'ok': false, 'sent': false, 'error': 'relay_unreachable'};
+  }
+
   /// GET `/api/frames/:mac/status` — MQTT/display confirmation (works when
   /// `delivery-status` never flips `delivered_to_frame` on iOS uploads).
   Future<FrameCastStatusResponse> getFrameCastStatus({

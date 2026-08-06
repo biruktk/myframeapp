@@ -2361,6 +2361,46 @@ class AppStrings {
     de: 'Aufwachzeit',
     ja: '起床時間',
   );
+  String get sleepModeHint => _l6(
+    en: 'Set automatic sleep and wake times',
+    zh: '设定相框自动休眠时段',
+    es: 'Configure el horario automático de suspensión',
+    fr: 'Définissez les heures de veille automatiques',
+    de: 'Automatische Schlaf- und Aufwachzeiten festlegen',
+    ja: '自動でスリープ・起床する時間を設定します',
+  );
+  String get sleepModeEnabled => _l6(
+    en: 'Enable Sleep Mode',
+    zh: '启用睡眠模式',
+    es: 'Activar modo suspensión',
+    fr: 'Activer le mode veille',
+    de: 'Schlafmodus aktivieren',
+    ja: 'スリープモードを有効にする',
+  );
+  String get sleepSaved => _l6(
+    en: 'Sleep settings saved',
+    zh: '睡眠设置已保存',
+    es: 'Ajustes de suspensión guardados',
+    fr: 'Paramètres de veille enregistrés',
+    de: 'Schlafeinstellungen gespeichert',
+    ja: 'スリープ設定を保存しました',
+  );
+  String get save => _l6(
+    en: 'Save',
+    zh: '保存',
+    es: 'Guardar',
+    fr: 'Enregistrer',
+    de: 'Speichern',
+    ja: '保存',
+  );
+  String get saveFailed => _l6(
+    en: 'Save failed',
+    zh: '保存失败',
+    es: 'Error al guardar',
+    fr: 'Échec de l’enregistrement',
+    de: 'Speichern fehlgeschlagen',
+    ja: '保存に失敗しました',
+  );
   String get disabledLabel => _l6(
     en: 'Disabled',
     zh: '已禁用',

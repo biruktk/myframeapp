@@ -19,6 +19,13 @@ class VpsDefaults {
   static const String mqttPass = 'framepass2026';
   static const String pairingToken = 'framepass2026';
 
+  /// Strategy endpoint the frame fetches images from (per strict protocol).
+  /// Uses the raw VPS IP — the same host the frame already connects to for MQTT
+  /// and frame-cloud; DNS to myframe.ink is flaky for ESP32.
+  static const String strategyHost = '47.76.164.162';
+  static const int strategyPort = 8080;
+  static const String strategyPath = '/api/frame/strategy/images';
+
   /// Use direct IP + HTTP for all API calls. Frames also get HTTP+IP for .bin downloads.
   static String get apiBase => 'http://$host:$apiPort';
 
