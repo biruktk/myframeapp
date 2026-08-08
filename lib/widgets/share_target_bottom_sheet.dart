@@ -1,20 +1,16 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
-import '../screens/create_playlist_screen.dart';
-import '../screens/image_editor_screen.dart';
+import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
-import '../services/frame_api_client.dart';
-import '../services/frame_cloud_cast_service.dart';
-import '../services/frame_online_guard.dart';
+import '../services/external_share_cast_service.dart';
 import '../services/gallery_image_cache.dart';
-import '../services/gallery_image_normalizer.dart';
+import '../services/send_albums_store.dart';
 import '../services/share_receiver_service.dart';
-import '../services/slideshow_style.dart';
+import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
 
 /// Result of [showShareTargetBottomSheet].
@@ -106,7 +102,6 @@ class _ShareTargetBottomSheetWidgetState
 
   Future<void> _onSend() async {
     final s = AppStrings.of(context);
-    final navigator = Navigator.of(context, rootNavigator: true);
     if (_paths.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(s.noImageSelected)),
@@ -120,145 +115,92 @@ class _ShareTargetBottomSheetWidgetState
       return;
     }
 
-    // Multi-photo → playlist UI (user configures interval / name).
-    if (_paths.length > 1) {
-      final target = _selectedFrames.first;
-      await DeviceStore.instance.setActiveFrameDeviceId(target.deviceId);
-      if (!mounted) return;
-      final paths = List<String>.from(_paths);
-      Navigator.pop(
-        context,
-        ShareTargetSheetResult(
-          paths: paths,
-          frames: _selectedFrames,
-          navigatedAway: true,
-        ),
-      );
-      unawaited(navigator.push(
-        MaterialPageRoute<void>(
-          builder: (_) => CreatePlaylistScreen(imagePaths: paths),
-        ),
-      ));
-      return;
-    }
-
-    // Single photo → cast to each selected frame with in-sheet progress.
+    // External shares upload immediately with the fixed external defaults
+    // (10 min / sequential / 6 h) — no playlist/edit configuration screen.
     setState(() {
       _phase = _ShareSheetPhase.sending;
       _progress = 0.05;
       _status = s.shareSheetSending;
     });
 
-    final slideshow = AppSettingsScope.of(context).defaultSlideshowStyle;
-    final api = FrameApiClient();
-    final auth = AppSettingsScope.of(context).authToken;
-    final file = File(_paths.first);
-    Uint8List? jpeg;
-    try {
-      final raw = await file.readAsBytes();
-      jpeg = await GalleryImageNormalizer.toJpegBytes(raw, pathHint: _paths.first);
-      jpeg ??= raw;
-    } catch (_) {
-      jpeg = null;
-    }
-    if (jpeg == null || jpeg.isEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _phase = _ShareSheetPhase.failed;
-        _status = s.decodeError;
-      });
-      return;
-    }
-
-    var okAny = false;
-    final targets = _selectedFrames;
-    for (var i = 0; i < targets.length; i++) {
-      final frame = targets[i];
-      if (!mounted) return;
-      setState(() {
-        _progress = (i + 0.2) / targets.length;
-        _status = s.shareSheetSendingTo(
-          frame.frameName?.trim().isNotEmpty == true
-              ? frame.frameName!.trim()
-              : frame.listDisplayTitle(s),
-        );
-      });
-
-      await DeviceStore.instance.setActiveFrameDeviceId(frame.deviceId);
-      if (!mounted) return;
-      final online = await FrameOnlineGuard.ensureOnlineForSend(
-        context,
-        frame: frame,
-      );
-      if (!online) continue;
-
-      final filename =
-          'share_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
-      final result = await FrameCloudCastService.instance.castPhoto(
-        api: api,
-        paired: frame,
-        jpegBytes: jpeg,
-        filename: filename,
-        slideshowStyle: slideshow.apiValue,
-        strings: s,
-        userAuthToken: auth.isEmpty ? null : auth,
-        syncSlideshowAfterSuccess: true,
-        onProgress: (p) {
-          if (!mounted) return;
-          final frac = p.progress ?? 0.5;
-          setState(() {
-            _progress = ((i + frac.clamp(0, 1)) / targets.length)
-                .clamp(0.0, 0.99);
-            if (p.message.trim().isNotEmpty) _status = p.message;
-          });
-        },
-      );
-      if (result.ok) okAny = true;
-    }
+    final app = AppSettingsScope.of(context);
+    final summary = await ExternalShareCastService.instance.castToFrames(
+      paths: _paths,
+      frames: _selectedFrames,
+      authToken: app.authToken,
+      strings: s,
+      onProgress: (frac, status) {
+        if (!mounted) return;
+        setState(() {
+          _progress = frac.clamp(0.05, 1.0);
+          if (status.trim().isNotEmpty) _status = status;
+        });
+      },
+    );
 
     if (!mounted) return;
-    if (okAny) {
+    if (summary.queued) {
+      // Offline — persisted to the background retry queue.
+      setState(() {
+        _phase = _ShareSheetPhase.done;
+        _progress = 1;
+        _status = s.shareSheetQueuedOffline;
+      });
+    } else if (summary.sent > 0) {
       setState(() {
         _phase = _ShareSheetPhase.done;
         _progress = 1;
         _status = s.shareSheetPhotoSent;
       });
-      await Future<void>.delayed(const Duration(milliseconds: 900));
-      if (mounted) {
-        Navigator.pop(
-          context,
-          ShareTargetSheetResult(paths: _paths, frames: _selectedFrames),
-        );
-      }
     } else {
       setState(() {
-        _phase = _ShareSheetPhase.pick;
-        _status = '';
-        _progress = 0;
+        _phase = _ShareSheetPhase.failed;
+        _status = s.shareSheetErrorRetry;
       });
-      final frame = _selectedFrames.first;
-      await DeviceStore.instance.setActiveFrameDeviceId(frame.deviceId);
-      if (!mounted) return;
-      final jpegBytes = jpeg;
-      final path = _paths.first;
+      return; // Keep the sheet open so the user can retry.
+    }
+
+    // Multi-image external shares are collected into a default "My Playlist"
+    // album on the Playlist tab instead of spilling into loose Personal photos.
+    unawaited(_routeToMyPlaylist(_paths, app.authToken));
+
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+    if (mounted) {
       Navigator.pop(
         context,
-        ShareTargetSheetResult(
-          paths: _paths,
-          frames: _selectedFrames,
-          navigatedAway: true,
-        ),
+        ShareTargetSheetResult(paths: _paths, frames: _selectedFrames),
       );
-      unawaited(navigator.push(
-        MaterialPageRoute<bool>(
-          builder: (_) => ImageEditorScreen(
-            imageBytes: jpegBytes,
-            galleryPersistPath: path,
-            slideshow: slideshow,
-            autoSendAfterLoad: true,
-          ),
-        ),
-      ));
+    }
+  }
+
+  /// Multi-image external shares land (and cloud-sync) in a default
+  /// "My Playlist" album, keeping them out of loose Personal photos.
+  Future<void> _routeToMyPlaylist(List<String> paths, String authToken) async {
+    if (paths.length < 2) return;
+    try {
+      final playlistName = AppStrings.of(context).myPlaylistName;
+      final name = playlistName.trim().toLowerCase();
+      await SendAlbumsStore.instance.load();
+      SendAlbumEntry? mine;
+      for (final a in SendAlbumsStore.instance.albums) {
+        if (a.name.trim().toLowerCase() == name) {
+          mine = a;
+          break;
+        }
+      }
+      String id;
+      if (mine == null) {
+        await SendAlbumsStore.instance
+            .createAlbum(playlistName, paths);
+        await SendAlbumsStore.instance.load();
+        id = SendAlbumsStore.instance.albums.first.id;
+      } else {
+        await SendAlbumsStore.instance.addPathsToAlbum(mine.id, paths);
+        id = mine.id;
+      }
+      unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
+    } catch (e, st) {
+      AppDiagLog.verbose('[ShareSheet] route to My Playlist failed: $e\n$st');
     }
   }
 

@@ -314,7 +314,7 @@ class DeviceStore {
         final ble = '${row['bleMac'] ?? row['ble_mac'] ?? id}'.trim();
         final station = '${row['stationMac'] ?? row['station_mac'] ?? ''}'.trim();
         final name =
-            '${row['displayName'] ?? row['display_name'] ?? row['name'] ?? ''}'
+            '${row['custom_name'] ?? row['alias'] ?? row['displayName'] ?? row['display_name'] ?? row['name'] ?? ''}'
                 .trim();
         final ssid = '${row['wifiSsid'] ?? row['wifi_ssid'] ?? ''}'.trim();
         if (id.isEmpty && ble.isEmpty) continue;
@@ -1085,7 +1085,10 @@ class DeviceStore {
     _frames[i] = updated;
     await _persistAll();
     _bumpRevision();
-    if (updated.isReadyForAccountSync) {
+    // Always persist the custom name server-side so it survives app reinstall /
+    // fresh login / device resync. `pushBoundFrame` stores the name alongside
+    // the frame even when Wi‑Fi SSID is empty or still being provisioned.
+    if (updated.deviceId.trim().isNotEmpty) {
       await AccountSyncService.instance.pushBoundFrame(
         updated.deviceId,
         setPrimary: true,

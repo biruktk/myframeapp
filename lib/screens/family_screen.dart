@@ -18,7 +18,6 @@ import '../settings/app_settings.dart';
 import '../widgets/app_status_toast.dart';
 import '../widgets/shell_navigation.dart';
 
-
 class FamilyScreen extends StatefulWidget {
   const FamilyScreen({super.key});
 
@@ -26,10 +25,12 @@ class FamilyScreen extends StatefulWidget {
   State<FamilyScreen> createState() => _FamilyScreenState();
 }
 
-class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver {
+class _FamilyScreenState extends State<FamilyScreen>
+    with WidgetsBindingObserver {
   var _busy = false;
   var _storeLoadStarted = false;
   var _joinSheetOpen = false;
+
   /// True while resolving invite when there is no usable cached code yet.
   var _inviteLoading = false;
   var _refreshing = false;
@@ -130,7 +131,8 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
 
       // Show cached invite immediately when we already have a cloud-backed code.
       final hasCachedServerCode =
-          g.cloudSynced && FamilyGroupStore.normalizeCode(g.inviteCode).length >= 8;
+          g.cloudSynced &&
+          FamilyGroupStore.normalizeCode(g.inviteCode).length >= 8;
       if (mounted && !quiet) {
         setState(() {
           // Signed-in without a known server code → shimmer instead of ghost local "…".
@@ -152,7 +154,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
             createIfMissing: mayCreate && !quiet,
           );
           // Always re-pull members so the owner sees newly joined people.
-          await FamilyGroupStore.instance.pullFromRemote(ApiConfig.baseUrl, tok);
+          await FamilyGroupStore.instance.pullFromRemote(
+            ApiConfig.baseUrl,
+            tok,
+          );
           // Pull shared family frames onto Home (pairedFrames), not just a side cache.
           await DeviceStore.instance.syncServerFrames(bearerToken: tok);
           await AccountSyncService.instance.syncAccountState(
@@ -162,8 +167,16 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
             pruneMissingFrames: false,
           );
         } catch (_) {
-          // Keep whatever cache we already painted.
+          // A local random code has no server record, so never let the UI
+          // advertise it as an invite after a cloud refresh failed.
+          await g.discardUnpublishedInviteCode();
         }
+      }
+
+      // If the account has no cloud family yet, hide any legacy/offline code.
+      // The UI will offer the explicit Create cloud family action instead.
+      if (tok.isNotEmpty && !g.cloudSynced) {
+        await g.discardUnpublishedInviteCode();
       }
 
       if (mounted) {
@@ -183,7 +196,9 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
   }
 
   Future<void> _confirmRegenerateInvite(
-      BuildContext context, AppStrings s) async {
+    BuildContext context,
+    AppStrings s,
+  ) async {
     final go = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -191,10 +206,13 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
         content: Text(s.familyRegenerateCodeBody),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
+            onPressed: () => Navigator.pop(c, false),
+            child: Text(s.cancel),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(c, true),
-              child: Text(s.familyRegenerateCodeConfirm)),
+            onPressed: () => Navigator.pop(c, true),
+            child: Text(s.familyRegenerateCodeConfirm),
+          ),
         ],
       ),
     );
@@ -202,8 +220,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
     setState(() => _busy = true);
     final tok = AppSettingsScope.of(context).authToken.trim();
     try {
-      await FamilyGroupStore.instance
-          .rotateInviteOnServer(ApiConfig.baseUrl, tok);
+      await FamilyGroupStore.instance.rotateInviteOnServer(
+        ApiConfig.baseUrl,
+        tok,
+      );
       if (context.mounted) {
         AppStatusToast.show(
           context,
@@ -227,8 +247,11 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
     }
   }
 
-  Future<void> _showJoinSheet(BuildContext context, AppStrings s,
-      {String? prefill}) async {
+  Future<void> _showJoinSheet(
+    BuildContext context,
+    AppStrings s, {
+    String? prefill,
+  }) async {
     if (_joinSheetOpen) return;
     _joinSheetOpen = true;
     final appTok = AppSettingsScope.of(context).authToken.trim();
@@ -299,7 +322,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
     );
   }
 
-  Future<void> _showSharedFramesSheet(BuildContext context, AppStrings s) async {
+  Future<void> _showSharedFramesSheet(
+    BuildContext context,
+    AppStrings s,
+  ) async {
     await DeviceStore.instance.load();
     final paired = DeviceStore.instance.cached;
     final g = FamilyGroupStore.instance;
@@ -315,10 +341,18 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(s.sharedFrames,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(
+                s.sharedFrames,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 8),
-              Text(s.sharedFramesBody, style: TextStyle(color: cs.onSurfaceVariant, height: 1.4)),
+              Text(
+                s.sharedFramesBody,
+                style: TextStyle(color: cs.onSurfaceVariant, height: 1.4),
+              ),
               const SizedBox(height: 16),
               if (paired != null)
                 ListTile(
@@ -331,17 +365,25 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                 Text(s.notPaired, style: TextStyle(color: cs.onSurfaceVariant)),
               if (g.cloudSynced && g.members.length > 1) ...[
                 const SizedBox(height: 8),
-                Text(s.familyMembersTitle,
-                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text(
+                  s.familyMembersTitle,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 4),
                 ...g.members.map(
-                  (m) => Text('• ${m.displayName}', style: TextStyle(color: cs.onSurfaceVariant)),
+                  (m) => Text(
+                    '• ${m.displayName}',
+                    style: TextStyle(color: cs.onSurfaceVariant),
+                  ),
                 ),
               ],
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(s.cancel),
+                ),
               ),
             ],
           ),
@@ -350,24 +392,39 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
     );
   }
 
-  Widget? _removeButton(BuildContext context, AppStrings s, FamilyGroupStore g, FamilyMember m, AppSettings app) {
+  Widget? _removeButton(
+    BuildContext context,
+    AppStrings s,
+    FamilyGroupStore g,
+    FamilyMember m,
+    AppSettings app,
+  ) {
     if (m.role == FamilyRoles.owner) return null;
     if (!g.cloudSynced) return null;
     final me = app.authUserId.trim();
-    final isCurrentUserOwner = me.isNotEmpty &&
+    final isCurrentUserOwner =
+        me.isNotEmpty &&
         g.members.any((x) => x.role == FamilyRoles.owner && x.id == me);
     if (!isCurrentUserOwner) return null;
 
     return IconButton(
-      icon: Icon(Icons.person_remove_outlined, color: Theme.of(context).colorScheme.error),
+      icon: Icon(
+        Icons.person_remove_outlined,
+        color: Theme.of(context).colorScheme.error,
+      ),
       tooltip: s.familyRemoveMemberConfirm,
       onPressed: () async {
         final cs = Theme.of(context).colorScheme;
         final go = await showDialog<bool>(
           context: context,
           builder: (c) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Text(s.familyRemoveMemberTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Text(
+              s.familyRemoveMemberTitle,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             content: Text(s.familyRemoveMemberBody(m.displayName)),
             actions: [
               TextButton(
@@ -378,7 +435,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                 onPressed: () => Navigator.pop(c, true),
                 child: Text(
                   s.familyRemoveMemberConfirm,
-                  style: TextStyle(color: cs.error, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: cs.error,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -431,8 +491,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
       if (tok.isEmpty) return;
       setState(() => _busy = true);
       try {
-        await FamilyGroupStore.instance
-            .createCloudFamily(ApiConfig.baseUrl, tok);
+        await FamilyGroupStore.instance.createCloudFamily(
+          ApiConfig.baseUrl,
+          tok,
+        );
         if (mounted) setState(() {});
         if (!context.mounted) return;
         AppStatusToast.show(
@@ -465,11 +527,13 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
           content: Text(s.familyLeaveCloudBody),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: Text(s.cancel)),
+              onPressed: () => Navigator.pop(c, false),
+              child: Text(s.cancel),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(c, true),
-                child: Text(s.familyLeaveCloud)),
+              onPressed: () => Navigator.pop(c, true),
+              child: Text(s.familyLeaveCloud),
+            ),
           ],
         ),
       );
@@ -482,8 +546,11 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
         if (mail.isNotEmpty) return mail.split('@').first;
         return 'You';
       };
-      await FamilyGroupStore.instance
-          .leaveServerFamily(ApiConfig.baseUrl, tok, ownerDisplayName: owner);
+      await FamilyGroupStore.instance.leaveServerFamily(
+        ApiConfig.baseUrl,
+        tok,
+        ownerDisplayName: owner,
+      );
       if (mounted) setState(() => _busy = false);
     }
 
@@ -499,7 +566,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
             Text(
               s.familySubtitle,
               style: TextStyle(
-                  color: cs.onSurfaceVariant, fontSize: 15, height: 1.4),
+                color: cs.onSurfaceVariant,
+                fontSize: 15,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 14),
             if (app.authToken.isNotEmpty &&
@@ -518,16 +588,20 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(s.familyCloudCreateHint,
-                            style: TextStyle(
-                                color: cs.onSurfaceVariant,
-                                fontSize: 13,
-                                height: 1.35)),
+                        Text(
+                          s.familyCloudCreateHint,
+                          style: TextStyle(
+                            color: cs.onSurfaceVariant,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
+                        ),
                         const SizedBox(height: 10),
                         FilledButton(
                           onPressed: _busy ? null : createCloudTap,
                           child: Text(
-                              _busy ? s.authBusyLabel : s.familyCloudCreateLabel),
+                            _busy ? s.authBusyLabel : s.familyCloudCreateLabel,
+                          ),
                         ),
                       ],
                     ),
@@ -536,9 +610,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
               ),
               const SizedBox(height: 12),
             ],
-            Text(s.familyYourCircle,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            Text(
+              s.familyYourCircle,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
             const SizedBox(height: 8),
             Material(
               color: cs.surface,
@@ -548,9 +623,13 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(s.familyInviteCodeLabel,
-                        style: TextStyle(
-                            color: cs.onSurfaceVariant, fontSize: 13)),
+                    Text(
+                      s.familyInviteCodeLabel,
+                      style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        fontSize: 13,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     if (_inviteLoading &&
                         (!g.cloudSynced || g.inviteCode.isEmpty))
@@ -566,10 +645,13 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           decoration: BoxDecoration(
-                            color: cs.surfaceContainerHighest
-                                .withValues(alpha: 0.3),
+                            color: cs.surfaceContainerHighest.withValues(
+                              alpha: 0.3,
+                            ),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
@@ -578,15 +660,19 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                               SelectableText(
                                 g.inviteCode.isEmpty ? '—' : g.inviteCode,
                                 style: TextStyle(
-                                    fontSize: 22,
-                                    letterSpacing: 2,
-                                    fontWeight: FontWeight.w800,
-                                    color: cs.onSurface),
+                                  fontSize: 22,
+                                  letterSpacing: 2,
+                                  fontWeight: FontWeight.w800,
+                                  color: cs.onSurface,
+                                ),
                               ),
                               if (g.inviteCode.isNotEmpty) ...[
                                 const SizedBox(width: 10),
-                                Icon(Icons.copy_rounded,
-                                    size: 20, color: cs.primary),
+                                Icon(
+                                  Icons.copy_rounded,
+                                  size: 20,
+                                  color: cs.primary,
+                                ),
                               ],
                             ],
                           ),
@@ -599,7 +685,8 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                         borderRadius: BorderRadius.circular(12),
                         child: Padding(
                           padding: const EdgeInsets.all(12),
-                          child: (_inviteLoading &&
+                          child:
+                              (_inviteLoading &&
                                   (!g.cloudSynced || g.inviteCode.isEmpty))
                               ? const _InviteQrShimmer()
                               : QrImageView(
@@ -621,12 +708,15 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                                 ? null
                                 : () async {
                                     await Clipboard.setData(
-                                        ClipboardData(text: g.inviteCode));
+                                      ClipboardData(text: g.inviteCode),
+                                    );
                                     if (context.mounted) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         SnackBar(
-                                            content: Text(s.familyCodeCopied)),
+                                          content: Text(s.familyCodeCopied),
+                                        ),
                                       );
                                     }
                                   },
@@ -666,7 +756,8 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
               icon: const Icon(Icons.login_rounded),
               label: Text(s.joinFamilyTitle),
               style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
             ),
             if (app.authToken.isNotEmpty && g.cloudSynced) ...[
               const SizedBox(height: 10),
@@ -675,14 +766,19 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                 icon: const Icon(Icons.logout_rounded),
                 label: Text(s.familyLeaveCloud),
                 style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
               ),
             ],
             if (g.joinedFamilies.isNotEmpty) ...[
               const SizedBox(height: 20),
-              Text(s.familyJoinedListTitle,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 16)),
+              Text(
+                s.familyJoinedListTitle,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
               const SizedBox(height: 8),
               ...g.joinedFamilies.map(
                 (j) => Padding(
@@ -712,9 +808,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
               ),
             ],
             const SizedBox(height: 12),
-            Text(s.familyMembersTitle,
-                style:
-                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            Text(
+              s.familyMembersTitle,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
             const SizedBox(height: 8),
             if (!g.cloudSynced)
               Padding(
@@ -758,8 +855,10 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                         m.role == FamilyRoles.owner
                             ? s.familyRoleOwner
                             : s.familyRoleMember,
-                        style:
-                            TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+                        style: TextStyle(
+                          color: cs.onSurfaceVariant,
+                          fontSize: 13,
+                        ),
                       ),
                       trailing: _removeButton(context, s, g, m, app),
                     ),
@@ -771,7 +870,11 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     s.familyMembersEmptyHint,
-                    style: TextStyle(color: cs.onSurfaceVariant, height: 1.35, fontSize: 13),
+                    style: TextStyle(
+                      color: cs.onSurfaceVariant,
+                      height: 1.35,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
             ],
@@ -781,7 +884,8 @@ class _FamilyScreenState extends State<FamilyScreen> with WidgetsBindingObserver
               icon: const Icon(Icons.devices),
               label: Text(s.sharedFrames),
               style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14)),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
             ),
           ],
         ),
@@ -856,53 +960,53 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
   _JoinFeedback _feedbackFor(JoinFamilyResult r, AppStrings s) {
     return switch (r) {
       JoinFamilyResult.ok => _JoinFeedback(
-          title: s.joinFamilySuccessTitle,
-          message: s.joinFamilySuccess,
-          tone: AppStatusTone.success,
-          icon: Icons.family_restroom_rounded,
-        ),
+        title: s.joinFamilySuccessTitle,
+        message: s.joinFamilySuccess,
+        tone: AppStatusTone.success,
+        icon: Icons.family_restroom_rounded,
+      ),
       JoinFamilyResult.codeTooShort => _JoinFeedback(
-          title: s.joinFamilyCodeTooShortTitle,
-          message: s.joinFamilyCodeTooShort,
-          tone: AppStatusTone.warning,
-          icon: Icons.pin_outlined,
-        ),
+        title: s.joinFamilyCodeTooShortTitle,
+        message: s.joinFamilyCodeTooShort,
+        tone: AppStatusTone.warning,
+        icon: Icons.pin_outlined,
+      ),
       JoinFamilyResult.ownInviteCode => _JoinFeedback(
-          title: s.joinFamilyOwnCodeTitle,
-          message: s.joinFamilyOwnCodeHint,
-          tone: AppStatusTone.info,
-          icon: Icons.share_rounded,
-        ),
+        title: s.joinFamilyOwnCodeTitle,
+        message: s.joinFamilyOwnCodeHint,
+        tone: AppStatusTone.info,
+        icon: Icons.share_rounded,
+      ),
       JoinFamilyResult.alreadyMember => _JoinFeedback(
-          title: s.joinFamilyAlreadyMemberTitle,
-          message: s.joinFamilyAlreadyMember,
-          tone: AppStatusTone.info,
-          icon: Icons.how_to_reg_rounded,
-        ),
+        title: s.joinFamilyAlreadyMemberTitle,
+        message: s.joinFamilyAlreadyMember,
+        tone: AppStatusTone.info,
+        icon: Icons.how_to_reg_rounded,
+      ),
       JoinFamilyResult.notFound => _JoinFeedback(
-          title: s.joinFamilyNotFoundTitle,
-          message: s.joinFamilyNotFound,
-          tone: AppStatusTone.error,
-          icon: Icons.search_off_rounded,
-        ),
+        title: s.joinFamilyNotFoundTitle,
+        message: s.joinFamilyNotFound,
+        tone: AppStatusTone.error,
+        icon: Icons.search_off_rounded,
+      ),
       JoinFamilyResult.invalidInvite => _JoinFeedback(
-          title: s.joinFamilyInvalidCodeTitle,
-          message: s.joinFamilyInvalidCode,
-          tone: AppStatusTone.error,
-          icon: Icons.link_off_rounded,
-        ),
+        title: s.joinFamilyInvalidCodeTitle,
+        message: s.joinFamilyInvalidCode,
+        tone: AppStatusTone.error,
+        icon: Icons.link_off_rounded,
+      ),
       JoinFamilyResult.unauthorized => _JoinFeedback(
-          title: s.joinFamilyNeedLoginTitle,
-          message: s.joinFamilyNeedLogin,
-          tone: AppStatusTone.warning,
-          icon: Icons.lock_outline_rounded,
-        ),
+        title: s.joinFamilyNeedLoginTitle,
+        message: s.joinFamilyNeedLogin,
+        tone: AppStatusTone.warning,
+        icon: Icons.lock_outline_rounded,
+      ),
       JoinFamilyResult.networkError => _JoinFeedback(
-          title: s.joinFamilyNetworkErrorTitle,
-          message: s.joinFamilyNetworkError,
-          tone: AppStatusTone.error,
-          icon: Icons.wifi_off_rounded,
-        ),
+        title: s.joinFamilyNetworkErrorTitle,
+        message: s.joinFamilyNetworkError,
+        tone: AppStatusTone.error,
+        icon: Icons.wifi_off_rounded,
+      ),
     };
   }
 
@@ -996,11 +1100,15 @@ class _JoinFamilySheetState extends State<_JoinFamilySheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(s.joinFamilyTitle,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          Text(
+            s.joinFamilyTitle,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 8),
-          Text(s.joinFamilyBody,
-              style: TextStyle(color: cs.onSurfaceVariant, height: 1.4)),
+          Text(
+            s.joinFamilyBody,
+            style: TextStyle(color: cs.onSurfaceVariant, height: 1.4),
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _ctrl,

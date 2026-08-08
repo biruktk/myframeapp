@@ -12,7 +12,7 @@ class GoogleAuthConfig {
   GoogleAuthConfig._();
 
   static const String _defaultWebClientId =
-      '824694546060-rjs2fvoshtngpprrbbtedda9uda28qsm.apps.googleusercontent.com';
+      '35227816140-is97hmj34o8h3t0erdnd0r10d1k0ajld.apps.googleusercontent.com';
 
   static const String _defaultAndroidClientId =
       '824694546060-9rlpc8r18kv38t0lvdkktbeai8nn7s58.apps.googleusercontent.com';

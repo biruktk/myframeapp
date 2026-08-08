@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../config/vps_defaults.dart';
 import 'device_store.dart';
 import 'frame_api_client.dart';
 
@@ -11,11 +10,11 @@ import 'frame_api_client.dart';
 ///
 /// Persists the UI preference locally (SharedPreferences `sleep_settings_v1`)
 /// and, whenever a frame is paired and the user saves, relays the strict
-/// firmware protocol payloads to the frame over the server:
+/// firmware protocol `wifi_sleep` payload to the frame over the server:
 ///  - `wifi_sleep`:  `{mode:1|0, begintime:"23:00", endtime:"07:00"}`
-///  - `strategy_bin`: `{idle:0|1, strategy:1, host, port:8080,
-///    path:"/api/frame/strategy/images", updatetype:2, begintime, endtime,
-///    intervalminutes:30}`
+///
+/// Album playback uses the `play` flow (`POST /api/frames/:mac/slideshow`),
+/// not strategy_bin.
 ///
 /// When a frame is paired/connected and the user has never saved a preference,
 /// the toggle defaults **ON** with 23:00–07:00.
@@ -119,20 +118,7 @@ class SleepModeStore {
         'endtime': _toHhMm(endTime),
       };
 
-  /// `strategy_bin` payload `data` per strict firmware protocol.
-  Map<String, dynamic> buildStrategyBinData() => {
-        'idle': enabled ? 1 : 0,
-        'strategy': 1,
-        'host': VpsDefaults.strategyHost,
-        'port': VpsDefaults.strategyPort,
-        'path': VpsDefaults.strategyPath,
-        'updatetype': 2,
-        'begintime': _toHhMm(startTime),
-        'endtime': _toHhMm(endTime),
-        'intervalminutes': 30,
-      };
-
-  /// Relay `wifi_sleep` + `strategy_bin` to the paired frame via the server.
+  /// Relay `wifi_sleep` to the paired frame via the server.
   /// Best-effort: returns false if no frame is paired or the relay is unreachable.
   Future<bool> pushConfigToFrame() async {
     await ensureLoaded();
@@ -141,19 +127,12 @@ class SleepModeStore {
     if (mac == null || mac.isEmpty) return false;
     final api = FrameApiClient();
     try {
-      final results = await Future.wait([
-        api.sendFrameCommand(
-          mac: mac,
-          action: 'wifi_sleep',
-          data: buildWifiSleepData(),
-        ),
-        api.sendFrameCommand(
-          mac: mac,
-          action: 'strategy_bin',
-          data: buildStrategyBinData(),
-        ),
-      ]);
-      return results.every((r) => r['ok'] == true);
+      final result = await api.sendFrameCommand(
+        mac: mac,
+        action: 'wifi_sleep',
+        data: buildWifiSleepData(),
+      );
+      return result['ok'] == true;
     } catch (_) {
       return false;
     } finally {

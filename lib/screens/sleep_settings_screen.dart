@@ -9,8 +9,8 @@ import '../services/sleep_mode_store.dart';
 /// Sleep Mode & Power Management.
 ///
 /// Toggles Sleep Mode and the automatic sleep/wake schedule, persists the
-/// preference locally, and relays the strict firmware protocol payloads
-/// (`wifi_sleep` + `strategy_bin`) to the paired frame via the server.
+/// preference locally, and relays the strict firmware `wifi_sleep` payload
+/// to the paired frame via the server. Album playback uses the `play` flow.
 class SleepSettingsScreen extends StatefulWidget {
   const SleepSettingsScreen({super.key});
 

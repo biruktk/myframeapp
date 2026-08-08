@@ -52,6 +52,9 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
   int _durationHours = 0;
   int _listEpoch = 0;
 
+  // ValueNotifier for instant send-button loading feedback
+  final ValueNotifier<bool> _sendingNotifier = ValueNotifier<bool>(false);
+
   @override
   void initState() {
     super.initState();
@@ -106,21 +109,29 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
         durationHours: _durationHours,
       );
 
-  Key get _previewKey => ValueKey(
-        'playlist-preview-$_listEpoch-${_images.length}-${_images.map((f) => f.path).join('|').hashCode}',
-      );
+Key get _previewKey => ValueKey(
+      'playlist-preview-$_listEpoch-${_images.length}-${_images.map((f) => f.path).join('|').hashCode}',
+    );
 
   Future<void> _handleSendPlaylist() async {
     if (_isSending) return;
     final total = _images.length;
     if (total == 0) return;
 
+    // Instant UI feedback: show spinner BEFORE any heavy work starts.
+    _isSending = true;
+    _sendingNotifier.value = true;
     setState(() {
-      _isSending = true;
       _sendCurrent = 0;
       _sendTotal = total;
     });
 
+    // Defer heavy lifting (frame check, normalization, uploads) to the next
+    // frame so the spinner renders without dropping a UI frame.
+    SchedulerBinding.instance.addPostFrameCallback((_) => _sendPlaylistHeavy());
+  }
+
+  Future<void> _sendPlaylistHeavy() async {
     final s = AppStrings.of(context);
     try {
       if (!mounted) return;
@@ -263,8 +274,9 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
       }
     } finally {
       if (mounted) {
+        _isSending = false;
+        _sendingNotifier.value = false;
         setState(() {
-          _isSending = false;
           _sendCurrent = 0;
           _sendTotal = 0;
         });
@@ -421,20 +433,25 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                   color: cs.surface,
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                    child: ProgressActionButton(
-                      label: s.sendPlaylistN(count),
-                      isLoading: _isSending,
-                      statusMessage: s.progressSendingPhotos,
-                      currentStep: _sendCurrent > 0 ? _sendCurrent : null,
-                      totalSteps: _sendTotal > 1 ? _sendTotal : null,
-                      progress: (_isSending && _sendTotal > 0 && _sendCurrent > 0)
-                          ? (_sendCurrent / _sendTotal).clamp(0.05, 1.0)
-                          : null,
-                      onPressed: (_isSending || count == 0) ? null : _handleSendPlaylist,
-                      backgroundColor: cs.primary,
-                      foregroundColor: cs.onPrimary,
-                      disabledBackgroundColor: cs.primary.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(12),
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: _sendingNotifier,
+                      builder: (context, isSending, _) {
+                        return ProgressActionButton(
+                          label: s.sendPlaylistN(count),
+                          isLoading: isSending,
+                          statusMessage: s.progressSendingPhotos,
+                          currentStep: _sendCurrent > 0 ? _sendCurrent : null,
+                          totalSteps: _sendTotal > 1 ? _sendTotal : null,
+                          progress: (isSending && _sendTotal > 0 && _sendCurrent > 0)
+                              ? (_sendCurrent / _sendTotal).clamp(0.05, 1.0)
+                              : null,
+                          onPressed: (isSending || count == 0) ? null : _handleSendPlaylist,
+                          backgroundColor: cs.primary,
+                          foregroundColor: cs.onPrimary,
+                          disabledBackgroundColor: cs.primary.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(12),
+                        );
+                      },
                     ),
                   ),
                 ),

@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import '../settings/app_settings.dart';
+import 'api_client.dart';
 import 'app_diag_log.dart';
 import 'device_store.dart';
 import 'frame_mac_util.dart';
@@ -32,8 +33,8 @@ class AccountSyncService {
   List<Map<String, dynamic>> get cachedPlaylistsMeta =>
       List.unmodifiable(_cachedPlaylistsMeta);
 
-  http.Client? _http;
-  http.Client get _client => _http ??= http.Client();
+  /// Shared authenticated client with the global 401 interceptor.
+  final _api = ApiClient();
 
   Timer? _pollTimer;
   Completer<void>? _syncLock;
@@ -43,8 +44,7 @@ class AccountSyncService {
   void close() {
     _pollTimer?.cancel();
     _pollTimer = null;
-    _http?.close();
-    _http = null;
+    _api.close();
   }
 
   /// Poll server every [interval] (default 2 minutes) while signed in.
@@ -256,7 +256,7 @@ class AccountSyncService {
         if (token.isEmpty) return null;
 
         final uri = Uri.parse('$_apiBase/api/v1/user/profile');
-        final res = await _client
+        final res = await _api
             .get(uri, headers: _headers(token))
             .timeout(const Duration(seconds: 12));
         if (res.statusCode != 200) return null;
@@ -463,7 +463,7 @@ class AccountSyncService {
       if (body.length <= 1) return false; // only client_updated_at
 
       final uri = Uri.parse('$_apiBase/api/v1/user/profile');
-      final res = await _client
+      final res = await _api
           .put(
             uri,
             headers: _headers(token, json: true),
@@ -511,7 +511,7 @@ class AccountSyncService {
       if (name != null && name.isNotEmpty) body['frame_name'] = name;
       final ssid = wifiSsid?.trim();
       if (ssid != null && ssid.isNotEmpty) body['wifi_ssid'] = ssid;
-      final res = await _client
+      final res = await _api
           .post(
             uri,
             headers: _headers(token, json: true),
@@ -557,7 +557,7 @@ class AccountSyncService {
           '${item['filename'] ?? id}'.replaceAll(RegExp(r'[^\w.\-]'), '_');
       try {
         final uri = Uri.parse('$_apiBase$pathSuffix');
-        final res = await _client
+        final res = await _api
             .get(uri, headers: _headers(token))
             .timeout(const Duration(seconds: 60));
         if (res.statusCode != 200 || res.bodyBytes.isEmpty) continue;
@@ -576,10 +576,9 @@ class AccountSyncService {
       req.headers.addAll(_headers(token));
       req.files.add(await http.MultipartFile.fromPath('file', file.path));
       if (label != null && label.isNotEmpty) req.fields['label'] = label;
-      final streamed = await req.send().timeout(const Duration(seconds: 60));
-      final body = await streamed.stream.bytesToString();
-      if (streamed.statusCode < 200 || streamed.statusCode >= 300) return null;
-      final json = jsonDecode(body) as Map<String, dynamic>;
+      final res = await _api.send(req).timeout(const Duration(seconds: 60));
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
       if (json['ok'] != true) return null;
       return json['package_id']?.toString();
     } catch (_) {
@@ -636,7 +635,7 @@ class AccountSyncService {
         final uri = Uri.parse(
           '$_apiBase/api/v1/user/frames/${Uri.encodeComponent(id)}/unbind',
         );
-        final res = await _client
+        final res = await _api
             .post(uri, headers: _headers(token))
             .timeout(const Duration(seconds: 12));
         if (res.statusCode == 200) {
@@ -673,6 +672,69 @@ class AccountSyncService {
 
   Future<void> afterUpload() async {
     await syncAccountState();
+  }
+
+  /// Manual physical re-pairing wins ownership: drop any local unbound bans
+  /// (self + BLE/STA ±2 siblings) so Home sync no longer filters the frame,
+  /// tell the server to reassign the owner on this hardware, and force a resync
+  /// that re-pushes the bind. Must be called only after Wi‑Fi is confirmed.
+  ///
+  /// Backend contract for `POST {base}/api/frames/pair`:
+  /// body `{ "ble_mac": slug, "set_primary": true }` → if the record exists,
+  /// set `owner_account` to the requesting user immediately and clear any
+  /// stale owner/unbound reference from a previous account so re-pairing works
+  /// without logging out. Return `200 {"ok":true}` on success.
+  Future<void> grantOwnerForManualPair(String frameId) async {
+    final token = await _authToken();
+    final raw = frameId.trim();
+    final slug =
+        (FrameMacUtil.normalizeSlug(raw) ?? raw).trim().toUpperCase();
+    if (slug.isEmpty) return;
+
+    // Clear the un-posted ban for this MAC and its ±2 MAC siblings first,
+    // so Home sync does not filter the freshly paired frame before it binds.
+    await _clearUnbound(slug);
+    final asInt = int.tryParse(slug, radix: 16);
+    if (asInt != null) {
+      for (final delta in const [-2, 2]) {
+        final s =
+            (asInt + delta).toRadixString(16).toUpperCase().padLeft(12, '0');
+        if (s.length == 12) await _clearUnbound(s);
+      }
+    }
+
+    if (token.isEmpty) return;
+
+    try {
+      final uri = Uri.parse('$_apiBase/api/frames/pair');
+      final res = await _api
+          .post(
+            uri,
+            headers: _headers(token, json: true),
+            body: jsonEncode({'ble_mac': slug, 'set_primary': true}),
+          )
+          .timeout(const Duration(seconds: 12));
+      AppDiagLog.verbose(
+        '[account-sync] grantOwner manual pair $slug -> HTTP ${res.statusCode} ${res.body}',
+      );
+      if (res.statusCode == 200 ||
+          (res.body.isNotEmpty && res.body.contains('"ok":true'))) {
+        await _clearUnbound(slug);
+      }
+    } catch (e) {
+      // Endpoint not deployed yet — fall through to the normal bind re-push.
+      AppDiagLog.verbose('[account-sync] grantOwner pair endpoint skipped: $e');
+    }
+
+    // Re-push the bind for the crowd path (also clears the ban on success).
+    // Callers fire-and-forget this method, so awaiting here keeps the resync's
+    // own error handling (returns null on failure) instead of an unhandled
+    // async error escaping an unawaited future.
+    await syncAccountState(
+      force: true,
+      pruneMissingFrames: false,
+      authTokenOverride: token,
+    );
   }
 
   Future<void> wipeLocalSyncState() async {

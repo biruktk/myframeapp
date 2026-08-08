@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
+import 'api_client.dart';
 
 class FrameStatus {
   FrameStatus({
@@ -96,9 +97,9 @@ class FrameStatus {
 
 class FrameApiClient {
   FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 90)})
-      : _http = httpClient ?? http.Client();
+      : _api = ApiClient(inner: httpClient);
 
-  final http.Client _http;
+  final ApiClient _api;
   final Duration defaultTimeout;
 
   /// POST /api/frames/{MAC}/upload — multipart, matches WeChat mini app endpoint.
@@ -135,6 +136,7 @@ class FrameApiClient {
             ..fields['device_id'] = deviceId
             ..fields['checksum'] = checksum
             ..fields['size'] = '${fileBytes.length}'
+            ..fields['app_platform'] = 'flutter'
               ..fields.addAll({
                 if (slideshowStyle != null && slideshowStyle.isNotEmpty) 'slideshow_style': slideshowStyle,
                 if (displaySeconds != null && displaySeconds > 0)
@@ -158,16 +160,13 @@ class FrameApiClient {
             request.headers['Authorization'] = 'Bearer $bearer';
           }
 
-          final streamed = await _http.send(request).timeout(
+          final res = await _api.send(request).timeout(
                 effectiveTimeout,
                 onTimeout: () => throw TimeoutException('POST /api/photo/upload', effectiveTimeout),
               );
-          final body = await streamed.stream.bytesToString().timeout(
-                effectiveTimeout,
-                onTimeout: () => throw TimeoutException('photo upload read body', effectiveTimeout),
-              );
-          if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
-            throw FrameApiException(streamed.statusCode, body);
+          final body = res.body;
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            throw FrameApiException(res.statusCode, body);
           }
           final json = jsonDecode(body) as Map<String, dynamic>;
           return PhotoUploadResponse.fromJson(json);
@@ -197,7 +196,7 @@ class FrameApiClient {
     for (final base in _candidateBases(baseUrlOverride)) {
       for (var attempt = 0; attempt < 2; attempt++) {
         try {
-          final res = await _http
+          final res = await _api
               .get(
                 Uri.parse('$base/api/device/status'),
                 headers: pairingToken != null && pairingToken.trim().isNotEmpty
@@ -237,7 +236,7 @@ class FrameApiClient {
     for (final base in bases) {
       try {
         final uri = Uri.parse('$base/api/frames/$slug/status');
-        final res = await _http
+        final res = await _api
             .get(
               uri,
               headers: pairingToken != null && pairingToken.trim().isNotEmpty
@@ -257,7 +256,7 @@ class FrameApiClient {
   }
 
   /// POST `/api/frames/:mac/mqtt-command` — relay an app-issued MQTT command
-  /// (`wifi_sleep` / `strategy_bin`) to the frame per the firmware protocol and
+  /// (e.g. `wifi_sleep`) to the frame per the firmware protocol and
   /// return the server's send + ack result.
   Future<Map<String, dynamic>> sendFrameCommand({
     required String mac,
@@ -282,7 +281,7 @@ class FrameApiClient {
     });
     for (final base in _frameStatusCandidateBases(baseUrlOverride)) {
       try {
-        final res = await _http
+        final res = await _api
             .post(Uri.parse('$base/api/frames/$slug/mqtt-command'),
                 headers: headers, body: body)
             .timeout(t);
@@ -312,7 +311,7 @@ class FrameApiClient {
       for (var attempt = 0; attempt < 2; attempt++) {
         try {
           final uri = Uri.parse('$base/api/frames/$slug/status');
-          final res = await _http
+          final res = await _api
               .get(uri)
               .timeout(t, onTimeout: () => throw TimeoutException('GET /api/frames/$slug/status', t));
           if (res.statusCode != 200) {
@@ -346,7 +345,7 @@ class FrameApiClient {
         try {
           final uri = Uri.parse('$base/api/photo/delivery-status')
               .replace(queryParameters: {'checksum': checksumSha256, 'device_id': deviceId});
-          final res = await _http
+          final res = await _api
               .get(
                 uri,
                 headers: pairingToken != null && pairingToken.trim().isNotEmpty
@@ -387,7 +386,7 @@ class FrameApiClient {
       for (var attempt = 0; attempt < 2; attempt++) {
         try {
           final uri = Uri.parse('$base/api/device/send');
-          final res = await _http
+          final res = await _api
               .post(
                 uri,
                 headers: {
@@ -437,7 +436,7 @@ class FrameApiClient {
       if (tok.isNotEmpty) {
         headers['Authorization'] = 'Bearer $tok';
       }
-      final res = await _http.get(uri, headers: headers).timeout(t);
+      final res = await _api.get(uri, headers: headers).timeout(t);
       if (res.statusCode != 200) return [];
       final json = jsonDecode(res.body) as Map<String, dynamic>;
       if (json['ok'] != true) return [];
@@ -464,7 +463,7 @@ class FrameApiClient {
     for (final base in bases) {
       try {
         final uri = Uri.parse('$base/api/frames/$slug');
-        final res = await _http
+        final res = await _api
             .delete(
               uri,
               headers: pairingToken != null && pairingToken.trim().isNotEmpty
@@ -499,7 +498,7 @@ class FrameApiClient {
 
     // Canonical v1 endpoint.
     try {
-      final res = await _http
+      final res = await _api
           .get(Uri.parse('$base/api/v1/user/media'), headers: headers)
           .timeout(t);
       if (res.statusCode == 200) {
@@ -514,7 +513,7 @@ class FrameApiClient {
 
     // Fallback: existing /api/user/gallery route.
     try {
-      final res = await _http
+      final res = await _api
           .get(Uri.parse('$base/api/user/gallery'), headers: headers)
           .timeout(t);
       if (res.statusCode == 200) {
@@ -545,7 +544,7 @@ class FrameApiClient {
     };
 
     try {
-      final res = await _http
+      final res = await _api
           .get(Uri.parse('$base/api/v1/user/albums'), headers: headers)
           .timeout(t);
       if (res.statusCode == 200) {
@@ -581,7 +580,7 @@ class FrameApiClient {
       '/api/user/gallery/$id',
     ]) {
       try {
-        final res = await _http
+        final res = await _api
             .delete(Uri.parse('$base$path'), headers: headers)
             .timeout(t);
         if (res.statusCode == 200 || res.statusCode == 204) return true;
@@ -611,7 +610,7 @@ class FrameApiClient {
       '/api/user/playlists/$id',
     ]) {
       try {
-        final res = await _http
+        final res = await _api
             .delete(Uri.parse('$base$path'), headers: headers)
             .timeout(t);
         if (res.statusCode == 200 || res.statusCode == 204) return true;
@@ -620,7 +619,53 @@ class FrameApiClient {
     return false;
   }
 
-  void close() => _http.close();
+  /// ALBUM_DELETE_SYNC — deletes the album and tells frames (via MQTT) to
+  /// drop the deleted images and continue autonomous local playback with the
+  /// supplied remaining image list + playback strategy (no stop/fallback).
+  Future<Map<String, dynamic>?> deleteUserAlbumSync({
+    required String bearerToken,
+    required String albumId,
+    List<String> imageIds = const [],
+    int intervalMinutes = 10,
+    int strategy = 1,
+    int durationHours = 0,
+    List<String> macSlugs = const [],
+    Duration? timeout,
+  }) async {
+    final tok = bearerToken.trim();
+    final id = albumId.trim();
+    if (tok.isEmpty || id.isEmpty) return null;
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(null);
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $tok',
+    };
+    final path = '/api/v1/user/albums/$id/delete-sync';
+    try {
+      final res = await _api
+          .post(
+            Uri.parse('$base$path'),
+            headers: headers,
+            body: jsonEncode({
+              'imageIds': imageIds,
+              'intervalMinutes': intervalMinutes,
+              'strategy': strategy,
+              'durationHours': durationHours,
+              'macSlugs': macSlugs,
+            }),
+          )
+          .timeout(t);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        if (json['ok'] == true) return json;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  void close() => _api.close();
 
   static String _base(String? override) {
     final o = override?.trim();

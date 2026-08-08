@@ -162,6 +162,22 @@ class AppStrings {
     de: 'Anmelden',
     ja: 'ログイン',
   );
+  String get sessionExpiredTitle => _l6(
+    en: 'Session expired',
+    zh: '登录已过期',
+    es: 'Sesión expirada',
+    fr: 'Session expirée',
+    de: 'Sitzung abgelaufen',
+    ja: 'セッションの有効期限切れ',
+  );
+  String get sessionExpiredMessage => _l6(
+    en: 'Your session has expired. Please log in again.',
+    zh: '您的登录已过期，请重新登录。',
+    es: 'Su sesión ha expirado. Vuelva a iniciar sesión.',
+    fr: 'Votre session a expiré. Veuillez vous reconnecter.',
+    de: 'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.',
+    ja: 'セッションが切れました。再度ログインしてください。',
+  );
   String get registerLabel => _l6(
     en: 'Register',
     zh: '注册',
@@ -457,7 +473,7 @@ class AppStrings {
         'Google Sign-In is not configured for this Android build.\n\n'
         'In Google Cloud Console → APIs & Services → Credentials, add:\n'
         '1) OAuth Android client — ID 824694546060-9rlpc8r18kv38t0lvdkktbeai8nn7s58…, package com.myframe.minyuex, SHA-1 68:29:F9:6E:9D:40:58:02:32:2E:21:E0:19:88:76:DD:02:9C:4B:77\n'
-        '2) OAuth Web client — ID must match the app serverClientId (824694546060-rjs2fvoshtngpprrbbtedda9uda28qsm…).\n\n'
+        '2) OAuth Web client — ID must match the app serverClientId (35227816140-is97hmj34o8h3t0erdnd0r10d1k0ajld.apps.googleusercontent.com).\n\n'
         'Save, wait ~10 minutes, then reinstall the APK.',
     zh:
         '此 Android 版本尚未配置 Google 登录。\n'
@@ -3067,6 +3083,30 @@ class AppStrings {
     de: 'Playlist gesendet',
     ja: 'プレイリストを送信しました',
   );
+  String get myPlaylistName => _l6(
+    en: 'My Playlist',
+    zh: '我的播放列表',
+    es: 'Mi lista',
+    fr: 'Mes favoris',
+    de: 'Meine Liste',
+    ja: 'マイプレイリスト',
+  );
+  String get shareSheetQueuedOffline => _l6(
+    en: "Offline — saved, will send automatically when you're back online",
+    zh: '当前离线 — 已保存，联网后自动发送',
+    es: 'Sin conexión: guardado, se enviará automáticamente',
+    fr: 'Hors ligne : enregistré, sera envoyé automatiquement',
+    de: 'Offline — gespeichert, wird automatisch gesendet',
+    ja: 'オフライン — 保存しました。接続後に自動送信します',
+  );
+  String get shareSheetErrorRetry => _l6(
+    en: "Couldn't send. Check your network and try again.",
+    zh: '发送失败，请检查网络后重试。',
+    es: 'No se pudo enviar. Revisa tu conexión e inténtalo.',
+    fr: 'Envoi impossible. Vérifiez votre connexion puis réessayez.',
+    de: 'Senden fehlgeschlagen. Netzwerk prüfen und erneut versuchen.',
+    ja: '送信できませんでした。ネットワークを確認して再試行してください。',
+  );
   String get overlayOptions => _l6(
     en: 'Overlay options',
     zh: '叠加信息',
@@ -4765,6 +4805,51 @@ class AppStrings {
     fr: 'Nommez le cadre et choisissez son orientation. Modifiable plus tard.',
     de: 'Rahmen benennen und Ausrichtung wählen. Später änderbar.',
     ja: 'フレーム名と向きを設定します。後から変更できます。',
+  );
+  String get frameProfileNavTitle => _l6(
+    en: 'Playback profile',
+    zh: '播放配置',
+    es: 'Perfil de reproducción',
+    fr: 'Profil de lecture',
+    de: 'Wiedergabeprofil',
+    ja: '再生プロファイル',
+  );
+  String get frameProfileIntro => _l6(
+    en: 'These playback defaults apply to every photo this frame receives. '
+        'You can still override interval and order for individual albums.',
+    zh: '以下播放设置应用于该相框收到的所有照片。单个相册仍可自定义间隔与顺序。',
+    es: 'Estos ajustes se aplican a cada foto que reciba el marco. Aún puedes '
+        'personalizar el intervalo y el orden de cada álbum.',
+    fr: 'Ces réglages de lecture s’appliquent à chaque photo reçue par le '
+        'cadre. Vous pouvez encore personnaliser intervalle et ordre par album.',
+    de: 'Diese Wiedergabeeinstellungen gelten für jedes Foto dieses Rahmens. '
+        'Pro Alben sind Interval und Reihenfolge weiterhin anpassbar.',
+    ja: 'この再生設定はフレームが表示するすべての写真に適用されます。'
+        '個別のアルバムでは間隔と順序を変更できます。',
+  );
+  String get frameProfileNavSub => _l6(
+    en: 'Global interval, order and duration for this frame',
+    zh: '该相框的全局播放间隔、顺序与时长',
+    es: 'Intervalo, orden y duración globales de este marco',
+    fr: 'Intervalle, ordre et durée globaux de ce cadre',
+    de: 'Globaler Abstand, Reihenfolge und Dauer für diesen Rahmen',
+    ja: 'このフレームの再生間隔・順序・時間を設定',
+  );
+  String get frameProfileSaved => _l6(
+    en: 'Playback profile saved',
+    zh: '播放配置已保存',
+    es: 'Perfil de reproducción guardado',
+    fr: 'Profil de lecture enregistré',
+    de: 'Wiedergabeprofil gespeichert',
+    ja: '再生プロファイルを保存しました',
+  );
+  String get frameProfileNeedsFrame => _l6(
+    en: 'Connect a frame first to set its playback profile.',
+    zh: '请先连接相框，再设置播放配置。',
+    es: 'Conecta primero un marco para configurar su perfil.',
+    fr: 'Connectez d’abord un cadre pour régler son profil de lecture.',
+    de: 'Verbinde zuerst einen Rahmen, um sein Wiedergabeprofil einzustellen.',
+    ja: 'まずフレームを接続してから再生プロファイルを設定してください。',
   );
   String get frameNameLabel => _l6(
     en: 'Frame name',
@@ -6542,26 +6627,26 @@ class AppStrings {
       );
 
   String get uploadWakingFrame => _l6(
-        en: 'Waking frame MQTT session…',
-        zh: '唤醒相框 MQTT 会话…',
-        es: 'Despertando sesión MQTT…',
-        fr: 'Réveil de la session MQTT…',
-        de: 'MQTT-Sitzung wird aufgeweckt…',
-        ja: 'MQTT セッションを起動中…',
+        en: 'Preparing…',
+        zh: '准备中…',
+        es: 'Preparando…',
+        fr: 'Préparation…',
+        de: 'Vorbereiten…',
+        ja: '準備中…',
       );
 
   String get uploadWakingFrameVia => _l6(
-        en: 'Waking frame via MQTT…',
-        zh: '通过 MQTT 唤醒相框…',
-        es: 'Despertando marco vía MQTT…',
-        fr: 'Réveil via MQTT…',
-        de: 'Aufwecken über MQTT…',
-        ja: 'MQTT 経由で起動中…',
+        en: 'Preparing…',
+        zh: '准备中…',
+        es: 'Preparando…',
+        fr: 'Préparation…',
+        de: 'Vorbereiten…',
+        ja: '準備中…',
       );
 
   String get uploadWakingConnection => _l6(
-        en: 'Waking frame connection…',
-        zh: '唤醒相框连接…',
+        en: 'Preparing…',
+        zh: '准备中…',
         es: 'Despertando conexión…',
         fr: 'Réveil de la connexion…',
         de: 'Verbindung wird aufgeweckt…',

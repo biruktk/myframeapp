@@ -18,6 +18,7 @@ import 'settings_app_preferences_screen.dart';
 import 'settings_help_screen.dart';
 import 'settings_log_screen.dart';
 import 'device_discovery_screen.dart';
+
 import 'playlist_screen.dart';
 import 'sleep_settings_screen.dart';
 
@@ -222,6 +223,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const PlaylistScreen()),
               ),
             ),
+            _divider(cs),
+            // Temporarily hidden: Playback Profile (frame playback interval)
+            // is not yet supported by the frame firmware. Underlying state and
+            // backend support remain intact.
+            // _tile(
+            //   context: context,
+            //   icon: Icons.tune_rounded,
+            //   title: s.frameProfileNavTitle,
+            //   subtitle: s.frameProfileNavSub,
+            //   onTap: () => Navigator.push<void>(
+            //     context, MaterialPageRoute<void>(builder: (_) => const FrameSettingsScreen()),
+            //   ),
+            // ),
             _divider(cs),
             _tile(
               context: context,

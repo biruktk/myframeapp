@@ -1,8 +1,7 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../config/api_config.dart';
+import 'api_client.dart';
 
 class SlideshowRemoteApi {
   SlideshowRemoteApi({String? baseUrl})
@@ -28,9 +27,6 @@ class SlideshowRemoteApi {
       'Accept': 'application/json',
     };
     final bt = bearerToken?.trim() ?? '';
-    if (bt.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $bt';
-    }
     final pt = pairingToken?.trim() ?? '';
     if (pt.isNotEmpty) {
       headers['x-pairing-token'] = pt;
@@ -45,7 +41,7 @@ class SlideshowRemoteApi {
       'idle': 0,
     };
     if (skipPlay) body['skipPlay'] = true;
-    final res = await http.post(
+    final res = await ApiClient(bearerToken: bt).post(
       uri,
       headers: headers,
       body: jsonEncode(body),
@@ -70,17 +66,15 @@ class SlideshowRemoteApi {
       'Accept': 'application/json',
     };
     final bt = bearerToken?.trim() ?? '';
-    if (bt.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $bt';
-    }
     final pt = pairingToken?.trim() ?? '';
     if (pt.isNotEmpty) {
       headers['x-pairing-token'] = pt;
     }
+    final api = ApiClient(bearerToken: bt);
 
     Future<bool> tryPost() async {
       final uri = Uri.parse('$_origin/api/frames/$encoded/stop-playlist');
-      final res = await http
+      final res = await api
           .post(
             uri,
             headers: headers,
@@ -92,7 +86,7 @@ class SlideshowRemoteApi {
 
     Future<bool> tryDelete() async {
       final uri = Uri.parse('$_origin/api/frames/$encoded/slideshow');
-      final res = await http
+      final res = await api
           .delete(uri, headers: headers)
           .timeout(const Duration(seconds: 20));
       return res.statusCode >= 200 && res.statusCode < 300;

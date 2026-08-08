@@ -1,29 +1,22 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../config/api_config.dart';
+import 'api_client.dart';
 
 /// Cloud playlists + frame slideshow status via `/api/user/*`.
 class UserPlaylistRemoteApi {
   UserPlaylistRemoteApi({String? baseUrl, required String bearerToken})
       : _origin = (baseUrl ?? ApiConfig.baseUrl).replaceAll(RegExp(r'/+$'), ''),
-        _tok = bearerToken.trim();
+        _api = ApiClient(bearerToken: bearerToken.trim());
 
   final String _origin;
-  final String _tok;
-
-  Map<String, String> get _hdr => {
-        'Authorization': 'Bearer $_tok',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      };
+  final ApiClient _api;
 
   Uri _u(String path) => Uri.parse('$_origin${path.startsWith('/') ? path : '/$path'}');
 
   Future<UserDashboardSnapshot?> fetchDashboard() async {
-    if (_tok.isEmpty) return null;
-    final res = await http.get(_u('/api/user/dashboard'), headers: _hdr);
+    if (!_api.hasToken) return null;
+    final res = await _api.get(_u('/api/user/dashboard'));
     if (res.statusCode == 401) return null;
     if (res.statusCode < 200 || res.statusCode >= 300) return null;
     final map = jsonDecode(res.body);
@@ -32,12 +25,12 @@ class UserPlaylistRemoteApi {
   }
 
   Future<CloudPlaylist?> createPlaylist({required String title, String? assignedFrameId}) async {
-    if (_tok.isEmpty) return null;
+    if (!_api.hasToken) return null;
     final body = <String, dynamic>{'title': title};
     if (assignedFrameId != null && assignedFrameId.trim().isNotEmpty) {
       body['assignedFrameId'] = assignedFrameId.trim();
     }
-    final res = await http.post(_u('/api/user/playlists'), headers: _hdr, body: jsonEncode(body));
+    final res = await _api.post(_u('/api/user/playlists'), body: body);
     if (res.statusCode < 200 || res.statusCode >= 300) return null;
     final map = jsonDecode(res.body);
     if (map is! Map<String, dynamic>) return null;
@@ -51,14 +44,13 @@ class UserPlaylistRemoteApi {
     required List<String> photoIds,
     String? assignedFrameId,
   }) async {
-    if (_tok.isEmpty) return null;
+    if (!_api.hasToken) return null;
     final body = <String, dynamic>{'photoIds': photoIds};
     final af = assignedFrameId?.trim() ?? '';
     if (af.isNotEmpty) body['assignedFrameId'] = af;
-    final res = await http.patch(
+    final res = await _api.patch(
       _u('/api/user/playlists/$playlistId'),
-      headers: _hdr,
-      body: jsonEncode(body),
+      body: body,
     );
     if (res.statusCode < 200 || res.statusCode >= 300) return null;
     final map = jsonDecode(res.body);

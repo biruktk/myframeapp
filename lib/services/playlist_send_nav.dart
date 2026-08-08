@@ -8,6 +8,7 @@ import '../screens/edit_color_grade_screen.dart';
 import '../screens/image_editor_screen.dart';
 import '../services/device_store.dart';
 import '../services/frame_online_guard.dart';
+import '../services/gallery_image_cache.dart';
 import '../settings/app_settings.dart';
 
 /// Mini-app parity: after photo selection, open the send UI immediately.
@@ -24,9 +25,9 @@ class PlaylistSendNav {
     final paired = DeviceStore.instance.cached;
     if (paired == null || !paired.canUploadToServer) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(s.connectFrameFirst)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(s.connectFrameFirst)));
       }
       return false;
     }
@@ -42,8 +43,25 @@ class PlaylistSendNav {
     String? albumId,
     int initialIntervalSeconds = defaultIntervalSeconds,
   }) async {
+    // iOS PHPicker / image_picker hand out files under /tmp that can vanish
+    // mid-flow — copy anything outside app documents before the send page reads it.
+    List<String> durable;
+    try {
+      durable = await GalleryImageCache.persistPaths(
+        paths,
+        normalizeJpeg: false,
+      );
+    } catch (_) {
+      durable = paths.where((p) {
+        try {
+          return File(p).existsSync();
+        } catch (_) {
+          return false;
+        }
+      }).toList();
+    }
     final files = <File>[];
-    for (final p in paths) {
+    for (final p in durable) {
       final t = p.trim();
       if (t.isEmpty) continue;
       try {

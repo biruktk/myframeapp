@@ -26,11 +26,11 @@ class FamilyMember {
   final bool pending;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': displayName,
-        'role': role,
-        'pending': pending,
-      };
+    'id': id,
+    'name': displayName,
+    'role': role,
+    'pending': pending,
+  };
 
   factory FamilyMember.fromJson(Map<String, dynamic> j) {
     return FamilyMember(
@@ -55,12 +55,13 @@ class JoinedFamilySnapshot {
   final int joinedAtMs;
 
   Map<String, dynamic> toJson() => {
-        'code': code,
-        'label': label,
-        't': joinedAtMs,
-      };
+    'code': code,
+    'label': label,
+    't': joinedAtMs,
+  };
 
-  factory JoinedFamilySnapshot.fromJson(Map<String, dynamic> j) => JoinedFamilySnapshot(
+  factory JoinedFamilySnapshot.fromJson(Map<String, dynamic> j) =>
+      JoinedFamilySnapshot(
         code: (j['code'] as String? ?? '').toUpperCase(),
         label: j['label'] as String? ?? '',
         joinedAtMs: j['t'] as int? ?? 0,
@@ -88,6 +89,7 @@ class FamilyGroupStore {
   String familyName = 'Our family';
   String inviteCode = '';
   String remoteFamilyId = '';
+
   /// When [true], [members]/[inviteCode] last came from `GET /api/family/members`.
   bool cloudSynced = false;
   List<FamilyMember> members = [];
@@ -104,7 +106,12 @@ class FamilyGroupStore {
     return List.generate(8, (_) => alphabet[r.nextInt(alphabet.length)]).join();
   }
 
-  static String normalizeCode(String raw) => raw.trim().toUpperCase().replaceAll(RegExp(r'[\s-]'), '');
+  /// Canonical invite form: trim → upper → strip ASCII spaces/hyphens + common
+  /// zero-width / BOM characters. Mirrors the server's `normalizeInviteCode`.
+  static String normalizeCode(String raw) => raw
+      .trim()
+      .toUpperCase()
+      .replaceAll(RegExp(r'[\s\-\u200B\u200C\u200D\uFEFF]'), '');
 
   /// Drop in-memory family state (logout / account switch). Disk stays user-scoped.
   void resetMemory() {
@@ -118,7 +125,9 @@ class FamilyGroupStore {
     _bumpRevision();
   }
 
-  Future<void> ensureLoaded({required String Function() ownerDisplayName}) async {
+  Future<void> ensureLoaded({
+    required String Function() ownerDisplayName,
+  }) async {
     if (_loaded) return;
 
     final rawOwn = await LocalStorageService.instance.getString(
@@ -129,11 +138,14 @@ class FamilyGroupStore {
         final map = jsonDecode(rawOwn) as Map<String, dynamic>;
         familyName = map['name'] as String? ?? 'Our family';
         final rawCode = map['code'] as String?;
-        inviteCode = (rawCode == null || rawCode.trim().isEmpty) ? generateInviteCode() : rawCode.trim();
+        inviteCode = (rawCode == null || rawCode.trim().isEmpty)
+            ? generateInviteCode()
+            : rawCode.trim();
         remoteFamilyId = map['remoteFamilyId'] as String? ?? '';
         cloudSynced = map['cloudSynced'] as bool? ?? false;
         final list = map['members'] as List<dynamic>?;
-        members = list
+        members =
+            list
                 ?.map((e) => FamilyMember.fromJson(e as Map<String, dynamic>))
                 .where((m) => m.id.isNotEmpty)
                 .toList() ??
@@ -162,7 +174,9 @@ class FamilyGroupStore {
       try {
         final list = jsonDecode(rawJ) as List<dynamic>;
         joinedFamilies = list
-            .map((e) => JoinedFamilySnapshot.fromJson(e as Map<String, dynamic>))
+            .map(
+              (e) => JoinedFamilySnapshot.fromJson(e as Map<String, dynamic>),
+            )
             .where((j) => j.code.isNotEmpty)
             .toList();
       } catch (_) {
@@ -201,6 +215,15 @@ class FamilyGroupStore {
       LocalStorageService.familyOwnBase,
       jsonEncode(map),
     );
+  }
+
+  /// A locally generated code has no server-side family record and must never
+  /// be offered to another signed-in user. It cannot be redeemed remotely.
+  Future<void> discardUnpublishedInviteCode() async {
+    if (cloudSynced || inviteCode.isEmpty) return;
+    inviteCode = '';
+    await _persistOwn();
+    _bumpRevision();
   }
 
   Future<void> _persistJoined() async {
@@ -259,7 +282,11 @@ class FamilyGroupStore {
     }
   }
 
-  Future<void> createCloudFamily(String origin, String token, {String name = 'Our family'}) async {
+  Future<void> createCloudFamily(
+    String origin,
+    String token, {
+    String name = 'Our family',
+  }) async {
     final api = FamilyRemoteApi(baseUrl: origin, token: token);
     await api.create(name: name);
     await pullFromRemote(origin, token);
@@ -351,17 +378,25 @@ class FamilyGroupStore {
       remoteFamilyId = bundle.familyId;
       familyName = bundle.familyName;
       inviteCode = bundle.inviteCode;
-      members = bundle.members.map((m) {
-        final id = m['userId'] as String? ?? '';
-        final roleRaw = m['role'] as String? ?? 'member';
-        final role = roleRaw == 'owner' ? FamilyRoles.owner : FamilyRoles.member;
-        final display = (m['name'] as String?)?.trim();
-        final email = (m['email'] as String?)?.trim() ?? '';
-        final name = (display != null && display.isNotEmpty && display != '(unknown)')
-            ? display
-            : (email.isNotEmpty ? email.split('@').first : id);
-        return FamilyMember(id: id, displayName: name, role: role);
-      }).where((m) => m.id.isNotEmpty).toList();
+      members = bundle.members
+          .map((m) {
+            final id = m['userId'] as String? ?? '';
+            final roleRaw = m['role'] as String? ?? 'member';
+            final role = roleRaw == 'owner'
+                ? FamilyRoles.owner
+                : FamilyRoles.member;
+            final display = (m['name'] as String?)?.trim();
+            final email = (m['email'] as String?)?.trim() ?? '';
+            final name =
+                (display != null &&
+                    display.isNotEmpty &&
+                    display != '(unknown)')
+                ? display
+                : (email.isNotEmpty ? email.split('@').first : id);
+            return FamilyMember(id: id, displayName: name, role: role);
+          })
+          .where((m) => m.id.isNotEmpty)
+          .toList();
       joinedFamilies = [];
       await _persistOwn();
       await _persistJoined();
@@ -376,7 +411,11 @@ class FamilyGroupStore {
 
   /// Unlink a non-owner member from the cloud family (and local cache).
   /// Returns `true` when the member was removed.
-  Future<bool> removeMember(String id, {String? apiOrigin, String? token}) async {
+  Future<bool> removeMember(
+    String id, {
+    String? apiOrigin,
+    String? token,
+  }) async {
     final idx = members.indexWhere((e) => e.id == id);
     if (idx < 0) return false;
     if (members[idx].role == FamilyRoles.owner) return false;
@@ -410,9 +449,7 @@ class FamilyGroupStore {
     final c = normalizeCode(rawCode);
     if (c.length != 8) return JoinFamilyResult.codeTooShort;
     // Only treat as "own code" when this device is already on that cloud family.
-    if (cloudSynced &&
-        inviteCode.isNotEmpty &&
-        c == inviteCode.toUpperCase()) {
+    if (cloudSynced && inviteCode.isNotEmpty && c == inviteCode.toUpperCase()) {
       return JoinFamilyResult.ownInviteCode;
     }
 
@@ -422,7 +459,10 @@ class FamilyGroupStore {
       // Cancel any in-flight Family-tab auto-create before we join.
       invalidatePendingFamilyEnsure();
       try {
-        await FamilyRemoteApi(baseUrl: origin, token: tok).join(c, birthdayIso: birthdayIso);
+        await FamilyRemoteApi(
+          baseUrl: origin,
+          token: tok,
+        ).join(c, birthdayIso: birthdayIso);
         invalidatePendingFamilyEnsure();
         await pullFromRemote(origin, tok);
         return JoinFamilyResult.ok;
@@ -465,7 +505,11 @@ class FamilyGroupStore {
     await _persistJoined();
   }
 
-  Future<void> leaveServerFamily(String origin, String token, {required String Function() ownerDisplayName}) async {
+  Future<void> leaveServerFamily(
+    String origin,
+    String token, {
+    required String Function() ownerDisplayName,
+  }) async {
     try {
       await FamilyRemoteApi(baseUrl: origin, token: token).leave();
     } catch (_) {

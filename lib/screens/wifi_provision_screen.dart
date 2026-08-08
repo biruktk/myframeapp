@@ -8,6 +8,8 @@ import 'package:permission_handler/permission_handler.dart';
 import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
 import '../models/pairing_nav_result.dart';
+import '../services/account_sync_service.dart';
+import '../services/auth_session_manager.dart';
 import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
 import '../services/frame_mac_util.dart';
@@ -46,6 +48,11 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   List<({String ssid, int rssi, bool secure})> _wifiNetworks = [];
   String? _selectedSsid;
   bool _scanningWifi = false;
+
+  /// Bumped on every scan start; stale async results whose generation is
+  /// behind the latest scan are dropped so overlapping scans never clobber
+  /// the freshly returned list.
+  int _wifiScanEpoch = 0;
   bool _busy = false;
   bool _hide = true;
   bool _selectedIsOpen = false;
@@ -80,6 +87,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   }
 
   Future<void> _scanWifiNetworks() async {
+    final epoch = ++_wifiScanEpoch;
     setState(() {
       _scanningWifi = true;
       _status = null;
@@ -98,7 +106,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           final loc2 = await Permission.locationWhenInUse.status;
           final nearby2 = await Permission.nearbyWifiDevices.status;
           if (!loc2.isGranted && !loc2.isLimited && !nearby2.isGranted) {
-            if (!mounted) return;
+            if (!mounted || epoch != _wifiScanEpoch) return;
             setState(() {
               _error = AppStrings.of(context).wifiScanPermissionHint;
             });
@@ -106,9 +114,12 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         }
       } catch (_) {}
 
-      final info = await _nativeBleMethod.invokeMethod<Map<dynamic, dynamic>>('getWifiInfo');
+      final info = await _nativeBleMethod
+          .invokeMethod<Map<dynamic, dynamic>>('getWifiInfo')
+          .timeout(const Duration(seconds: 10));
       final currentSsid = normalizeWifiSsid(info?['ssid']?.toString() ?? '');
       if (currentSsid.isNotEmpty && currentSsid != '<unknown ssid>') {
+        if (!mounted || epoch != _wifiScanEpoch) return;
         setState(() {
           _currentWifiSsid = currentSsid;
           if (_ssidCtrl.text.trim().isEmpty) {
@@ -120,7 +131,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
 
       // iOS: no public nearby-SSID API — current network + manual entry only.
       if (!Platform.isAndroid) {
-        if (!mounted) return;
+        if (!mounted || epoch != _wifiScanEpoch) return;
         setState(() {
           _wifiNetworks = const [];
           _scanningWifi = false;
@@ -130,7 +141,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
 
       final wifiEnabled = info?['enabled'] == true;
       if (!wifiEnabled) {
-        if (!mounted) return;
+        if (!mounted || epoch != _wifiScanEpoch) return;
         setState(() {
           _wifiNetworks = const [];
           _selectedSsid = null;
@@ -140,11 +151,17 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       }
 
       AppDiagLog.verbose('[WiFi] scan start');
-      var raw = await _nativeBleMethod.invokeMethod<List<dynamic>>('scanWifiNetworks') ?? <dynamic>[];
+      var raw = await _nativeBleMethod
+          .invokeMethod<List<dynamic>>('scanWifiNetworks')
+          // Android startScan() can stall (throttle / lost SCAN_RESULTS broadcast);
+          // never leave the spinner stuck or the next scan queued forever.
+          .timeout(const Duration(seconds: 12)) ?? <dynamic>[];
       // One retry if the first pass returned empty (scan throttle / cold start).
       if (raw.isEmpty) {
         await Future<void>.delayed(const Duration(milliseconds: 700));
-        raw = await _nativeBleMethod.invokeMethod<List<dynamic>>('scanWifiNetworks') ?? <dynamic>[];
+        raw = await _nativeBleMethod
+            .invokeMethod<List<dynamic>>('scanWifiNetworks')
+            .timeout(const Duration(seconds: 12)) ?? <dynamic>[];
       }
       final parsed = <({String ssid, int rssi, bool secure})>[];
       for (final item in raw) {
@@ -158,15 +175,18 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           secure: item['secure'] == true,
         ));
       }
-      if (!mounted) return;
+      // A newer scan started while this one was in flight — drop these results.
+      if (!mounted || epoch != _wifiScanEpoch) return;
       setState(() {
         _wifiNetworks = parsed;
       });
       AppDiagLog.verbose('[WiFi] scan done count=${parsed.length}');
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || epoch != _wifiScanEpoch) return;
     } finally {
-      if (mounted) setState(() => _scanningWifi = false);
+      if (mounted && epoch == _wifiScanEpoch) {
+        setState(() => _scanningWifi = false);
+      }
     }
   }
 
@@ -221,133 +241,154 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
           fallback: s.wifiConnectionFailed,
         );
       });
+    } finally {
+      // Ensure 401 handling is re-enabled even if pairing fails.
+      AuthSessionManager.instance.suppressUnauthorizedHandling(false);
     }
   }
 
   Future<void> _connectInner() async {
-    final s = AppStrings.of(context);
-    final paired = DeviceStore.instance.cached;
-    final currentSsid = normalizeWifiSsid(_ssidCtrl.text);
-    // Password is only what the user typed — never cached/saved auto-fill.
-    // Trim only trailing/leading spaces; empty string = open network.
-    final effectivePassword = _passCtrl.text;
-    final match = _wifiNetworks.where(
-      (n) => wifiSsidEquals(n.ssid, currentSsid),
-    );
-    final listedSecure = match.isNotEmpty && match.first.secure;
-    // Prefer explicit open selection / blank password over a flaky scan "secure" bit.
-    final treatAsOpen =
-        _selectedIsOpen || (!listedSecure && effectivePassword.isEmpty);
-    if (currentSsid.isEmpty) {
+    // Suppress 401 handling during the entire pairing flow (WiFi provisioning +
+    // profile setup) so transient 401s from pairing endpoints don't log the user
+    // out. The AuthSessionManager will not reset the session while this is true.
+    AuthSessionManager.instance.suppressUnauthorizedHandling(true);
+    try {
+      final s = AppStrings.of(context);
+      final paired = DeviceStore.instance.cached;
+      final currentSsid = normalizeWifiSsid(_ssidCtrl.text);
+      // Password is only what the user typed — never cached/saved auto-fill.
+      // Trim only trailing/leading spaces; empty string = open network.
+      final effectivePassword = _passCtrl.text;
+      final match = _wifiNetworks.where(
+        (n) => wifiSsidEquals(n.ssid, currentSsid),
+      );
+      final listedSecure = match.isNotEmpty && match.first.secure;
+      // Prefer explicit open selection / blank password over a flaky scan "secure" bit.
+      final treatAsOpen =
+          _selectedIsOpen || (!listedSecure && effectivePassword.isEmpty);
+      if (currentSsid.isEmpty) {
+        setState(() {
+          _error = s.wifiSsidRequired;
+        });
+        return;
+      }
+      if (listedSecure && !treatAsOpen && effectivePassword.isEmpty) {
+        setState(() {
+          _error = s.wifiRequiresPasswordError;
+        });
+        return;
+      }
+
       setState(() {
-        _error = s.wifiSsidRequired;
+        _busy = true;
+        _error = null;
+        _status = s.connectingWifi;
+        _wifiConfirmed = false;
       });
-      return;
-    }
-    if (listedSecure && !treatAsOpen && effectivePassword.isEmpty) {
-      setState(() {
-        _error = s.wifiRequiresPasswordError;
-      });
-      return;
-    }
 
-    setState(() {
-      _busy = true;
-      _error = null;
-      _status = s.connectingWifi;
-      _wifiConfirmed = false;
-    });
+      if (paired == null) {
+        // This is Wi‑Fi setup, not firmware management — never surface the
+        // "pair a frame to manage firmware updates" banner here.
+        setState(() {
+          _busy = false;
+          _error = s.noFramePaired;
+        });
+        return;
+      }
 
-    if (paired == null) {
-      setState(() {
-        _busy = false;
-        _error = s.firmwareNoDevice;
-      });
-      return;
-    }
+      AppDiagLog.verbose(
+        '[WiFi] connect start ssid="$currentSsid" pwdLen=${effectivePassword.length} open=$treatAsOpen',
+      );
 
-    AppDiagLog.verbose(
-      '[WiFi] connect start ssid="$currentSsid" pwdLen=${effectivePassword.length} open=$treatAsOpen',
-    );
+      final selfHostedMqtt = SelfHostedMqttConfig(
+        host: VpsDefaults.host,
+        port: VpsDefaults.mqttPort,
+        user: VpsDefaults.mqttUser,
+        password: VpsDefaults.mqttPass,
+      );
 
-    final selfHostedMqtt = SelfHostedMqttConfig(
-      host: VpsDefaults.host,
-      port: VpsDefaults.mqttPort,
-      user: VpsDefaults.mqttUser,
-      password: VpsDefaults.mqttPass,
-    );
+      final provision = await BlufiProvisioningService.instance.provision(
+        paired: paired,
+        ssid: currentSsid,
+        password: effectivePassword,
+        selfHostedMqtt: selfHostedMqtt,
+        serverConfigAlreadySent: widget.serverConfigAlreadySent,
+      );
 
-    final provision = await BlufiProvisioningService.instance.provision(
-      paired: paired,
-      ssid: currentSsid,
-      password: effectivePassword,
-      selfHostedMqtt: selfHostedMqtt,
-      serverConfigAlreadySent: widget.serverConfigAlreadySent,
-    );
+      AppDiagLog.verbose(
+        '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}"',
+      );
 
-    AppDiagLog.verbose(
-      '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}"',
-    );
+      if (!mounted) return;
 
-    if (!mounted) return;
+      if (!provision.ok || !provision.confirmed) {
+        // Never persist a failed SSID as "connected".
+        await DeviceStore.instance.clearWifiProvision();
+        if (!mounted) return;
+        setState(() {
+          _busy = false;
+          _wifiConfirmed = false;
+          _status = null;
+          _error = AppDiagLog.userFacingStatus(
+            provision.message,
+            fallback: s.wifiConnectionFailed,
+          );
+        });
+        return;
+      }
 
-    if (!provision.ok || !provision.confirmed) {
-      // Never persist a failed SSID as "connected".
-      await DeviceStore.instance.clearWifiProvision();
+      AppDiagLog.verbose('[WiFi] frame confirmed Wi‑Fi — saving SSID, opening profile setup…');
+      await DeviceStore.instance.saveWifiProvision(
+        ssid: currentSsid,
+        password: effectivePassword,
+      );
+
+      // Manual pairing won ownership of this hardware — clear any unbound ban
+      // from a prior unlink and claim/re-push the owner binding so the frame
+      // works again without logging out.
+      unawaited(
+        AccountSyncService.instance.grantOwnerForManualPair(paired.deviceId),
+      );
+
       if (!mounted) return;
       setState(() {
         _busy = false;
-        _wifiConfirmed = false;
-        _status = null;
-        _error = AppDiagLog.userFacingStatus(
-          provision.message,
-          fallback: s.wifiConnectionFailed,
-        );
+        _wifiConfirmed = true;
+        _status = '${s.wifiConnectedTo} $currentSsid';
       });
-      return;
-    }
 
-    AppDiagLog.verbose('[WiFi] frame confirmed Wi‑Fi — saving SSID, opening profile setup…');
-    await DeviceStore.instance.saveWifiProvision(
-      ssid: currentSsid,
-      password: effectivePassword,
-    );
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
 
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _wifiConfirmed = true;
-      _status = '${s.wifiConnectedTo} $currentSsid';
-    });
-
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (!mounted) return;
-
-    final profileOk = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => FrameProfileSetupScreen(
-          requiredSetup: widget.firstTimeSetup,
+      final profileOk = await Navigator.of(context).push<bool>(
+        MaterialPageRoute<bool>(
+          builder: (_) => FrameProfileSetupScreen(
+            requiredSetup: widget.firstTimeSetup,
+          ),
         ),
-      ),
-    );
-
-    if (!mounted) return;
-    if (widget.firstTimeSetup) {
-      final openSend = profileOk == true && widget.openSendAfterSetup;
-      final result = PairingNavResult(
-        success: profileOk == true,
-        openSendGallery: openSend,
       );
+
+      if (!mounted) return;
+      if (widget.firstTimeSetup) {
+        final openSend = profileOk == true && widget.openSendAfterSetup;
+        final result = PairingNavResult(
+          success: profileOk == true,
+          openSendGallery: openSend,
+        );
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop<PairingNavResult>(result);
+        }
+        if (openSend) {
+          PairingFlowNav.onComplete(result);
+        }
+        return;
+      }
       if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop<PairingNavResult>(result);
+        Navigator.of(context).pop<bool>(profileOk == true);
       }
-      if (openSend) {
-        PairingFlowNav.onComplete(result);
-      }
-      return;
-    }
-    if (Navigator.of(context).canPop()) {
-      Navigator.of(context).pop<bool>(profileOk == true);
+    } finally {
+      // Re-enable 401 handling now that pairing/profile setup is complete.
+      AuthSessionManager.instance.suppressUnauthorizedHandling(false);
     }
   }
 

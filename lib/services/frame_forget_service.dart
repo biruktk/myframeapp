@@ -1,4 +1,5 @@
 import 'account_sync_service.dart';
+import 'auth_session_manager.dart';
 import 'ble_frame_device_transport.dart';
 import 'device_store.dart';
 
@@ -21,6 +22,12 @@ class FrameForgetService {
       await DeviceStore.instance.forgetPairedFrame(id);
     } catch (_) {}
     await BleFrameDeviceTransport.instance.releaseSession();
+
+    // Sign out the user after removing a frame so they must log in again.
+    final settings = AuthSessionManager.instance.settings;
+    if (settings != null && settings.hasAuthenticatedSession) {
+      await settings.setSignedIn(value: false);
+    }
   }
 
   Future<void> forgetAllFrames() async {
@@ -34,5 +41,11 @@ class FrameForgetService {
     }
     await DeviceStore.instance.clear();
     await BleFrameDeviceTransport.instance.releaseSession();
+
+    // Sign out the user after removing all frames.
+    final settings = AuthSessionManager.instance.settings;
+    if (settings != null && settings.hasAuthenticatedSession) {
+      await settings.setSignedIn(value: false);
+    }
   }
 }

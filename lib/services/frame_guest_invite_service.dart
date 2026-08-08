@@ -1,9 +1,8 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
+import 'api_client.dart';
 import 'app_diag_log.dart';
 import 'device_store.dart';
 
@@ -25,7 +24,7 @@ class FrameGuestInviteService {
 
   static final FrameGuestInviteService instance = FrameGuestInviteService._();
 
-  final _http = http.Client();
+  final _api = ApiClient();
 
   /// Resolves 12-hex frame MAC for invite API from paired frame.
   String? deviceIdForInvite(PairedFrame frame) {
@@ -64,7 +63,7 @@ class FrameGuestInviteService {
     ];
     for (final base in bases.toSet()) {
       try {
-        final res = await _http
+        final res = await _api
             .post(
               Uri.parse('$base/api/frame/invite'),
               headers: {
@@ -105,7 +104,7 @@ class FrameGuestInviteService {
         if (token != null && token.isNotEmpty) {
           headers['Authorization'] = 'Bearer $token';
         }
-        final res = await _http.get(uri, headers: headers).timeout(const Duration(seconds: 15));
+        final res = await _api.get(uri, headers: headers).timeout(const Duration(seconds: 15));
         if (res.statusCode < 200 || res.statusCode >= 300) {
           AppDiagLog.log('[ShareLink] GET invite/generate ${res.statusCode} ${res.body}');
           continue;

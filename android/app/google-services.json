@@ -12,7 +12,20 @@
           "package_name": "com.myframe.minyuex"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "35227816140-han7s2sgbs06332foka423t4v1de9mb5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.myframe.minyuex",
+            "certificate_hash": "b91e2e4818d56ded89e7f1ac073b3de0b9795342"
+          }
+        },
+        {
+          "client_id": "35227816140-is97hmj34o8h3t0erdnd0r10d1k0ajld.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAwB8v7wGN0mmFznPrHAOy_au4xMyu8jAA"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "35227816140-is97hmj34o8h3t0erdnd0r10d1k0ajld.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

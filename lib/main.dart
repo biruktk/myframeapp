@@ -17,6 +17,8 @@ import 'services/mobile_auth_deep_link.dart';
 import 'services/share_incoming_service.dart';
 import 'services/app_diag_log.dart';
 import 'services/app_release_guard.dart';
+import 'services/auth_session_manager.dart';
+import 'services/external_share_queue.dart';
 import 'services/google_photos_service.dart';
 import 'services/icloud_photos_service.dart';
 import 'services/fcm_service.dart';
@@ -29,6 +31,8 @@ Future<void> main() async {
     AppReleaseGuard.init();
     final settings = AppSettings();
     await _guardStartup('app settings', settings.load);
+    // Global 401 handler: refresh-or-reset + redirect to login.
+    AuthSessionManager.instance.configure(settings: settings);
     FlutterError.onError = (details) {
       AppDiagLog.verbose('[FlutterError] ${details.exceptionAsString()}');
       if (kDebugMode) {
@@ -52,6 +56,7 @@ Future<void> main() async {
         _guardStartup('google photos prefs', GooglePhotosService.instance.loadPrefs),
         _guardStartup('icloud photos prefs', ICloudPhotosService.instance.loadPrefs),
         _guardStartup('fcm', FcmService.instance.init),
+        _guardStartup('external share queue', ExternalShareQueue.instance.bootstrap),
       ]);
       await FcmService.instance.syncTokenWithAuth(settings);
     }());
@@ -84,6 +89,7 @@ class MyFrameApp extends StatelessWidget {
             child: MaterialApp(
               title: 'MyFrame',
               debugShowCheckedModeBanner: false,
+              navigatorKey: appNavigatorKey,
               theme: AppTheme.light(
                 settings.accent,
                 comfort: settings.comfortMode,

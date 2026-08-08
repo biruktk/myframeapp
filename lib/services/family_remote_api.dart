@@ -2,22 +2,18 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'api_client.dart';
+
 /// REST client for `/api/family/*` (Bearer JWT from `/api/auth/*`).
 class FamilyRemoteApi {
   FamilyRemoteApi({required this.baseUrl, required this.token})
       : _origin = baseUrl.replaceAll(RegExp(r'/+$'), ''),
-        _tok = token.trim();
+        _api = ApiClient(bearerToken: token);
 
   final String baseUrl;
   final String token;
   final String _origin;
-  final String _tok;
-
-  Map<String, String> get _hdr => {
-        'Authorization': 'Bearer $_tok',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      };
+  final ApiClient _api;
 
   Uri _u(String path) {
     final p = path.startsWith('/') ? path : '/$path';
@@ -26,7 +22,7 @@ class FamilyRemoteApi {
 
   /// `null` = 404 **no_family** — user must call [create].
   Future<FamilyMembersBundle?> fetchMembers() async {
-    final res = await http.get(_u('/api/family/members'), headers: _hdr);
+    final res = await _api.get(_u('/api/family/members'));
     if (res.statusCode == 401) throw FamilyRemoteAuthException(res.body);
     if (res.statusCode == 404) return null;
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -38,10 +34,9 @@ class FamilyRemoteApi {
   }
 
   Future<({String familyId, String inviteCode})> create({String name = 'Our family'}) async {
-    final res = await http.post(
+    final res = await _api.post(
       _u('/api/family/create'),
-      headers: _hdr,
-      body: jsonEncode({'name': name}),
+      body: {'name': name},
     );
     _throwUnlessOk(res);
     final map = jsonDecode(res.body);
@@ -54,27 +49,26 @@ class FamilyRemoteApi {
     if (birthdayIso != null && birthdayIso.trim().isNotEmpty) {
       body['birthday'] = birthdayIso.trim();
     }
-    final res = await http.post(
+    final res = await _api.post(
       _u('/api/family/join'),
-      headers: _hdr,
-      body: jsonEncode(body),
+      body: body,
     );
     _throwUnlessOk(res);
   }
 
   Future<void> leave() async {
-    final res = await http.delete(_u('/api/family/leave'), headers: _hdr);
+    final res = await _api.delete(_u('/api/family/leave'));
     _throwUnlessOk(res);
   }
 
   Future<void> removeMember(String userId) async {
-    final res = await http.delete(_u('/api/family/members/$userId'), headers: _hdr);
+    final res = await _api.delete(_u('/api/family/members/$userId'));
     _throwUnlessOk(res);
   }
 
   /// Fast read of the stored invite code. `null` = 404 **no_family**.
   Future<({String familyId, String inviteCode})?> fetchInviteCode() async {
-    final res = await http.get(_u('/api/family/invite'), headers: _hdr);
+    final res = await _api.get(_u('/api/family/invite'));
     if (res.statusCode == 401) throw FamilyRemoteAuthException(res.body);
     if (res.statusCode == 404) return null;
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -91,7 +85,7 @@ class FamilyRemoteApi {
   }
 
   Future<String> rotateInviteCode() async {
-    final res = await http.post(_u('/api/family/invite/rotate'), headers: _hdr);
+    final res = await _api.post(_u('/api/family/invite/rotate'));
     _throwUnlessOk(res);
     final map = jsonDecode(res.body);
     if (map is! Map<String, dynamic>) throw StateError('invalid rotate body');
