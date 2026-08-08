@@ -1715,6 +1715,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
   }
 
   void _clearText() {
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _overlayText.clear();
       _textController.clear();
@@ -2613,6 +2614,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                   );
                   return;
                 }
+                FocusManager.instance.primaryFocus?.unfocus();
                 setState(() {
                   _overlayText.text = draft;
                   _textController.text = draft;
