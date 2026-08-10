@@ -112,11 +112,24 @@ class SleepModeStore {
   }
 
   /// `wifi_sleep` payload `data` per strict firmware protocol.
-  Map<String, dynamic> buildWifiSleepData() => {
-        'mode': enabled ? 1 : 0,
-        'begintime': _toHhMm(startTime),
-        'endtime': _toHhMm(endTime),
+  Map<String, dynamic> buildWifiSleepData() {
+    if (!enabled) {
+      return {
+        'mode': 0,
+        'live': 0,
+        'timingtime': 0,
       };
+    }
+    // Periodic Daily Sleep (mode = 2)
+    // Convert startTime/endTime to standard daily time offsets (seconds since start of day)
+    final liveSeconds = startTime.hour * 3600 + startTime.minute * 60;
+    final timingtimeSeconds = endTime.hour * 3600 + endTime.minute * 60;
+    return {
+      'mode': 2,
+      'live': liveSeconds,
+      'timingtime': timingtimeSeconds,
+    };
+  }
 
   /// Relay `wifi_sleep` to the paired frame via the server.
   /// Best-effort: returns false if no frame is paired or the relay is unreachable.
