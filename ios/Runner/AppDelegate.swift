@@ -30,6 +30,11 @@ import FirebaseCore
     Self.configureFirebaseIfNeeded()
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
+    if let cacheRegistrar = engineBridge.pluginRegistry
+      .registrar(forPlugin: "ShareExtensionCachePlugin") {
+      ShareExtensionCachePlugin.register(with: cacheRegistrar)
+    }
+
     if let icloud = engineBridge.pluginRegistry.registrar(forPlugin: "ICloudPhotosPlugin") {
       ICloudPhotosPlugin.register(with: icloud)
     }

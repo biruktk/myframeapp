@@ -9,6 +9,7 @@ import '../services/device_store.dart';
 import '../services/external_share_cast_service.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/send_albums_store.dart';
+import '../services/share_extension_cache.dart';
 import '../services/share_receiver_service.dart';
 import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
@@ -164,6 +165,12 @@ class _ShareTargetBottomSheetWidgetState
     // album on the Playlist tab instead of spilling into loose Personal photos.
     unawaited(_routeToMyPlaylist(_paths, app.authToken));
 
+    // Keep the native Share Extension's cached frame selection in sync.
+    unawaited(
+      ShareExtensionCache.instance
+          .writeSelectedFrameIds(_selectedFrames.map((f) => f.deviceId)),
+    );
+
     await Future<void>.delayed(const Duration(milliseconds: 1100));
     if (mounted) {
       Navigator.pop(
@@ -176,32 +183,11 @@ class _ShareTargetBottomSheetWidgetState
   /// Multi-image external shares land (and cloud-sync) in a default
   /// "My Playlist" album, keeping them out of loose Personal photos.
   Future<void> _routeToMyPlaylist(List<String> paths, String authToken) async {
-    if (paths.length < 2) return;
-    try {
-      final playlistName = AppStrings.of(context).myPlaylistName;
-      final name = playlistName.trim().toLowerCase();
-      await SendAlbumsStore.instance.load();
-      SendAlbumEntry? mine;
-      for (final a in SendAlbumsStore.instance.albums) {
-        if (a.name.trim().toLowerCase() == name) {
-          mine = a;
-          break;
-        }
-      }
-      String id;
-      if (mine == null) {
-        await SendAlbumsStore.instance
-            .createAlbum(playlistName, paths);
-        await SendAlbumsStore.instance.load();
-        id = SendAlbumsStore.instance.albums.first.id;
-      } else {
-        await SendAlbumsStore.instance.addPathsToAlbum(mine.id, paths);
-        id = mine.id;
-      }
-      unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
-    } catch (e, st) {
-      AppDiagLog.verbose('[ShareSheet] route to My Playlist failed: $e\n$st');
-    }
+    await routeSharedToMyPlaylist(
+      paths,
+      authToken,
+      AppStrings.of(context),
+    );
   }
 
   @override
@@ -476,5 +462,40 @@ class _PhotoPreviewRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Multi-image external shares land (and cloud-sync) in a default
+/// "My Playlist" album, keeping them out of loose Personal photos.
+/// Shared by the Flutter bottom sheet and the native Share Extension auto-send.
+Future<void> routeSharedToMyPlaylist(
+  List<String> paths,
+  String authToken,
+  AppStrings s,
+) async {
+  if (paths.length < 2) return;
+  try {
+    final playlistName = s.myPlaylistName;
+    final name = playlistName.trim().toLowerCase();
+    await SendAlbumsStore.instance.load();
+    SendAlbumEntry? mine;
+    for (final a in SendAlbumsStore.instance.albums) {
+      if (a.name.trim().toLowerCase() == name) {
+        mine = a;
+        break;
+      }
+    }
+    String id;
+    if (mine == null) {
+      await SendAlbumsStore.instance.createAlbum(playlistName, paths);
+      await SendAlbumsStore.instance.load();
+      id = SendAlbumsStore.instance.albums.first.id;
+    } else {
+      await SendAlbumsStore.instance.addPathsToAlbum(mine.id, paths);
+      id = mine.id;
+    }
+    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
+  } catch (e, st) {
+    AppDiagLog.verbose('[ShareSheet] route to My Playlist failed: $e\n$st');
   }
 }

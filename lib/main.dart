@@ -15,6 +15,7 @@ import 'screens/app_entry_screen.dart';
 import 'services/family_invite_deep_link.dart';
 import 'services/mobile_auth_deep_link.dart';
 import 'services/share_incoming_service.dart';
+import 'services/share_extension_cache.dart';
 import 'services/app_diag_log.dart';
 import 'services/app_release_guard.dart';
 import 'services/auth_session_manager.dart';
@@ -45,6 +46,8 @@ Future<void> main() async {
       _guardStartup('family invite deep links', FamilyInviteDeepLink.bootstrap),
       _guardStartup('mobile auth deep links', MobileAuthDeepLink.bootstrap),
       _guardStartup('share incoming service', ShareIncomingService.instance.bootstrap),
+      _guardStartup('share extension cache', () =>
+          ShareExtensionCache.instance.bootstrap(settings: settings)),
       _guardStartup('splash branding', SplashBranding.preload),
     ]);
 

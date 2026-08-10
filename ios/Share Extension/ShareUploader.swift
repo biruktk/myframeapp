@@ -1,0 +1,368 @@
+import Foundation
+import CryptoKit
+
+/// Uploads the transcoded JPEGs from the Share Extension **synchronously
+/// (foreground)** while the progress HUD is on screen, replicating the exact
+/// multipart contract of `FrameApiClient.uploadPhoto`:
+///
+///   POST {apiUrl}/api/frames/{macSlug}/upload
+///   fields: mac, device_id, checksum(sha256), size, app_platform=flutter,
+///           slideshow_style=classic, display_seconds, transport=wifi, skip_play=true
+///   file:   photo (image/jpeg)
+///   headers: x-pairing-token, Authorization: Bearer <jwt>
+///
+/// Routing matches the app's external-share flow:
+///   - **1 image**   → single upload lands in the frame's "Personal"/direct
+///                     collection (no playlist publish).
+///   - **>1 images** → every image uploads, then the batch is published as a
+///                     frame **Playlist** via `POST /api/frames/{mac}/slideshow`.
+///
+/// Uploads run on a foreground `URLSession` (not background), so HTTP status
+/// codes and per-file progress arrive while the sheet is visible. The
+/// extension is only dismissed after every image reaches the backend (2xx).
+final class ShareUploader {
+  static let shared = ShareUploader()
+
+  /// A single target frame the user selected in the sheet.
+  struct Target {
+    let name: String
+    /// Frame id shown in the UI (device id / SN).
+    let deviceId: String
+    /// Upload identity (station MAC preferred); sanitized to last 12 hex.
+    let mac: String
+    /// Base URL, e.g. `http://47.76.164.162:3001`.
+    let apiUrl: String
+    let pairingToken: String
+  }
+
+  /// Outcome for a single file → target upload request.
+  struct FileResult {
+    let filename: String
+    let success: Bool
+    let message: String
+  }
+
+  enum ShareUploadError: LocalizedError {
+    case missingMacOrUrl
+    case emptyBody
+    case badResponse(status: Int, body: String)
+    case network(String)
+
+    var errorDescription: String? {
+      switch self {
+      case .missingMacOrUrl:
+        return NSLocalizedString("Missing frame MAC or server URL.", comment: "Share upload error")
+      case .emptyBody:
+        return NSLocalizedString("Couldn't build the upload payload.", comment: "Share upload error")
+      case .badResponse(let status, _):
+        return String.localizedStringWithFormat(
+          NSLocalizedString("The frame server returned HTTP %d.", comment: "Share upload error"),
+          status
+        )
+      case .network(let message):
+        return message
+      }
+    }
+  }
+
+  private let boundary = "MyFrameBoundary.\(UUID().uuidString)"
+
+  /// Uploads every JPEG to every selected target sequentially (foreground
+  /// session so results arrive while the sheet is on screen). Calls
+  /// [onProgress] after every completed file→target upload so the HUD can
+  /// render "Uploading X of Y…". Returns per-file results; the caller shows
+  /// an error + retry when any result reports failure.
+  func upload(
+    targets: [Target],
+    jpegFiles: [URL],
+    authToken: String,
+    onProgress: @escaping (_ completed: Int, _ total: Int, _ detail: String) -> Void
+  ) async -> [FileResult] {
+    let session = URLSession(
+      configuration: .default,
+      delegate: nil,
+      delegateQueue: OperationQueue()
+    )
+    defer { session.invalidateAndCancel() }
+
+    let total = jpegFiles.count * targets.count
+    var completed = 0
+    var results: [FileResult] = []
+
+    for target in targets {
+      let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+      var cleanUrl = rawApiUrl
+      if !cleanUrl.isEmpty {
+        if !cleanUrl.lowercased().hasPrefix("http://") && !cleanUrl.lowercased().hasPrefix("https://") {
+          cleanUrl = "http://" + cleanUrl
+        }
+        if cleanUrl.hasSuffix("/") {
+          cleanUrl = String(cleanUrl.dropLast())
+        }
+      }
+
+      let macSlug = Self.sanitizeMac(target.mac)
+      guard !macSlug.isEmpty, let base = URL(string: cleanUrl) else {
+        let msg = ShareUploadError.missingMacOrUrl.localizedDescription
+        for file in jpegFiles {
+          completed += 1
+          onProgress(completed, total, "to \(target.name)")
+          results.append(
+            FileResult(filename: file.lastPathComponent, success: false, message: msg)
+          )
+        }
+        continue
+      }
+
+      let endpoint = base.appendingPathComponent("api/frames/\(macSlug)/upload")
+      var imageIds: [String] = []
+
+      for file in jpegFiles {
+        let detail = "to \(target.name) · \(file.lastPathComponent)"
+        do {
+          guard let bodyURL = makeMultipartBody(jpeg: file, target: target, macSlug: macSlug, totalFiles: jpegFiles.count) else {
+            throw ShareUploadError.emptyBody
+          }
+          let responseData = try await uploadOne(
+            session: session,
+            to: endpoint,
+            bodyURL: bodyURL,
+            target: target,
+            authToken: authToken
+          )
+          if let id = Self.imageId(from: responseData), !imageIds.contains(id) {
+            imageIds.append(id)
+          }
+          completed += 1
+          onProgress(completed, total, detail)
+          results.append(
+            FileResult(filename: file.lastPathComponent, success: true, message: "")
+          )
+        } catch {
+          completed += 1
+          onProgress(completed, total, detail)
+          let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+          results.append(
+            FileResult(filename: file.lastPathComponent, success: false, message: msg)
+          )
+        }
+      }
+
+      // >1 images → assign the batch to a frame Playlist, mirroring
+      // ExternalShareCastService._publishExternal (interval 10 min / sequential).
+      if imageIds.count > 1 {
+        await publishPlaylist(
+          session: session,
+          target: target,
+          macSlug: macSlug,
+          imageIds: imageIds,
+          authToken: authToken
+        )
+      }
+    }
+    return results
+  }
+
+  // MARK: - Upload request
+
+  private func uploadOne(
+    session: URLSession,
+    to endpoint: URL,
+    bodyURL: URL,
+    target: Target,
+    authToken: String
+  ) async throws -> Data {
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 90
+    request.setValue(
+      "multipart/form-data; boundary=\(boundary)",
+      forHTTPHeaderField: "Content-Type"
+    )
+    if !target.pairingToken.isEmpty {
+      request.setValue(target.pairingToken, forHTTPHeaderField: "x-pairing-token")
+    }
+    if !authToken.isEmpty {
+      request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+    }
+
+    return try await withCheckedThrowingContinuation { continuation in
+      let task = session.uploadTask(with: request, fromFile: bodyURL) { data, response, error in
+        if let error {
+          continuation.resume(
+            throwing: ShareUploadError.network(error.localizedDescription)
+          )
+          return
+        }
+        guard let http = response as? HTTPURLResponse else {
+          continuation.resume(
+            throwing: ShareUploadError.network(NSLocalizedString("No server response.", comment: "Share upload error"))
+          )
+          return
+        }
+        // Success = 200 OK / 201 Created (matches FrameApiClient's 2xx check).
+        guard (200...299).contains(http.statusCode) else {
+          let body = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+          NSLog("[MyFrame Share] upload HTTP \(http.statusCode): \(body)")
+          continuation.resume(
+            throwing: ShareUploadError.badResponse(status: http.statusCode, body: body)
+          )
+          return
+        }
+        continuation.resume(returning: data ?? Data())
+      }
+      task.resume()
+    }
+  }
+
+  // MARK: - Playlist publish (multi-image batches)
+
+  private func publishPlaylist(
+    session: URLSession,
+    target: Target,
+    macSlug: String,
+    imageIds: [String],
+    authToken: String
+  ) async {
+    let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+    var cleanUrl = rawApiUrl
+    if !cleanUrl.isEmpty {
+      if !cleanUrl.lowercased().hasPrefix("http://") && !cleanUrl.lowercased().hasPrefix("https://") {
+        cleanUrl = "http://" + cleanUrl
+      }
+      if cleanUrl.hasSuffix("/") {
+        cleanUrl = String(cleanUrl.dropLast())
+      }
+    }
+    guard let base = URL(string: cleanUrl) else { return }
+    let endpoint = base.appendingPathComponent("api/frames/\(macSlug)/slideshow")
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 30
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    if !target.pairingToken.isEmpty {
+      request.setValue(target.pairingToken, forHTTPHeaderField: "x-pairing-token")
+    }
+    if !authToken.isEmpty {
+      request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+    }
+
+    let nowMs = String(Int(Date().timeIntervalSince1970 * 1000))
+    let payload: [String: Any] = [
+      "imageIds": imageIds,
+      "intervalMinutes": 10,
+      "strategy": 1,
+      "begintime": nowMs,
+      "endtime": "",
+      "idle": 0,
+      "skipPlay": true,
+    ]
+    request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
+
+    do {
+      let (_, response) = try await session.data(for: request)
+      if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+        NSLog("[MyFrame Share] playlist published for \(macSlug): \(imageIds.count) image(s)")
+      } else {
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        NSLog("[MyFrame Share] playlist publish HTTP \(status) for \(macSlug)")
+      }
+    } catch {
+      NSLog("[MyFrame Share] playlist publish failed for \(macSlug): \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - Multipart body (temp file so large batches stay memory-safe)
+
+  private func makeMultipartBody(
+    jpeg: URL,
+    target: Target,
+    macSlug: String,
+    totalFiles: Int
+  ) -> URL? {
+    guard let data = try? Data(contentsOf: jpeg), !data.isEmpty else { return nil }
+    let checksum = SHA256.hash(data: data)
+      .map { String(format: "%02x", $0) }
+      .joined()
+
+    let bodyURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("body_\(UUID().uuidString).bin")
+
+    var body = Data()
+    func field(_ name: String, _ value: String) {
+      body.append("--\(boundary)\r\n")
+      body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+      body.append(value)
+      body.append("\r\n")
+    }
+
+    field("mac", macSlug)
+    field("device_id", target.deviceId)
+    field("checksum", checksum)
+    field("size", "\(data.count)")
+    field("app_platform", "flutter")
+    field("slideshow_style", "classic")
+    field("display_seconds", "600")
+    field("transport", "wifi")
+    // Single image uploads (count == 1) should play immediately (skip_play = false).
+    // Multi-image batches (count > 1) upload silently (skip_play = true) first, then publish playlist.
+    let isMultiImage = totalFiles > 1
+    field("skip_play", isMultiImage ? "true" : "false")
+
+    body.append("--\(boundary)\r\n")
+    body.append(
+      "Content-Disposition: form-data; name=\"photo\"; filename=\"\(jpeg.lastPathComponent)\"\r\n"
+    )
+    body.append("Content-Type: image/jpeg\r\n\r\n")
+    body.append(data)
+    body.append("\r\n")
+    body.append("--\(boundary)--\r\n")
+
+    do {
+      try body.write(to: bodyURL, options: .atomic)
+      return bodyURL
+    } catch {
+      NSLog("[MyFrame Share] write multipart body failed: \(error)")
+      return nil
+    }
+  }
+
+  /// Mirrors `FrameApiClient.uploadPhoto`'s MAC cleanup: keep the last 12 hex chars.
+  private static func sanitizeMac(_ raw: String) -> String {
+    let hex = raw.uppercased().filter { $0.isHexDigit }
+    return hex.count >= 12 ? String(hex.suffix(12)) : hex
+  }
+
+  /// Mirrors `PhotoUploadResponse.vpsSlideshowImageId` — the image identity the
+  /// server uses for playlist assignment.
+  private static func imageId(from data: Data) -> String? {
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
+    let basename = (json["frame_play_basename"] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if let basename, !basename.isEmpty { return basename }
+
+    if let stored = (json["stored_path"] as? String)?
+      .split(separator: "/").last, !stored.isEmpty {
+      return String(stored)
+    }
+    if let url = (json["image_url"] as? String)?
+      .split(separator: "/").last, !url.isEmpty {
+      return String(url)
+    }
+    let checksum = (json["checksum_sha256"] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if let checksum, !checksum.isEmpty { return checksum }
+    return nil
+  }
+}
+
+private extension Data {
+  mutating func append(_ string: String) {
+    if let data = string.data(using: .utf8) {
+      append(data)
+    }
+  }
+}

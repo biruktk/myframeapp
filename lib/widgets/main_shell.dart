@@ -9,10 +9,15 @@ import '../screens/home_screen.dart';
 import '../screens/send_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/account_sync_service.dart';
+import '../services/device_store.dart';
+import '../services/external_share_cast_service.dart';
 import '../services/fcm_service.dart';
+import '../services/gallery_image_cache.dart';
+import '../services/share_extension_cache.dart';
 import '../services/share_incoming_service.dart';
 import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
+import 'share_auto_send_progress.dart';
 import 'shell_navigation.dart';
 import 'share_target_bottom_sheet.dart';
 
@@ -103,6 +108,15 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
     if (_shareSheetOpen) return;
     final items = ShareIncomingService.instance.takePendingItems();
     if (items.isEmpty) return;
+
+    // Native iOS Share Extension hand-off: the user already picked the target
+    // frame(s) in the sheet, so send straight to them (no destination picker).
+    final autoFrameIds = await ShareExtensionCache.instance.consumeAutoSend();
+    if (autoFrameIds.isNotEmpty) {
+      final handled = await _autoSendToFrames(items, autoFrameIds);
+      if (handled) return;
+    }
+
     _shareSheetOpen = true;
     try {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -123,6 +137,72 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
     } catch (_) {
       _shareSheetOpen = false;
       ShareIncomingService.instance.requeueItems(items);
+    }
+  }
+
+  /// Sends shared items to the frames the native Share Extension pre-selected.
+  /// Returns `true` when the send was handled here (no Flutter picker needed).
+  Future<bool> _autoSendToFrames(
+    List<SharedMediaItem> items,
+    List<String> frameIds,
+  ) async {
+    final app = AppSettingsScope.of(context);
+    final s = AppStrings.of(context);
+
+    // Strip file:// prefixes the extension stores for non-container files.
+    final raw = items.map((e) => e.path).map((p) {
+      return p.startsWith('file://') ? Uri.parse(p).toFilePath() : p;
+    }).toList();
+    final persisted = await GalleryImageCache.persistPaths(raw);
+    final paths = persisted.isNotEmpty ? persisted : raw;
+    if (paths.isEmpty) return false;
+
+    await DeviceStore.instance.load();
+    final all = DeviceStore.instance.pairedFrames;
+    final frames = all
+        .where((f) => frameIds.contains(f.deviceId))
+        .toList();
+    if (frames.isEmpty) return false;
+
+    if (!mounted) return false;
+    final progress = ShareAutoSendProgress(context);
+    // Fire-and-forget: the dialog closes when [progress.dismiss] is called
+    // after the cast finishes (awaiting show() would deadlock the send).
+    unawaited(progress.show());
+    try {
+      final summary = await ExternalShareCastService.instance.castToFrames(
+        paths: paths,
+        frames: frames,
+        authToken: app.authToken,
+        strings: s,
+        onProgress: (frac, status) => progress.update(frac, status),
+      );
+      if (!mounted) {
+        progress.dismiss();
+        return true;
+      }
+
+      final messenger = ScaffoldMessenger.of(context);
+      if (summary.queued) {
+        messenger.showSnackBar(SnackBar(content: Text(s.shareSheetQueuedOffline)));
+      } else if (summary.sent > 0) {
+        messenger.showSnackBar(
+          SnackBar(content: Text(frames.length == 1 ? s.shareSheetPhotoSent : s.shareSheetPlaylistSent)),
+        );
+      } else {
+        messenger.showSnackBar(SnackBar(content: Text(s.shareSheetErrorRetry)));
+      }
+
+      // Remember the chosen frame for the next native share.
+      unawaited(
+        ShareExtensionCache.instance
+            .writeSelectedFrameIds(frames.map((f) => f.deviceId)),
+      );
+      // Multi-image external shares collect into the default "My Playlist".
+      unawaited(routeSharedToMyPlaylist(paths, app.authToken, s));
+      return true;
+    } finally {
+      progress.dismiss();
     }
   }
 
