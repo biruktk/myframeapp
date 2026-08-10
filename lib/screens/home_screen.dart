@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../utils/platform_share.dart';
@@ -21,6 +22,8 @@ import '../services/sync_pipeline.dart';
 import '../services/usage_metrics_store.dart';
 import '../settings/app_settings.dart';
 import '../widgets/shell_navigation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/share_extension_cache.dart';
 import 'device_discovery_screen.dart';
 import 'device_details_screen.dart';
 
@@ -196,6 +199,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _frameStatuses = updated;
       _checkingFrameStatus = false;
     });
+
+    final onlineIds = updated.entries
+        .where((e) => e.value.isEffectivelyOnline)
+        .map((e) => e.key)
+        .toList();
+    ShareExtensionCache.onlineDeviceIds.clear();
+    ShareExtensionCache.onlineDeviceIds.addAll(onlineIds);
+    unawaited(ShareExtensionCache.instance.syncFrames());
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('ShareExtensionOnlineDeviceIds', jsonEncode(onlineIds));
+    } catch (_) {}
   }
 
   String? _macForFrame(PairedFrame f) => DeviceStore.macForPairedFrame(f);

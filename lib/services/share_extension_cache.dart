@@ -76,6 +76,8 @@ class ShareExtensionCache {
     unawaited(_syncAuthFrom(settings));
   }
 
+  static final Set<String> onlineDeviceIds = {};
+
   /// Writes the current paired-frame list (incl. upload target / base URL /
   /// pairing token) into the App Group defaults.
   Future<void> syncFrames() async {
@@ -91,12 +93,14 @@ class ShareExtensionCache {
         final uploadTargets = f.resolvedFrameUploadTargets;
         final targetId =
             uploadTargets.isNotEmpty ? uploadTargets.first : f.deviceId;
+        final isOnline = onlineDeviceIds.contains(f.deviceId);
         return {
           'id': f.deviceId,
           'name': name,
           'mac': targetId,
           'apiUrl': f.resolvedApiBaseUrl,
           'pairingToken': f.resolvedPairingToken,
+          'is_online': isOnline,
         };
       }).toList();
       await _channel.invokeMethod<void>(

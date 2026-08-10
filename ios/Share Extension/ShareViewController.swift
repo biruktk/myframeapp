@@ -144,12 +144,16 @@ final class ShareViewController: UIViewController {
 
     if let raw = defaults.string(forKey: selectedFramesKey),
        let ids = try? JSONDecoder().decode([String].self, from: Data(raw.utf8)) {
-      selectedFrameIds = Set(ids.filter { $0.trimmedNonEmpty != nil })
+      selectedFrameIds = Set(ids.filter { id in
+        if id.trimmedNonEmpty == nil { return false }
+        // Keep in selection only if online
+        return frames.first(where: { $0.id == id })?.isOnline ?? false
+      })
     }
 
-    // Pre-select the last used frame; fall back to the first cached frame.
-    if selectedFrameIds.isEmpty, let first = frames.first {
-      selectedFrameIds.insert(first.id)
+    // Pre-select the last used frame (if online); fall back to the first online cached frame.
+    if selectedFrameIds.isEmpty, let firstOnline = frames.first(where: { $0.isOnline }) {
+      selectedFrameIds.insert(firstOnline.id)
     }
     rebuildFrameList()
   }
@@ -775,7 +779,7 @@ final class ShareViewController: UIViewController {
   }
 
   private func makeFrameRow(_ frame: FrameInfo) -> UIView {
-    let isSelected = selectedFrameIds.contains(frame.id)
+    let isSelected = selectedFrameIds.contains(frame.id) && frame.isOnline
 
     let row = UIControl()
     row.translatesAutoresizingMaskIntoConstraints = false
@@ -786,6 +790,7 @@ final class ShareViewController: UIViewController {
 
     let container = UIView()
     container.translatesAutoresizingMaskIntoConstraints = false
+    container.isUserInteractionEnabled = false
     container.backgroundColor = isSelected
       ? Self.brandRedTint
       : UIColor.secondarySystemBackground
@@ -822,6 +827,19 @@ final class ShareViewController: UIViewController {
     subtitle.adjustsFontForContentSizeCategory = true
     container.addSubview(subtitle)
 
+    // Offline Badge / Label
+    let statusLabel = UILabel()
+    statusLabel.translatesAutoresizingMaskIntoConstraints = false
+    statusLabel.font = .systemFont(ofSize: 11, weight: .bold)
+    statusLabel.textColor = .white
+    statusLabel.text = "Offline"
+    statusLabel.backgroundColor = .systemGray
+    statusLabel.layer.cornerRadius = 4
+    statusLabel.clipsToBounds = true
+    statusLabel.textAlignment = .center
+    statusLabel.isHidden = frame.isOnline
+    container.addSubview(statusLabel)
+
     // Red checkmark selection box.
     let checkBox = UIView()
     checkBox.translatesAutoresizingMaskIntoConstraints = false
@@ -832,6 +850,7 @@ final class ShareViewController: UIViewController {
       ? Self.brandRed.cgColor
       : Self.brandRed.withAlphaComponent(0.5).cgColor
     checkBox.backgroundColor = isSelected ? Self.brandRed : .clear
+    checkBox.isHidden = !frame.isOnline
     container.addSubview(checkBox)
 
     let check = UIImageView(image: UIImage(systemName: "checkmark"))
@@ -840,6 +859,10 @@ final class ShareViewController: UIViewController {
     check.isHidden = !isSelected
     check.contentMode = .scaleAspectFit
     checkBox.addSubview(check)
+
+    if !frame.isOnline {
+      row.alpha = 0.5
+    }
 
     NSLayoutConstraint.activate([
       row.heightAnchor.constraint(equalToConstant: 68),
@@ -859,11 +882,16 @@ final class ShareViewController: UIViewController {
 
       label.leadingAnchor.constraint(equalTo: iconWrap.trailingAnchor, constant: 12),
       label.topAnchor.constraint(equalTo: container.topAnchor, constant: 12),
-      label.trailingAnchor.constraint(lessThanOrEqualTo: checkBox.leadingAnchor, constant: -10),
+      label.trailingAnchor.constraint(lessThanOrEqualTo: frame.isOnline ? checkBox.leadingAnchor : statusLabel.leadingAnchor, constant: -10),
 
       subtitle.leadingAnchor.constraint(equalTo: label.leadingAnchor),
       subtitle.topAnchor.constraint(equalTo: label.bottomAnchor, constant: 2),
-      subtitle.trailingAnchor.constraint(lessThanOrEqualTo: checkBox.leadingAnchor, constant: -10),
+      subtitle.trailingAnchor.constraint(lessThanOrEqualTo: frame.isOnline ? checkBox.leadingAnchor : statusLabel.leadingAnchor, constant: -10),
+
+      statusLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+      statusLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+      statusLabel.widthAnchor.constraint(equalToConstant: 54),
+      statusLabel.heightAnchor.constraint(equalToConstant: 20),
 
       checkBox.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
       checkBox.centerYAnchor.constraint(equalTo: container.centerYAnchor),
@@ -882,7 +910,18 @@ final class ShareViewController: UIViewController {
 
   @objc private func onFrameTapped(_ sender: UIControl) {
     guard !isSending, sender.tag < frames.count else { return }
-    let id = frames[sender.tag].id
+    let frame = frames[sender.tag]
+    if !frame.isOnline {
+      let alert = UIAlertController(
+        title: NSLocalizedString("Frame Offline", comment: ""),
+        message: NSLocalizedString("This frame is currently offline and cannot receive photos.", comment: ""),
+        preferredStyle: .alert
+      )
+      alert.addAction(UIAlertAction(title: NSLocalizedString("OK", comment: ""), style: .default, handler: nil))
+      present(alert, animated: true, completion: nil)
+      return
+    }
+    let id = frame.id
     if selectedFrameIds.contains(id) {
       selectedFrameIds.remove(id)
     } else {
@@ -925,7 +964,10 @@ final class ShareViewController: UIViewController {
   }
 
   private func updateSendEnabled() {
-    let enabled = !isPreparing && !isSending && !selectedFrameIds.isEmpty && !prepared.isEmpty
+    let onlineSelected = selectedFrameIds.filter { id in
+      frames.first(where: { $0.id == id })?.isOnline ?? false
+    }
+    let enabled = !isPreparing && !isSending && !onlineSelected.isEmpty && !prepared.isEmpty
     sendButton.isEnabled = enabled
     sendButton.backgroundColor = enabled ? Self.brandRed : .systemGray3
     if enabled {
@@ -968,6 +1010,7 @@ private struct FrameInfo {
   let mac: String
   let apiUrl: String
   let pairingToken: String
+  let isOnline: Bool
 
   init?(row: [String: Any]) {
     guard let id = (row["id"] as? String)?.trimmedNonEmpty else { return nil }
@@ -988,6 +1031,7 @@ private struct FrameInfo {
     apiUrl = cleanUrl
     
     pairingToken = (row["pairingToken"] as? String) ?? ""
+    isOnline = (row["is_online"] as? Bool) ?? false
   }
 }
 

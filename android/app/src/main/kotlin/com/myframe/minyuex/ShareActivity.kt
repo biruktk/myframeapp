@@ -73,7 +73,8 @@ class ShareActivity : AppCompatActivity() {
         val name: String,
         val mac: String,
         val apiUrl: String,
-        val pairingToken: String
+        val pairingToken: String,
+        val isOnline: Boolean
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -124,6 +125,17 @@ class ShareActivity : AppCompatActivity() {
         authToken = prefs.getString("flutter.settings_auth_token", "") ?: ""
         authUserId = prefs.getString("flutter.settings_auth_user_id", "") ?: ""
 
+        val onlineIdsSet = mutableSetOf<String>()
+        val onlineIdsJsonStr = prefs.getString("flutter.ShareExtensionOnlineDeviceIds", "[]") ?: "[]"
+        try {
+            val arr = JSONArray(onlineIdsJsonStr)
+            for (i in 0 until arr.length()) {
+                onlineIdsSet.add(arr.getString(i))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         val framesJsonStr = prefs.getString("flutter.paired_frames_json_v1", "[]") ?: "[]"
         try {
             val jsonArray = JSONArray(framesJsonStr)
@@ -137,6 +149,7 @@ class ShareActivity : AppCompatActivity() {
                 val targetId = obj.optString("deviceId", "")
                 val apiUrl = obj.optString("apiUrl", "http://myframe.ink:3001")
                 val pairingToken = obj.optString("pairingToken", "framepass2026")
+                val isOnline = onlineIdsSet.contains(id)
                 
                 if (id.isNotEmpty()) {
                     pairedFrames.add(
@@ -145,7 +158,8 @@ class ShareActivity : AppCompatActivity() {
                             name = if (name.isNotEmpty()) name else "Frame ${id.takeLast(4)}",
                             mac = targetId,
                             apiUrl = apiUrl,
-                            pairingToken = pairingToken
+                            pairingToken = pairingToken,
+                            isOnline = isOnline
                         )
                     )
                 }
@@ -154,9 +168,10 @@ class ShareActivity : AppCompatActivity() {
             e.printStackTrace()
         }
 
-        // Auto-select the first frame if available
-        if (pairedFrames.isNotEmpty()) {
-            selectedFrameIds.add(pairedFrames.first().id)
+        // Auto-select the first online frame if available
+        val firstOnline = pairedFrames.firstOrNull { it.isOnline }
+        if (firstOnline != null) {
+            selectedFrameIds.add(firstOnline.id)
         }
     }
 
@@ -368,12 +383,18 @@ class ShareActivity : AppCompatActivity() {
                 setPadding(0, dp(12), 0, dp(12))
                 isClickable = true
                 isFocusable = true
+                
+                if (!frame.isOnline) {
+                    alpha = 0.5f
+                }
+                
                 setOnClickListener {
+                    if (!frame.isOnline) {
+                        Toast.makeText(this@ShareActivity, "This frame is currently offline and cannot receive photos.", Toast.LENGTH_SHORT).show()
+                        return@setOnClickListener
+                    }
                     if (selectedFrameIds.contains(frame.id)) {
-                        // Allow deselection unless it is the only one selected
-                        if (selectedFrameIds.size > 1) {
-                            selectedFrameIds.remove(frame.id)
-                        }
+                        selectedFrameIds.remove(frame.id)
                     } else {
                         selectedFrameIds.add(frame.id)
                     }
@@ -381,13 +402,28 @@ class ShareActivity : AppCompatActivity() {
                 }
             }
 
+            val nameLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
             val nameTv = TextView(this).apply {
                 text = frame.name
                 setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
-            itemLayout.addView(nameTv)
+            nameLayout.addView(nameTv)
+
+            if (!frame.isOnline) {
+                val offlineTv = TextView(this).apply {
+                    text = "Offline"
+                    setTextColor(Color.parseColor("#E53935"))
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                }
+                nameLayout.addView(offlineTv)
+            }
+
+            itemLayout.addView(nameLayout)
 
             val checkboxIv = ImageView(this).apply {
                 tag = frame.id
@@ -405,27 +441,36 @@ class ShareActivity : AppCompatActivity() {
         val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
         for (i in 0 until framesLayout.childCount) {
             val view = framesLayout.getChildAt(i) as? LinearLayout ?: continue
+            // nameLayout is index 0, checkboxIv is index 1
             val checkboxIv = view.getChildAt(1) as? ImageView ?: continue
             val frameId = checkboxIv.tag as? String ?: continue
+            val frame = pairedFrames.firstOrNull { it.id == frameId }
             
-            if (selectedFrameIds.contains(frameId)) {
-                // Selected state: filled circle with red/accent, or check icon
-                val drawable = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor("#E53935"))
-                    setSize(dp(20), dp(20))
-                }
-                checkboxIv.setImageDrawable(drawable)
+            if (frame != null && !frame.isOnline) {
+                checkboxIv.visibility = View.GONE
             } else {
-                // Unselected state: empty circle outline
-                val drawable = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setStroke(dp(2), Color.parseColor("#757575"))
-                    setSize(dp(20), dp(20))
+                checkboxIv.visibility = View.VISIBLE
+                if (selectedFrameIds.contains(frameId)) {
+                    val drawable = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(Color.parseColor("#E53935"))
+                        setSize(dp(20), dp(20))
+                    }
+                    checkboxIv.setImageDrawable(drawable)
+                } else {
+                    val drawable = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setStroke(dp(2), Color.parseColor("#757575"))
+                        setSize(dp(20), dp(20))
+                    }
+                    checkboxIv.setImageDrawable(drawable)
                 }
-                checkboxIv.setImageDrawable(drawable)
             }
         }
+        
+        val canSend = selectedFrameIds.isNotEmpty()
+        sendButton.isEnabled = canSend
+        sendButton.alpha = if (canSend) 1.0f else 0.5f
     }
 
     private fun startUploadFlow() {
@@ -552,7 +597,7 @@ class ShareActivity : AppCompatActivity() {
                     .addFormDataPart("device_id", frame.id)
                     .addFormDataPart("checksum", checksum)
                     .addFormDataPart("size", fileBytes.size.toString())
-                    .addFormDataPart("app_platform", "android_share")
+                    .addFormDataPart("app_platform", "flutter")
                     .addFormDataPart("slideshow_style", "classic")
                     .addFormDataPart("display_seconds", "600")
                     .addFormDataPart("transport", "wifi")
