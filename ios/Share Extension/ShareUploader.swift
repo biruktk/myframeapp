@@ -89,6 +89,9 @@ final class ShareUploader {
     var completed = 0
     var results: [FileResult] = []
 
+    // Read the user's saved global playback profile once (App Group defaults).
+    let rules = Self.globalPlaybackRules()
+
     for target in targets {
       let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
       var cleanUrl = rawApiUrl
@@ -120,7 +123,7 @@ final class ShareUploader {
       for file in jpegFiles {
         let detail = "to \(target.name) · \(file.lastPathComponent)"
         do {
-          guard let bodyURL = makeMultipartBody(jpeg: file, target: target, macSlug: macSlug, totalFiles: jpegFiles.count) else {
+          guard let bodyURL = makeMultipartBody(jpeg: file, target: target, macSlug: macSlug, totalFiles: jpegFiles.count, displaySeconds: rules.displaySeconds) else {
             throw ShareUploadError.emptyBody
           }
           let responseData = try await uploadOne(
@@ -149,14 +152,16 @@ final class ShareUploader {
       }
 
       // >1 images → assign the batch to a frame Playlist, mirroring
-      // ExternalShareCastService._publishExternal (interval 10 min / sequential).
+      // ExternalShareCastService._publishExternal (interval from the saved
+      // global playback profile / sequential or random as configured).
       if imageIds.count > 1 {
         await publishPlaylist(
           session: session,
           target: target,
           macSlug: macSlug,
           imageIds: imageIds,
-          authToken: authToken
+          authToken: authToken,
+          rules: rules
         )
       }
     }
@@ -222,7 +227,8 @@ final class ShareUploader {
     target: Target,
     macSlug: String,
     imageIds: [String],
-    authToken: String
+    authToken: String,
+    rules: PlaybackRules
   ) async {
     let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
     var cleanUrl = rawApiUrl
@@ -249,12 +255,14 @@ final class ShareUploader {
     }
 
     let nowMs = String(Int(Date().timeIntervalSince1970 * 1000))
+    let endtime = rules.durationHours > 0 ? String(Int(Date().timeIntervalSince1970 * 1000) + rules.durationHours * 3600 * 1000) : ""
+
     let payload: [String: Any] = [
       "imageIds": imageIds,
-      "intervalMinutes": 10,
-      "strategy": 1,
+      "intervalMinutes": rules.intervalMinutes,
+      "strategy": rules.strategy,
       "begintime": nowMs,
-      "endtime": "",
+      "endtime": endtime,
       "idle": 0,
       "skipPlay": true,
     ]
@@ -279,7 +287,8 @@ final class ShareUploader {
     jpeg: URL,
     target: Target,
     macSlug: String,
-    totalFiles: Int
+    totalFiles: Int,
+    displaySeconds: Int
   ) -> URL? {
     guard let data = try? Data(contentsOf: jpeg), !data.isEmpty else { return nil }
     let checksum = SHA256.hash(data: data)
@@ -303,7 +312,7 @@ final class ShareUploader {
     field("size", "\(data.count)")
     field("app_platform", "flutter")
     field("slideshow_style", "classic")
-    field("display_seconds", "600")
+    field("display_seconds", "\(displaySeconds)")
     field("transport", "wifi")
     // Single image uploads (count == 1) should play immediately (skip_play = false).
     // Multi-image batches (count > 1) upload silently (skip_play = true) first, then publish playlist.
@@ -326,6 +335,53 @@ final class ShareUploader {
       NSLog("[MyFrame Share] write multipart body failed: \(error)")
       return nil
     }
+  }
+
+  // MARK: - Global playback profile (App Group)
+
+  /// Saved global playback rules the extension applies to external shares.
+  /// Falls back to the legacy 10 min / sequential / unlimited contract when
+  /// the user never configured a profile.
+  struct PlaybackRules {
+    var intervalMinutes: Int = 10
+    var strategy: Int = 1
+    var durationHours: Int = 0
+    var displaySeconds: Int { intervalMinutes * 60 }
+  }
+
+  /// Reads the user's playback profile from the App Group defaults mirrored by
+  /// `FrameSettingsStore._syncGlobalPlaybackDefaults` (keys written by Flutter:
+  /// `global_display_seconds`, `global_playback_mode`, `global_duration_type`).
+  private static func globalPlaybackRules() -> PlaybackRules {
+    var rules = PlaybackRules()
+    let customGroupId = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as? String
+    let appGroupId = (customGroupId?.isEmpty == false) ? customGroupId! : "group.com.myframe"
+    guard let defaults = UserDefaults(suiteName: appGroupId) else { return rules }
+
+    let displaySeconds = defaults.integer(forKey: "global_display_seconds")
+    if displaySeconds > 0 {
+      rules.intervalMinutes = max(1, displaySeconds / 60)
+    }
+    let playbackMode = defaults.string(forKey: "global_playback_mode")
+    if let playbackMode, !playbackMode.isEmpty {
+      rules.strategy = (playbackMode == "random") ? 2 : 1
+    }
+    rules.durationHours = durationHours(from: defaults.string(forKey: "global_duration_type"))
+    return rules
+  }
+
+  /// Parses the `duration_type` value (e.g. `unlimited`, `6h`, `2d`) into hours.
+  private static func durationHours(from type: String?) -> Int {
+    guard let raw = type, !raw.isEmpty else { return 0 }
+    var value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if value == "unlimited" || value == "0" { return 0 }
+    if value.hasSuffix("h") {
+      return Int(value.dropLast()) ?? 0
+    }
+    if value.hasSuffix("d") {
+      return (Int(value.dropLast()) ?? 0) * 24
+    }
+    return Int(value) ?? 0
   }
 
   /// Mirrors `FrameApiClient.uploadPhoto`'s MAC cleanup: keep the last 12 hex chars.

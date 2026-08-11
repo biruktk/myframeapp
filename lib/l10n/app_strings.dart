@@ -7131,6 +7131,15 @@ class AppStrings {
         ja: 'フレームに名前を付けて写真の送信を始めましょう。',
       );
 
+  String get startSending => _l6(
+        en: 'Start Sending',
+        zh: '开始发送',
+        es: 'Empezar a enviar',
+        fr: 'Commencer l\'envoi',
+        de: 'Senden starten',
+        ja: '送信を開始',
+      );
+
   String get frameNameHintExample => _l6(
         en: 'e.g. Living Room Frame',
         zh: '例如：客厅相框',

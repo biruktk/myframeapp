@@ -3,6 +3,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/ai_silent_mode_store.dart';
+import '../services/gallery_image_cache.dart';
+import '../services/image_sanitizer.dart';
 
 /// AI Silent Mode — layout aligned to product spec (stats + toggles + person list).
 class SettingsAiSilentModeScreen extends StatefulWidget {
@@ -46,7 +48,13 @@ class _SettingsAiSilentModeScreenState extends State<SettingsAiSilentModeScreen>
     final nick = TextEditingController();
     DateTime bday = DateTime(1990, 1, 1);
     final img = await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (!mounted) return;
+    if (img == null || !mounted) return;
+    final safePath = await ImageSanitizer.sanitize(img.path);
+    final photoPath = await GalleryImageCache.persistFromPath(
+      (safePath == null || safePath.isEmpty) ? img.path : safePath,
+      normalizeJpeg: false,
+    );
+    if (photoPath == null || !mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => StatefulBuilder(
@@ -87,7 +95,7 @@ class _SettingsAiSilentModeScreenState extends State<SettingsAiSilentModeScreen>
         id: id,
         nickname: nick.text.trim().isEmpty ? 'Member' : nick.text.trim(),
         birthdayIso: bday.toIso8601String().split('T').first,
-        photoPath: img?.path,
+        photoPath: photoPath,
       ),
     );
     setState(() {});

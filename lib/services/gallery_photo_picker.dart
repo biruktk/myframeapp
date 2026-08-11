@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../l10n/app_strings.dart';
 import 'gallery_image_cache.dart';
+import 'image_sanitizer.dart';
 import 'permission_gate.dart';
 
 const int kMaxMultiPick = 10;
@@ -62,10 +63,29 @@ class GalleryPhotoPicker {
 
       if (list.isEmpty) return const [];
 
+      // Mandatory sanitization: every picked file becomes a standard 8-bit
+      // sRGB JPEG (native iOS transcoding for Display P3 / HEIC / 16-bit PNG,
+      // pure-Dart fallback). Plain JPEGs pass through unchanged.
+      final sanitized = <String>[];
+      for (final x in list) {
+        final ok = await ImageSanitizer.sanitize(x.path);
+        if (ok != null && ok.isNotEmpty) sanitized.add(ok);
+      }
+      if (sanitized.isEmpty) {
+        if (context.mounted) {
+          final s = AppStrings.of(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              content: Text(s.decodeError),
+            ),
+          );
+        }
+        return const [];
+      }
+
       // Fast durable copies only — JPEG re-encode used to block UI for ~30s.
-      final staged = await GalleryImageCache.stageQuickCopies(
-        list.map((x) => x.path),
-      );
+      final staged = await GalleryImageCache.stageQuickCopies(sanitized);
 
       if (staged.isEmpty && context.mounted) {
         final s = AppStrings.of(context);
@@ -78,8 +98,8 @@ class GalleryPhotoPicker {
         return const [];
       }
 
-      if (staged.length < list.length && context.mounted) {
-        final skipped = list.length - staged.length;
+      if (staged.length < sanitized.length && context.mounted) {
+        final skipped = sanitized.length - staged.length;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             behavior: SnackBarBehavior.floating,

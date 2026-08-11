@@ -50,7 +50,9 @@ final class ShareExtensionCachePlugin: NSObject, FlutterPlugin {
       result(appGroupId)
 
     case "write":
-      if let value = args["value"] as? String {
+      if let value = args["value"] as? Int {
+        defaults.set(value, forKey: key)
+      } else if let value = args["value"] as? String {
         defaults.set(value, forKey: key)
       } else if let value = args["value"] as? Bool {
         defaults.set(value, forKey: key)

@@ -6,7 +6,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../config/api_config.dart';
 import '../l10n/app_strings.dart';
-import '../models/playback_config.dart';
+import '../models/frame_playback_profile.dart';
 import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
@@ -15,12 +15,13 @@ import '../services/frame_cloud_cast_service.dart';
 import '../services/frame_online_guard.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
+import '../services/frame_settings_store.dart';
 import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
-import '../widgets/playlist_controls_widget.dart';
 import '../widgets/progress_action_button.dart';
 import '../widgets/safe_render_boundary.dart';
 import '../widgets/shell_navigation.dart';
+import 'frame_settings_screen.dart';
 
 class EditColorGradeScreen extends StatefulWidget {
   final List<File> selectedImages;
@@ -44,13 +45,14 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
   late List<File> _images;
   late final PageController _pageController;
   int _currentIndex = 0;
-  late int _selectedIntervalSeconds;
   bool _isSending = false;
   int _sendCurrent = 0;
   int _sendTotal = 0;
-  int _strategy = 1;
-  int _durationHours = 0;
   int _listEpoch = 0;
+
+  // Global settings loaded cache
+  FramePlaybackProfile _globalProfile = FramePlaybackProfile.externalShareDefaults;
+  bool _frameOnline = false;
 
   // ValueNotifier for instant send-button loading feedback
   final ValueNotifier<bool> _sendingNotifier = ValueNotifier<bool>(false);
@@ -61,7 +63,26 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
     _images = List<File>.from(widget.selectedImages);
     _currentIndex = clampImageIndex(0, _images.length);
     _pageController = PageController(initialPage: _currentIndex);
-    _selectedIntervalSeconds = widget.initialIntervalSeconds;
+    unawaited(_loadGlobalProfile());
+  }
+
+  Future<void> _loadGlobalProfile() async {
+    try {
+      await DeviceStore.instance.load();
+      final paired = DeviceStore.instance.cached;
+      final profile = await FrameSettingsStore.instance.load(paired);
+      if (!mounted) return;
+      final online = paired == null
+          ? false
+          : await FrameOnlineGuard.isFrameEffectivelyOnline(paired);
+      if (!mounted) return;
+      setState(() {
+        _globalProfile = profile;
+        _frameOnline = online;
+      });
+    } catch (e) {
+      AppDiagLog.verbose('[EditColorGrade] load global profile failed: $e');
+    }
   }
 
   @override
@@ -101,24 +122,15 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
     });
   }
 
-  int get _intervalMinutes => _selectedIntervalSeconds ~/ 60;
-
-  PlaybackConfig get _config => PlaybackConfig(
-        intervalMinutes: _intervalMinutes,
-        strategy: _strategy,
-        durationHours: _durationHours,
+  Key get _previewKey => ValueKey(
+        'playlist-preview-$_listEpoch-${_images.length}-${_images.map((f) => f.path).join('|').hashCode}',
       );
-
-Key get _previewKey => ValueKey(
-      'playlist-preview-$_listEpoch-${_images.length}-${_images.map((f) => f.path).join('|').hashCode}',
-    );
 
   Future<void> _handleSendPlaylist() async {
     if (_isSending) return;
     final total = _images.length;
     if (total == 0) return;
 
-    // Instant UI feedback: show spinner BEFORE any heavy work starts.
     _isSending = true;
     _sendingNotifier.value = true;
     setState(() {
@@ -126,8 +138,6 @@ Key get _previewKey => ValueKey(
       _sendTotal = total;
     });
 
-    // Defer heavy lifting (frame check, normalization, uploads) to the next
-    // frame so the spinner renders without dropping a UI frame.
     SchedulerBinding.instance.addPostFrameCallback((_) => _sendPlaylistHeavy());
   }
 
@@ -154,12 +164,14 @@ Key get _previewKey => ValueKey(
       }
       if (!mounted) return;
 
+      // Reload global config fresh to ensure sync
+      final profile = await FrameSettingsStore.instance.load(activePaired);
+
       final pairingToken = activePaired.resolvedPairingToken;
       final api = FrameApiClient();
       final allIds = <String>[];
       final allPaths = <String>[];
 
-      // Snapshot so UI cannot mutate the send set mid-flight.
       final sendFiles = List<File>.from(_images);
 
       for (var i = 0; i < sendFiles.length; i++) {
@@ -185,7 +197,7 @@ Key get _previewKey => ValueKey(
           jpegBytes: bytes,
           filename: filename,
           slideshowStyle: 'classic',
-          displaySeconds: _selectedIntervalSeconds,
+          displaySeconds: profile.intervalMinutes * 60,
           strings: s,
           userAuthToken: authToken,
           syncSlideshowAfterSuccess: false,
@@ -223,9 +235,6 @@ Key get _previewKey => ValueKey(
           : widget.playlistName.trim();
       final albumId = widget.albumId?.trim();
       if (albumId != null && albumId.isNotEmpty) {
-        // Re-send updated playlist: keep the same album id (do NOT delete+recreate —
-        // that tombstones the old id and black-screens open detail routes).
-        // Resolve aliases in case cloud sync rebound the local timestamp id.
         final ok = await SendAlbumsStore.instance.replaceAlbumPaths(albumId, allPaths);
         if (!ok) {
           await SendAlbumsStore.instance.createAlbum(name, allPaths);
@@ -239,16 +248,16 @@ Key get _previewKey => ValueKey(
       unawaited(SlideshowPlaylistStore.instance.save(
         paired: activePaired,
         imageIds: allIds,
-        intervalMinutes: _intervalMinutes,
+        intervalMinutes: profile.intervalMinutes,
       ));
       unawaited(SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
         bearerToken: authToken,
         pairingToken: pairingToken,
         macSlug: frameBleMacSlug(activePaired),
         imageIds: allIds,
-        intervalMinutes: _intervalMinutes,
-        strategy: _strategy == 2 ? 2 : 1,
-        durationHours: _durationHours,
+        intervalMinutes: profile.intervalMinutes,
+        strategy: profile.playbackMode == FramePlaybackProfile.modeRandom ? 2 : 1,
+        durationHours: profile.durationHours,
         skipPlay: true,
       ));
 
@@ -263,7 +272,6 @@ Key get _previewKey => ValueKey(
 
       await SchedulerBinding.instance.endOfFrame;
       if (!mounted) return;
-      // Always fall back to the Send Photo tab after a successful playlist send.
       ShellNavigation.returnToSendAfterCast(context);
     } catch (e, st) {
       AppDiagLog.verbose('[EditColorGrade] send error: $e\n$st');
@@ -291,6 +299,16 @@ Key get _previewKey => ValueKey(
     final cs = Theme.of(context).colorScheme;
     final count = _images.length;
     final safeIndex = clampImageIndex(_currentIndex, count);
+
+    // Target frame parsing
+    final paired = DeviceStore.instance.cached;
+    final frameName = paired?.frameName ?? 'Unknown Frame';
+    final frameSlug = paired != null ? frameBleMacSlug(paired).toUpperCase() : '';
+    final isOnline = _frameOnline;
+
+    // Apply rule strings localization
+    final modeLabel = _globalProfile.playbackMode == FramePlaybackProfile.modeRandom ? 'Random' : 'Sequential';
+    final ruleText = 'Applied Rule: ${_globalProfile.intervalMinutes}m Interval • $modeLabel';
 
     return PopScope(
       canPop: !_isSending,
@@ -327,8 +345,9 @@ Key get _previewKey => ValueKey(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const SizedBox(height: 8),
+                              // Expanded photo carousel taking up major portion of view
                               Container(
-                                height: screenHeight * 0.35,
+                                height: screenHeight * 0.42,
                                 decoration: BoxDecoration(
                                   color: cs.surface,
                                   borderRadius: BorderRadius.circular(16),
@@ -378,7 +397,7 @@ Key get _previewKey => ValueKey(
                               ),
                               if (count > 1)
                                 Padding(
-                                  padding: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.only(top: 10),
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: List.generate(count, (i) {
@@ -396,35 +415,104 @@ Key get _previewKey => ValueKey(
                                     }),
                                   ),
                                 ),
-                              const SizedBox(height: 12),
-                              PlaylistControlsWidget(
-                                selectedIntervalSeconds: _selectedIntervalSeconds,
-                                onIntervalChanged: (seconds) =>
-                                    setState(() => _selectedIntervalSeconds = seconds),
-                                selectedStrategy: _strategy,
-                                onStrategyChanged: (v) => setState(() => _strategy = v),
-                                selectedDurationHours: _durationHours,
-                                onDurationChanged: (v) => setState(() => _durationHours = v),
-                              ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 24),
+                              // Sleek Target Frame target Destination Info Card
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: cs.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(8),
+                                  color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.5)),
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.schedule, size: 14, color: cs.onSurfaceVariant),
+                                    Icon(Icons.tv_rounded, color: cs.primary, size: 24),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Sending to: $frameName',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.bold,
+                                              color: cs.onSurface,
+                                            ),
+                                          ),
+                                          if (frameSlug.isNotEmpty)
+                                            Text(
+                                              frameSlug,
+                                              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: isOnline ? Colors.green : Colors.grey,
+                                      ),
+                                    ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      s.totalLoopTime(_config.estimatedLoopTime(count)),
-                                      style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                                      isOnline ? 'Online' : 'Offline',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: isOnline ? Colors.green : Colors.grey,
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 12),
+                              // Active Global Rule summary Chip / Link
+                              GestureDetector(
+                                onTap: () async {
+                                  await Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => const FrameSettingsScreen()),
+                                  );
+                                  unawaited(_loadGlobalProfile());
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  decoration: BoxDecoration(
+                                    color: cs.primary.withValues(alpha: 0.06),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: cs.primary.withValues(alpha: 0.15)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.tune_rounded, size: 16, color: cs.primary),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          ruleText,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: cs.primary,
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        'Edit',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: cs.primary,
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
                             ],
                           ),
                         ),
@@ -432,7 +520,7 @@ Key get _previewKey => ValueKey(
                 Material(
                   color: cs.surface,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
                     child: ValueListenableBuilder<bool>(
                       valueListenable: _sendingNotifier,
                       builder: (context, isSending, _) {
@@ -449,7 +537,7 @@ Key get _previewKey => ValueKey(
                           backgroundColor: cs.primary,
                           foregroundColor: cs.onPrimary,
                           disabledBackgroundColor: cs.primary.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(14),
                         );
                       },
                     ),

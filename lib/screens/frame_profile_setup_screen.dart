@@ -143,9 +143,12 @@ class _FrameProfileSetupScreenState extends State<FrameProfileSetupScreen> {
                     elevation: 4,
                     shadowColor: const Color(0xFFE5252A).withValues(alpha: 0.25),
                   ),
-                  child: const Text(
-                    'Start Sending',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  child: Text(
+                    s.startSending,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),

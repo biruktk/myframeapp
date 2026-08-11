@@ -66,9 +66,57 @@ import FirebaseCore
         // shows the current network + manual SSID entry.
         NSLog("[myframe] scanWifiNetworks: iOS cannot list nearby SSIDs")
         result([])
+      case "sanitizeImageToJPEG":
+        guard
+          let args = call.arguments as? [String: Any],
+          let filePath = args["filePath"] as? String,
+          let out = Self.sanitizeImageToJPEG(filePath: filePath)
+        else {
+          result(nil)
+          return
+        }
+        result(out)
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+  }
+
+  /// Converts any incoming image (including Display P3 / 16-bit PNG / HEIC
+  /// screenshots) into a plain 8‑bit sRGB JPEG written to a temp `.jpg` file.
+  ///
+  /// Drawing into a bitmap context with `image.draw` forces CoreGraphics to
+  /// color-manage Display P3 → sRGB and strips the alpha channel (JPEG has
+  /// none), so Flutter's `instantiateImageCodec` never chokes on the source.
+  /// Returns the temp path, or `nil` when the file cannot be decoded.
+  static func sanitizeImageToJPEG(filePath: String) -> String? {
+    guard let image = UIImage(contentsOfFile: filePath) else {
+      NSLog("[myframe] sanitizeImageToJPEG: could not load \(filePath)")
+      return nil
+    }
+    let size = image.size
+    guard size.width > 0, size.height > 0 else { return nil }
+    let scale = image.scale
+    UIGraphicsBeginImageContextWithOptions(size, false, scale)
+    image.draw(in: CGRect(origin: .zero, size: size))
+    let normalized = UIGraphicsGetImageFromCurrentImageContext()
+    UIGraphicsEndImageContext()
+
+    guard
+      let normalized = normalized,
+      let jpegData = normalized.jpegData(compressionQuality: 0.88)
+    else {
+      NSLog("[myframe] sanitizeImageToJPEG: re-encode failed for \(filePath)")
+      return nil
+    }
+
+    let tempPath = NSTemporaryDirectory() + UUID().uuidString + ".jpg"
+    do {
+      try jpegData.write(to: URL(fileURLWithPath: tempPath))
+      return tempPath
+    } catch {
+      NSLog("[myframe] sanitizeImageToJPEG: write failed \(error)")
+      return nil
     }
   }
 }

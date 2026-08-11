@@ -30,6 +30,20 @@ class ShellNavigation {
     return true;
   }
 
+  /// After Wi‑Fi + profile: land on the Registered Frames list (My Frames tab)
+  /// so the freshly named frame is immediately visible.
+  static void completePairingAndShowFrames() {
+    void go() {
+      goToTab(0);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        go();
+      });
+    });
+  }
+
   /// After Wi‑Fi + profile: open Send tab; optionally launch the photo picker.
   static void completePairingAndOpenSend({bool openGalleryPicker = true}) {
     if (openGalleryPicker) {

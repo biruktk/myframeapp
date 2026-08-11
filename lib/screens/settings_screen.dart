@@ -21,6 +21,7 @@ import 'device_discovery_screen.dart';
 
 import 'playlist_screen.dart';
 import 'sleep_settings_screen.dart';
+import 'frame_settings_screen.dart';
 
 const _red = Color(0xFFE53935);
 
@@ -224,18 +225,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             _divider(cs),
-            // Temporarily hidden: Playback Profile (frame playback interval)
-            // is not yet supported by the frame firmware. Underlying state and
-            // backend support remain intact.
-            // _tile(
-            //   context: context,
-            //   icon: Icons.tune_rounded,
-            //   title: s.frameProfileNavTitle,
-            //   subtitle: s.frameProfileNavSub,
-            //   onTap: () => Navigator.push<void>(
-            //     context, MaterialPageRoute<void>(builder: (_) => const FrameSettingsScreen()),
-            //   ),
-            // ),
+            _tile(
+              context: context,
+              icon: Icons.tune_rounded,
+              title: s.frameProfileNavTitle,
+              subtitle: s.frameProfileNavSub,
+              onTap: () => Navigator.push<void>(
+                context, MaterialPageRoute<void>(builder: (_) => FrameSettingsScreen()),
+              ),
+            ),
             _divider(cs),
             _tile(
               context: context,

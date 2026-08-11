@@ -34,6 +34,13 @@ class ShareExtensionCache {
   static const String authTokenKey = 'ShareExtensionAuthToken';
   static const String authUserIdKey = 'ShareExtensionAuthUserId';
 
+  /// Global playback profile keys mirrored to the App Group so the Share
+  /// Extension builds external-share payloads with the user's saved interval
+  /// instead of the hardcoded 10-minute default.
+  static const String globalDisplaySecondsKey = 'global_display_seconds';
+  static const String globalPlaybackModeKey = 'global_playback_mode';
+  static const String globalDurationTypeKey = 'global_duration_type';
+
   bool _bootstrapped = false;
   bool _isApple = false;
   AppSettings? _settings;
@@ -161,6 +168,33 @@ class ShareExtensionCache {
       });
     } catch (e) {
       AppDiagLog.verbose('[ShareExtensionCache] writeSelectedFrameIds failed: $e');
+    }
+  }
+
+  /// Mirrors the user's global playback rules into the App Group defaults so
+  /// the native Share Extension uploads with the saved interval/order/duration
+  /// rather than the hardcoded 600 s / sequential fallback.
+  Future<void> syncPlaybackRules({
+    required int displaySeconds,
+    required String playbackMode,
+    required String durationType,
+  }) async {
+    if (!_isApple) return;
+    try {
+      await _channel.invokeMethod<void>('write', {
+        'key': globalDisplaySecondsKey,
+        'value': displaySeconds,
+      });
+      await _channel.invokeMethod<void>('write', {
+        'key': globalPlaybackModeKey,
+        'value': playbackMode,
+      });
+      await _channel.invokeMethod<void>('write', {
+        'key': globalDurationTypeKey,
+        'value': durationType,
+      });
+    } catch (e) {
+      AppDiagLog.verbose('[ShareExtensionCache] syncPlaybackRules failed: $e');
     }
   }
 

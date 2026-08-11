@@ -57,23 +57,137 @@ class _FrameSettingsScreenState extends State<FrameSettingsScreen> {
     final app = AppSettingsScope.of(context);
     final paired = _paired;
     if (paired == null || _saving) return;
+
     setState(() => _saving = true);
+
+    // Centered loading dialog HUD
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future.delayed(const Duration(milliseconds: 1000), () {
+              if (dialogContext.mounted) {
+                setDialogState(() {});
+              }
+            });
+            return Center(
+              child: Container(
+                width: 180,
+                height: 180,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 15,
+                      offset: Offset(0, 5),
+                    )
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 50,
+                      height: 50,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 4,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFE53935)),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      s.authBusyLabel,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black54,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
     try {
       await FrameSettingsStore.instance.save(paired, _profile);
-      unawaited(
-        FrameSettingsStore.instance.pushProfileToFrame(
-          paired: paired,
-          profile: _profile,
-          userAuthToken: app.authToken,
-        ),
+      await FrameSettingsStore.instance.pushProfileToFrame(
+        paired: paired,
+        profile: _profile,
+        userAuthToken: app.authToken,
       );
+
+      // Close loading dialog and show success checkmark animation
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // pop loading HUD
+      }
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(s.frameProfileSaved),
-          duration: const Duration(seconds: 2),
-        ),
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext successContext) {
+          return Center(
+            child: Container(
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 15,
+                    offset: Offset(0, 5),
+                  )
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.check_circle_outline,
+                    size: 60,
+                    color: Colors.green,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    s.frameProfileSaved,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black54,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       );
+
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // pop success HUD
+        Navigator.of(context).pop(); // go back
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString())),
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

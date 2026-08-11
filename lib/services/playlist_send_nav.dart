@@ -9,6 +9,7 @@ import '../screens/image_editor_screen.dart';
 import '../services/device_store.dart';
 import '../services/frame_online_guard.dart';
 import '../services/gallery_image_cache.dart';
+import '../services/image_sanitizer.dart';
 import '../settings/app_settings.dart';
 
 /// Mini-app parity: after photo selection, open the send UI immediately.
@@ -95,10 +96,11 @@ class PlaylistSendNav {
     if (paths.isEmpty || !context.mounted) return;
     if (paths.length == 1) {
       final path = paths.first;
-      final file = File(path);
       late final Uint8List bytes;
       try {
-        bytes = await file.readAsBytes();
+        final safe = await ImageSanitizer.sanitize(path);
+        final source = (safe == null || safe.isEmpty) ? path : safe;
+        bytes = await File(source).readAsBytes();
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

@@ -122,40 +122,6 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-              Text(
-                s.displayInterval,
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: cs.onSurface),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                decoration: BoxDecoration(
-                  color: cs.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: cs.outlineVariant),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<int>(
-                    value: _selectedIntervalSeconds,
-                    isExpanded: true,
-                    dropdownColor: cs.surface,
-                    icon: Icon(Icons.keyboard_arrow_down, color: cs.onSurfaceVariant),
-                    items: _intervalSecondsList.map((seconds) {
-                      return DropdownMenuItem<int>(
-                        value: seconds,
-                        child: Text(
-                          _intervalLabel(s, seconds),
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: cs.onSurface),
-                        ),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => _selectedIntervalSeconds = val);
-                    },
-                  ),
-                ),
-              ),
               const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,

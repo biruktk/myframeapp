@@ -563,7 +563,17 @@ class ShareActivity : AppCompatActivity() {
 
     private suspend fun uploadProcessedImages(): Boolean = withContext(Dispatchers.IO) {
         if (processedFiles.isEmpty()) return@withContext false
-        
+
+        // Read the user's saved global playback profile (written by Flutter's
+        // FrameSettingsStore._syncGlobalPlaybackDefaults via SharedPreferences).
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val displaySeconds = prefs.getInt("flutter.global_display_seconds", 600)
+        val playbackMode = prefs.getString("flutter.global_playback_mode", "sequential") ?: "sequential"
+        val durationType = prefs.getString("flutter.global_duration_type", "unlimited") ?: "unlimited"
+        val intervalMin = if (displaySeconds > 0) displaySeconds / 60 else 10
+        val strategyVal = if (playbackMode == "random") 2 else 1
+        val durationHrs = parseDurationHours(durationType)
+
         val client = OkHttpClient()
         val targetFrames = pairedFrames.filter { selectedFrameIds.contains(it.id) }
         if (targetFrames.isEmpty()) return@withContext false
@@ -599,7 +609,7 @@ class ShareActivity : AppCompatActivity() {
                     .addFormDataPart("size", fileBytes.size.toString())
                     .addFormDataPart("app_platform", "flutter")
                     .addFormDataPart("slideshow_style", "classic")
-                    .addFormDataPart("display_seconds", "600")
+                    .addFormDataPart("display_seconds", displaySeconds.toString())
                     .addFormDataPart("transport", "wifi")
                     .addFormDataPart("skip_play", if (isMultiple) "true" else "false")
                     .addFormDataPart("photo", file.name, fileBody)
@@ -658,14 +668,14 @@ class ShareActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     updateProgress("Publishing playlist to ${frame.name}...", 70 + (20 * completed / totalUploads))
                 }
+
                 val nowMs = System.currentTimeMillis()
-                // strategy = 1, intervalMinutes = 10, durationHours = 6 (matches external_share_queue.dart defaults)
-                val endtime = (nowMs + 6 * 3600 * 1000).toString()
+                val endtime = if (durationHrs > 0) (nowMs + durationHrs.toLong() * 3600 * 1000).toString() else ""
                 
                 val publishBody = JSONObject().apply {
                     put("imageIds", JSONArray(uploadedImageIds))
-                    put("intervalMinutes", 10)
-                    put("strategy", 1)
+                    put("intervalMinutes", intervalMin)
+                    put("strategy", strategyVal)
                     put("begintime", nowMs.toString())
                     put("endtime", endtime)
                     put("idle", 0)
@@ -702,6 +712,19 @@ class ShareActivity : AppCompatActivity() {
         val digest = MessageDigest.getInstance("SHA-256")
         val hash = digest.digest(bytes)
         return hash.joinToString("") { "%02x".format(it) }
+    }
+
+    /** Parses the `duration_type` value (e.g. `unlimited`, `6h`, `2d`) into hours. */
+    private fun parseDurationHours(type: String): Int {
+        var v = type.trim().lowercase()
+        if (v.isEmpty() || v == "unlimited" || v == "0") return 0
+        return if (v.endsWith("h")) {
+            v.dropLast(1).toIntOrNull() ?: 0
+        } else if (v.endsWith("d")) {
+            (v.dropLast(1).toIntOrNull() ?: 0) * 24
+        } else {
+            v.toIntOrNull() ?: 0
+        }
     }
 
     private fun cleanupTempFiles() {
