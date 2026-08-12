@@ -147,8 +147,13 @@ class ShareActivity : AppCompatActivity() {
                 // Fallbacks to compute stationMac/mac/apiUrl/pairingToken matching syncFrames:
                 // 'mac': targetId (station MAC preferred over BLE id)
                 val targetId = obj.optString("deviceId", "")
-                val apiUrl = obj.optString("apiUrl", "http://myframe.ink:3001")
-                val pairingToken = obj.optString("pairingToken", "framepass2026")
+                val apiUrl = obj.optString("apiUrl", "http://47.76.164.162:3001")
+                val rawPairingToken = if (obj.has("pairingToken") && !obj.isNull("pairingToken")) obj.optString("pairingToken", "").trim() else ""
+                val pairingToken = if (rawPairingToken.isNotEmpty() && !rawPairingToken.equals("null", ignoreCase = true) && !rawPairingToken.equals("undefined", ignoreCase = true)) {
+                    rawPairingToken
+                } else {
+                    "framepass2026"
+                }
                 val isOnline = onlineIdsSet.contains(id)
                 
                 if (id.isNotEmpty()) {
@@ -388,90 +393,80 @@ class ShareActivity : AppCompatActivity() {
                     alpha = 0.5f
                 }
                 
-                setOnClickListener {
-                    if (!frame.isOnline) {
-                        Toast.makeText(this@ShareActivity, "This frame is currently offline and cannot receive photos.", Toast.LENGTH_SHORT).show()
-                        return@setOnClickListener
-                    }
-                    if (selectedFrameIds.contains(frame.id)) {
-                        selectedFrameIds.remove(frame.id)
-                    } else {
-                        selectedFrameIds.add(frame.id)
-                    }
-                    updateFramesSelectionUI()
-                }
-            }
-
-            val nameLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-
-            val nameTv = TextView(this).apply {
-                text = frame.name
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            }
-            nameLayout.addView(nameTv)
-
-            if (!frame.isOnline) {
-                val offlineTv = TextView(this).apply {
-                    text = "Offline"
-                    setTextColor(Color.parseColor("#E53935"))
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                }
-                nameLayout.addView(offlineTv)
-            }
-
-            itemLayout.addView(nameLayout)
-
-            val checkboxIv = ImageView(this).apply {
-                tag = frame.id
-                layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
-            }
-            itemLayout.addView(checkboxIv)
-
-            framesLayout.addView(itemLayout)
-        }
-
-        updateFramesSelectionUI()
-    }
-
-    private fun updateFramesSelectionUI() {
-        val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
-        for (i in 0 until framesLayout.childCount) {
-            val view = framesLayout.getChildAt(i) as? LinearLayout ?: continue
-            // nameLayout is index 0, checkboxIv is index 1
-            val checkboxIv = view.getChildAt(1) as? ImageView ?: continue
-            val frameId = checkboxIv.tag as? String ?: continue
-            val frame = pairedFrames.firstOrNull { it.id == frameId }
-            
-            if (frame != null && !frame.isOnline) {
-                checkboxIv.visibility = View.GONE
-            } else {
-                checkboxIv.visibility = View.VISIBLE
-                if (selectedFrameIds.contains(frameId)) {
-                    val drawable = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setColor(Color.parseColor("#E53935"))
-                        setSize(dp(20), dp(20))
-                    }
-                    checkboxIv.setImageDrawable(drawable)
+            setOnClickListener {
+                if (selectedFrameIds.contains(frame.id)) {
+                    selectedFrameIds.remove(frame.id)
                 } else {
-                    val drawable = GradientDrawable().apply {
-                        shape = GradientDrawable.OVAL
-                        setStroke(dp(2), Color.parseColor("#757575"))
-                        setSize(dp(20), dp(20))
-                    }
-                    checkboxIv.setImageDrawable(drawable)
+                    selectedFrameIds.add(frame.id)
                 }
+                updateFramesSelectionUI()
             }
         }
-        
-        val canSend = selectedFrameIds.isNotEmpty()
-        sendButton.isEnabled = canSend
-        sendButton.alpha = if (canSend) 1.0f else 0.5f
+
+        val nameLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val nameTv = TextView(this).apply {
+            text = frame.name
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+        }
+        nameLayout.addView(nameTv)
+
+        if (!frame.isOnline) {
+            val offlineTv = TextView(this).apply {
+                text = "Offline"
+                setTextColor(Color.parseColor("#E53935"))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            }
+            nameLayout.addView(offlineTv)
+        }
+
+        itemLayout.addView(nameLayout)
+
+        val checkboxIv = ImageView(this).apply {
+            tag = frame.id
+            layoutParams = LinearLayout.LayoutParams(dp(24), dp(24))
+        }
+        itemLayout.addView(checkboxIv)
+
+        framesLayout.addView(itemLayout)
     }
+
+    updateFramesSelectionUI()
+}
+
+private fun updateFramesSelectionUI() {
+    val dp = { value: Int -> (value * resources.displayMetrics.density).toInt() }
+    for (i in 0 until framesLayout.childCount) {
+        val view = framesLayout.getChildAt(i) as? LinearLayout ?: continue
+        val checkboxIv = view.getChildAt(1) as? ImageView ?: continue
+        val frameId = checkboxIv.tag as? String ?: continue
+        
+        checkboxIv.visibility = View.VISIBLE
+        if (selectedFrameIds.contains(frameId)) {
+            val drawable = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#E53935"))
+                setSize(dp(20), dp(20))
+            }
+            checkboxIv.setImageDrawable(drawable)
+        } else {
+            val drawable = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setStroke(dp(2), Color.parseColor("#757575"))
+                setSize(dp(20), dp(20))
+            }
+            checkboxIv.setImageDrawable(drawable)
+        }
+    }
+    
+    val canSend = selectedFrameIds.isNotEmpty()
+    sendButton.isEnabled = canSend
+    sendButton.alpha = if (canSend) 1.0f else 0.5f
+}
 
     private fun startUploadFlow() {
         sendButton.isEnabled = false
@@ -567,7 +562,15 @@ class ShareActivity : AppCompatActivity() {
         // Read the user's saved global playback profile (written by Flutter's
         // FrameSettingsStore._syncGlobalPlaybackDefaults via SharedPreferences).
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val displaySeconds = prefs.getInt("flutter.global_display_seconds", 600)
+        val displaySeconds = try {
+            prefs.getInt("flutter.global_display_seconds", 600)
+        } catch (e: ClassCastException) {
+            try {
+                prefs.getLong("flutter.global_display_seconds", 600L).toInt()
+            } catch (e2: ClassCastException) {
+                (prefs.all["flutter.global_display_seconds"] as? Number)?.toInt() ?: 600
+            }
+        }
         val playbackMode = prefs.getString("flutter.global_playback_mode", "sequential") ?: "sequential"
         val durationType = prefs.getString("flutter.global_duration_type", "unlimited") ?: "unlimited"
         val intervalMin = if (displaySeconds > 0) displaySeconds / 60 else 10
@@ -619,11 +622,16 @@ class ShareActivity : AppCompatActivity() {
                     .url("$apiBase/api/frames/$macSlug/upload")
                     .post(requestBody)
                     
-                if (frame.pairingToken.isNotEmpty()) {
-                    requestBuilder.addHeader("x-pairing-token", frame.pairingToken)
+                val pairingTokenToSend = if (frame.pairingToken.isNotEmpty() && !frame.pairingToken.equals("null", ignoreCase = true)) {
+                    frame.pairingToken
+                } else {
+                    "framepass2026"
                 }
-                if (authToken.isNotEmpty()) {
-                    requestBuilder.addHeader("Authorization", "Bearer $authToken")
+                requestBuilder.header("x-pairing-token", pairingTokenToSend)
+
+                val cleanAuthToken = authToken.trim()
+                if (cleanAuthToken.isNotEmpty() && !cleanAuthToken.equals("null", ignoreCase = true)) {
+                    requestBuilder.header("Authorization", "Bearer $cleanAuthToken")
                 }
 
                 try {
@@ -654,10 +662,16 @@ class ShareActivity : AppCompatActivity() {
                             }
                         }
                     } else {
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(this@ShareActivity, "HTTP Error ${response.code}: $bodyString", Toast.LENGTH_LONG).show()
+                        }
                         return@withContext false
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@ShareActivity, "Net error: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
                     return@withContext false
                 }
                 completed++
@@ -686,11 +700,16 @@ class ShareActivity : AppCompatActivity() {
                     .url("$apiBase/api/frames/$macSlug/slideshow")
                     .post(publishBody.toString().toRequestBody("application/json".toMediaTypeOrNull()))
                     
-                if (frame.pairingToken.isNotEmpty()) {
-                    publishRequest.addHeader("x-pairing-token", frame.pairingToken)
+                val pairingTokenToSend = if (frame.pairingToken.isNotEmpty() && !frame.pairingToken.equals("null", ignoreCase = true)) {
+                    frame.pairingToken
+                } else {
+                    "framepass2026"
                 }
-                if (authToken.isNotEmpty()) {
-                    publishRequest.addHeader("Authorization", "Bearer $authToken")
+                publishRequest.header("x-pairing-token", pairingTokenToSend)
+
+                val cleanAuthToken = authToken.trim()
+                if (cleanAuthToken.isNotEmpty() && !cleanAuthToken.equals("null", ignoreCase = true)) {
+                    publishRequest.header("Authorization", "Bearer $cleanAuthToken")
                 }
 
                 try {

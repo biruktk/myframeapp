@@ -20,6 +20,7 @@ import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
 import '../widgets/debug_slog_overlay.dart';
 import '../widgets/progress_action_button.dart';
+import '../widgets/shell_navigation.dart';
 
 const _kRed = Color(0xFFE5252A);
 
@@ -370,17 +371,17 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
 
       if (!mounted) return;
       if (widget.firstTimeSetup) {
-        final openSend = profileOk == true && widget.openSendAfterSetup;
+        // Redirect directly to the My Frames list (My Frames tab) so the freshly named
+        // frame is immediately selected and shown as online, instead of going to Send tab gallery.
         final result = PairingNavResult(
           success: profileOk == true,
-          openSendGallery: openSend,
+          openSendGallery: false,
         );
         if (Navigator.of(context).canPop()) {
           Navigator.of(context).pop<PairingNavResult>(result);
         }
-        if (openSend) {
-          PairingFlowNav.onComplete(result);
-        }
+        // Always route to Registered Frames / My Frames (tab 0)
+        ShellNavigation.completePairingAndShowFrames();
         return;
       }
       if (Navigator.of(context).canPop()) {

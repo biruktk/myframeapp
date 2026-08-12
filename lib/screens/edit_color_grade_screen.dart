@@ -16,6 +16,7 @@ import '../services/frame_online_guard.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
 import '../services/frame_settings_store.dart';
+import '../services/ble_frame_device_transport.dart';
 import '../settings/app_settings.dart';
 import '../services/send_albums_store.dart';
 import '../widgets/progress_action_button.dart';

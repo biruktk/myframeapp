@@ -80,7 +80,9 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
     if (!mounted) return;
     final result = wifiResult ?? const PairingNavResult(success: false);
     await SafeNav.popPairingResult(context, result: result);
-    PairingFlowNav.onComplete(result);
+    if (result.success) {
+      ShellNavigation.completePairingAndShowFrames();
+    }
     if (mounted) setState(() => _busy = false);
   }
 

@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import '../settings/app_settings.dart';
 import 'api_client.dart';
+import 'auth_session_manager.dart';
 import 'app_diag_log.dart';
 import 'device_store.dart';
 import 'frame_mac_util.dart';
@@ -630,6 +631,7 @@ class AccountSyncService {
     if (token.isEmpty) return true;
 
     var anyOk = false;
+    AuthSessionManager.instance.suppressUnauthorizedHandling(true);
     try {
       for (final id in siblings) {
         final uri = Uri.parse(
@@ -667,6 +669,8 @@ class AccountSyncService {
       AppDiagLog.verbose('[account-sync] deleteFrame failed: $e\n$st');
       // Local delete still succeeded; keep unbound ban.
       return true;
+    } finally {
+      AuthSessionManager.instance.suppressUnauthorizedHandling(false);
     }
   }
 

@@ -18,6 +18,7 @@ import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
 import '../services/app_release_guard.dart';
 import '../widgets/debug_slog_overlay.dart';
+import '../widgets/shell_navigation.dart';
 
 class DeviceDiscoveryScreen extends StatefulWidget {
   const DeviceDiscoveryScreen({
@@ -454,11 +455,9 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
       if (!mounted) return;
       if (wifiResult?.success == true) {
         await _disconnectTelemetry();
+        ShellNavigation.completePairingAndShowFrames();
       }
       if (mounted) setState(() => _connectingDeviceId = null);
-      if (widget.openSendAfterSetup) {
-        PairingFlowNav.onComplete(wifiResult);
-      }
       await SafeNav.popPairingResult(
         context,
         result: wifiResult ?? const PairingNavResult(success: false),
