@@ -12,7 +12,7 @@ class FloatingLogOverlay extends StatefulWidget {
 }
 
 class _FloatingLogOverlayState extends State<FloatingLogOverlay> {
-  Offset _position = const Offset(16, 120);
+  Offset? _position;
 
   void _openLogSheet(BuildContext context) {
     showModalBottomSheet<void>(
@@ -29,6 +29,9 @@ class _FloatingLogOverlayState extends State<FloatingLogOverlay> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final defaultPos = Offset(size.width - 80, size.height * 0.45);
+    final currentPos = _position ?? defaultPos;
+
     final maxX = size.width - 64;
     final maxY = size.height - 64;
 
@@ -36,36 +39,38 @@ class _FloatingLogOverlayState extends State<FloatingLogOverlay> {
       children: [
         widget.child,
         Positioned(
-          left: _position.dx.clamp(0.0, maxX),
-          top: _position.dy.clamp(0.0, maxY),
+          left: currentPos.dx.clamp(0.0, maxX),
+          top: currentPos.dy.clamp(0.0, maxY),
           child: GestureDetector(
             onPanUpdate: (details) {
               setState(() {
-                _position += details.delta;
+                final nextDx = (currentPos.dx + details.delta.dx).clamp(0.0, maxX);
+                final nextDy = (currentPos.dy + details.delta.dy).clamp(0.0, maxY);
+                _position = Offset(nextDx, nextDy);
               });
             },
             onTap: () => _openLogSheet(context),
             child: Material(
-              elevation: 8,
-              borderRadius: BorderRadius.circular(24),
+              elevation: 6,
+              borderRadius: BorderRadius.circular(20),
               color: const Color(0xFFE5252A),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 child: ValueListenableBuilder<int>(
                   valueListenable: ProtocolLoggerService.instance.logCountNotifier,
                   builder: (context, count, _) {
                     return Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.terminal, color: Colors.white, size: 18),
-                        const SizedBox(width: 6),
+                        const Icon(Icons.bug_report, color: Colors.white, size: 14),
+                        const SizedBox(width: 4),
                         Text(
                           'LOGS ($count)',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 12,
+                            fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
+                            letterSpacing: 0.3,
                           ),
                         ),
                       ],
