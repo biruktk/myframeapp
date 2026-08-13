@@ -423,14 +423,8 @@ class AccountSyncService {
           }
         }
       }
-      if (related) continue;
-      await pushBoundFrame(
-        slug,
-        setPrimary: false,
-        authTokenOverride: token,
-        frameName: frame.frameName,
-        wifiSsid: frame.wifiSsid,
-      );
+      // bind must only be called once during initial setup, not during automatic sync.
+      continue;
     }
   }
 

@@ -95,6 +95,12 @@ class FrameStatus {
   bool get isEffectivelyOnline => online || sleeping || status == 'idle';
 }
 
+class _CachedFrameStatus {
+  _CachedFrameStatus({required this.status, required this.timestamp});
+  final FrameStatus status;
+  final int timestamp;
+}
+
 class FrameApiClient {
   FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 90)})
       : _api = ApiClient(inner: httpClient);
@@ -222,15 +228,23 @@ class FrameApiClient {
   }
 
   /// GET `/api/frames/:mac/status` — full device metrics (battery, storage, wifi, etc.).
+  static final Map<String, _CachedFrameStatus> _statusCache = {};
+
   Future<FrameStatus?> fetchFrameStatus({
     required String mac,
     String? baseUrlOverride,
     String? pairingToken,
     Duration? timeout,
+    bool force = false,
   }) async {
     final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
     if (cleanMac.length < 12) return null;
     final slug = cleanMac.substring(cleanMac.length - 12);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final cached = _statusCache[slug];
+    if (!force && cached != null && (now - cached.timestamp < 30000)) {
+      return cached.status;
+    }
     final t = timeout ?? const Duration(seconds: 8);
     final bases = _frameStatusCandidateBases(baseUrlOverride);
     for (final base in bases) {
@@ -247,7 +261,9 @@ class FrameApiClient {
         if (res.statusCode != 200) continue;
         final json = jsonDecode(res.body) as Map<String, dynamic>;
         if (json['ok'] != true) continue;
-        return FrameStatus.fromJson(json);
+        final status = FrameStatus.fromJson(json);
+        _statusCache[slug] = _CachedFrameStatus(status: status, timestamp: now);
+        return status;
       } catch (_) {
         continue;
       }
