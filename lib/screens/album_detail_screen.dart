@@ -381,16 +381,13 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
     );
     if (ok != true || !mounted) return;
     final tok = AppSettingsScope.of(context).authToken;
-    await BusyStatusDialog.run<void>(
-      context,
-      message: s.deletingAlbum,
-      action: () async {
-        await AlbumDeleteService.deletePowerful(
-          albumId: widget.albumId,
-          bearerToken: tok,
-        );
-      },
-    );
+    
+    // Instant fire-and-forget deletion: runs off the UI thread
+    unawaited(AlbumDeleteService.deletePowerful(
+      albumId: widget.albumId,
+      bearerToken: tok,
+    ));
+
     if (!mounted) return;
     AppStatusToast.show(
       context,

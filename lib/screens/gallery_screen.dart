@@ -94,17 +94,13 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
     );
     if (ok != true || !mounted) return;
     final tok = AppSettingsScope.of(context).authToken;
-    await BusyStatusDialog.run<void>(
-      context,
-      message: s.deletingAlbum,
-      action: () async {
-        await AlbumDeleteService.deletePowerful(
-          albumId: album.id,
-          bearerToken: tok,
-        );
-        // Pull-only — never push after delete (would resurrect the album).
-      },
-    );
+    
+    // Instant fire-and-forget deletion: runs off the UI thread
+    unawaited(AlbumDeleteService.deletePowerful(
+      albumId: album.id,
+      bearerToken: tok,
+    ));
+
     await _reload();
     if (!mounted) return;
     AppStatusToast.show(
