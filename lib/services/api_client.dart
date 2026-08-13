@@ -118,7 +118,13 @@ class ApiClient {
       }
     }
 
-    return http.Response.fromStream(streamed);
+    final res = await http.Response.fromStream(streamed);
+    ProtocolLoggerService.instance.logApi(
+      base.method,
+      base.url.toString(),
+      statusCode: res.statusCode,
+    );
+    return res;
   }
 
   /// Only a request that actually carries a user Bearer JWT can signal an

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'protocol_logger_service.dart';
+
 import '../config/api_config.dart';
 import 'api_client.dart';
 
@@ -46,6 +48,7 @@ class SlideshowRemoteApi {
       headers: headers,
       body: jsonEncode(body),
     );
+    ProtocolLoggerService.instance.logMqttOut('strategy_bin', body);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw SlideshowPublishException(res.statusCode, res.body);
     }
@@ -58,6 +61,7 @@ class SlideshowRemoteApi {
     required String macSlug,
     List<String> excludeImageIds = const [],
   }) async {
+    ProtocolLoggerService.instance.logMqttOut('strategy_stop', {'mac': macSlug, 'excludeImageIds': excludeImageIds});
     final slug = macSlug.trim();
     if (slug.isEmpty) return false;
     final encoded = Uri.encodeComponent(slug);

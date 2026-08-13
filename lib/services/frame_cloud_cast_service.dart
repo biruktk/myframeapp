@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'protocol_logger_service.dart';
 import 'package:flutter/foundation.dart';
 
 import '../config/api_config.dart';
@@ -88,6 +91,11 @@ class FrameCloudCastService {
       final tryId = targets[ti];
 
       try {
+
+        ProtocolLoggerService.instance.logMqttOut(
+          skipPlay ? 'upload_photo (skip_play)' : 'play',
+          {'deviceId': tryId, 'filename': filename},
+        );
         final res = await api.uploadPhoto(
           fileBytes: jpegBytes,
           filename: filename,

@@ -23,6 +23,7 @@ import 'services/external_share_queue.dart';
 import 'services/google_photos_service.dart';
 import 'services/icloud_photos_service.dart';
 import 'services/fcm_service.dart';
+import 'widgets/floating_log_button.dart';
 
 final DeviceTransport _globalTransport = BleFrameDeviceTransport.instance;
 
@@ -113,13 +114,14 @@ class MyFrameApp extends StatelessWidget {
                 final app = AppSettingsScope.of(context);
                 final systemFactor = mq.textScaler.scale(16) / 16.0;
                 final comfortBoost = app.comfortMode ? 1.2 : 1.0;
+
                 return MediaQuery(
                   data: mq.copyWith(
                     textScaler: TextScaler.linear(
                       systemFactor * comfortBoost,
                     ).clamp(minScaleFactor: 0.88, maxScaleFactor: 1.9),
                   ),
-                  child: c,
+                  child: FloatingLogOverlay(child: c),
                 );
               },
               supportedLocales: const [
