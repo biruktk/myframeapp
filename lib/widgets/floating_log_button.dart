@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/auth_session_manager.dart';
 import '../services/protocol_logger_service.dart';
 
 class FloatingLogOverlay extends StatefulWidget {
@@ -13,14 +14,15 @@ class FloatingLogOverlay extends StatefulWidget {
 
 class _FloatingLogOverlayState extends State<FloatingLogOverlay> {
   void _openLogSheet(BuildContext context) {
+    final navContext = appNavigatorKey.currentContext ?? appNavigatorKey.currentState?.context ?? context;
     showModalBottomSheet<void>(
-      context: context,
+      context: navContext,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF1E1E1E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => const _ProtocolLogSheet(),
+      builder: (ctx) => const ProtocolLogSheet(),
     );
   }
 
@@ -89,14 +91,14 @@ class _FloatingLogOverlayState extends State<FloatingLogOverlay> {
   }
 }
 
-class _ProtocolLogSheet extends StatefulWidget {
-  const _ProtocolLogSheet({Key? key}) : super(key: key);
+class ProtocolLogSheet extends StatefulWidget {
+  const ProtocolLogSheet({Key? key}) : super(key: key);
 
   @override
-  State<_ProtocolLogSheet> createState() => _ProtocolLogSheetState();
+  State<ProtocolLogSheet> createState() => _ProtocolLogSheetState();
 }
 
-class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
+class _ProtocolLogSheetState extends State<ProtocolLogSheet> {
   final ScrollController _scrollController = ScrollController();
 
   @override
