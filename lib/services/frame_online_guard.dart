@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../widgets/connect_frame_dialog.dart';
 import 'device_store.dart';
 import 'frame_api_client.dart';
+import 'frame_mac_util.dart';
 import 'frame_recovery_service.dart';
 
 /// Optimistic send / upload gating for the frame.
@@ -58,38 +59,25 @@ class FrameOnlineGuard {
   /// During the [provisionGrace] window a freshly provisioned frame stays
   /// online until [offlineAfterMisses] consecutive live probes miss.
   static Future<bool> isFrameEffectivelyOnline(PairedFrame frame) async {
-    final candidates = DeviceStore.statusMacCandidates(frame);
+    final mac = DeviceStore.macForPairedFrame(frame) ?? FrameMacUtil.normalizeSlug(frame.deviceId);
+    if (mac == null || mac.isEmpty) return true;
     final client = FrameApiClient();
-    var hits = 0;
     try {
-      for (final mac in candidates) {
-        try {
-          // Do NOT pass frame.apiUrl first — dead LAN overrides VPS and false-offline.
-          final status = await client.fetchFrameStatus(
-            mac: mac,
-            pairingToken: frame.resolvedPairingToken,
-          );
-          if (status != null) {
-            if (_isFreshlyOnline(status)) {
-              hits++;
-              _consecutiveMisses[mac] = 0;
-            } else {
-              _consecutiveMisses[mac] = (_consecutiveMisses[mac] ?? 0) + 1;
-            }
-          }
-        } catch (_) {}
+      final status = await client.fetchFrameStatus(
+        mac: mac,
+        pairingToken: frame.resolvedPairingToken,
+      );
+      if (status != null && _isFreshlyOnline(status)) {
+        _consecutiveMisses[mac] = 0;
+        return true;
       }
-    } finally {
+      _consecutiveMisses[mac] = (_consecutiveMisses[mac] ?? 0) + 1;
+    } catch (_) {} finally {
       client.close();
     }
-    if (hits > 0) return true;
     if (_withinProvisionGrace(frame)) {
-      var worst = 0;
-      for (final mac in candidates) {
-        final v = _consecutiveMisses[mac] ?? 0;
-        if (v > worst) worst = v;
-      }
-      return worst < offlineAfterMisses;
+      final v = _consecutiveMisses[mac] ?? 0;
+      return v < offlineAfterMisses;
     }
     return false;
   }
