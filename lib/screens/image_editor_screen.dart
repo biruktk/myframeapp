@@ -1061,7 +1061,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
             strings: s,
             userAuthToken: authToken,
             syncSlideshowAfterSuccess: false,
-            skipPlay: !isFirstUpload,
+            skipPlay: true,
             editsJson: edits,
             onProgress: (_) {},
           );

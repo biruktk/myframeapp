@@ -202,7 +202,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
           strings: s,
           userAuthToken: authToken,
           syncSlideshowAfterSuccess: false,
-          skipPlay: !isFirstUpload,
+          skipPlay: true,
           editsJson: null,
           onProgress: (_) {},
         );

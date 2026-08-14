@@ -176,7 +176,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           strings: s,
           userAuthToken: token.isNotEmpty ? token : null,
           syncSlideshowAfterSuccess: false,
-          skipPlay: !isFirstUpload,
+          skipPlay: true,
           onProgress: (_) {},
         );
         if (!cast.ok) {

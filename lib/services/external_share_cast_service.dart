@@ -125,7 +125,7 @@ class ExternalShareCastService {
         strings: strings,
         userAuthToken: authToken.trim().isEmpty ? null : authToken.trim(),
         syncSlideshowAfterSuccess: false,
-        skipPlay: ids.isNotEmpty,
+        skipPlay: items.length > 1,
         editsJson: null,
         onProgress: (p) {
           onProgress?.call(

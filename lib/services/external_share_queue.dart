@@ -227,7 +227,7 @@ class ExternalShareQueue {
             transport: TransportKind.wifi.apiValue,
             pairingToken: queued.pairingToken,
             userAuthToken: queued.authToken.isEmpty ? null : queued.authToken,
-            skipPlay: ids.isNotEmpty,
+            skipPlay: queued.paths.length > 1,
             editsJson: null,
           );
           final id = res.vpsSlideshowImageId?.trim();
