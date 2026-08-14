@@ -12,8 +12,6 @@ class FloatingLogOverlay extends StatefulWidget {
 }
 
 class _FloatingLogOverlayState extends State<FloatingLogOverlay> {
-  Offset? _position;
-
   void _openLogSheet(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -28,60 +26,65 @@ class _FloatingLogOverlayState extends State<FloatingLogOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final defaultPos = Offset(size.width - 80, size.height * 0.45);
-    final currentPos = _position ?? defaultPos;
+    final mediaQuery = MediaQuery.of(context);
+    final topOffset = mediaQuery.size.height * 0.42;
 
-    final maxX = size.width - 64;
-    final maxY = size.height - 64;
-
-    return Stack(
-      children: [
-        widget.child,
-        Positioned(
-          left: currentPos.dx.clamp(0.0, maxX),
-          top: currentPos.dy.clamp(0.0, maxY),
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              setState(() {
-                final nextDx = (currentPos.dx + details.delta.dx).clamp(0.0, maxX);
-                final nextDy = (currentPos.dy + details.delta.dy).clamp(0.0, maxY);
-                _position = Offset(nextDx, nextDy);
-              });
-            },
-            onTap: () => _openLogSheet(context),
-            child: Material(
-              elevation: 6,
-              borderRadius: BorderRadius.circular(20),
-              color: const Color(0xFFE5252A),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                child: ValueListenableBuilder<int>(
-                  valueListenable: ProtocolLoggerService.instance.logCountNotifier,
-                  builder: (context, count, _) {
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.bug_report, color: Colors.white, size: 14),
-                        const SizedBox(width: 4),
-                        Text(
-                          'LOGS ($count)',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.3,
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          widget.child,
+          Positioned(
+            right: 12,
+            top: topOffset,
+            child: ValueListenableBuilder<int>(
+              valueListenable: ProtocolLoggerService.instance.logCountNotifier,
+              builder: (context, count, _) {
+                return Material(
+                  color: Colors.transparent,
+                  elevation: 6,
+                  borderRadius: BorderRadius.circular(20),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(20),
+                    onTap: () => _openLogSheet(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE5252A),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black38,
+                            blurRadius: 6,
+                            offset: Offset(0, 2),
                           ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.bug_report, color: Colors.white, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            'LOGS ($count)',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -114,10 +117,12 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final logs = ProtocolLoggerService.instance.logs;
+
     return SafeArea(
       top: false,
       child: Container(
-        height: MediaQuery.of(context).size.height * 0.70,
+        height: MediaQuery.of(context).size.height * 0.75,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -145,7 +150,7 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFE5252A),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -161,13 +166,13 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
                           );
                         }
                       },
-                      icon: const Icon(Icons.copy, size: 14),
-                      label: const Text('Copy', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy All', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(width: 8),
                     TextButton.icon(
                       style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -175,13 +180,13 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
                         ProtocolLoggerService.instance.clear();
                         setState(() {});
                       },
-                      icon: const Icon(Icons.delete_outline, size: 16, color: Colors.white70),
-                      label: const Text('Clear', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      icon: const Icon(Icons.delete_outline, size: 20, color: Colors.white70),
+                      label: const Text('Clear', style: TextStyle(color: Colors.white70, fontSize: 14)),
                     ),
                     IconButton(
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
-                      icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                      icon: const Icon(Icons.close, color: Colors.white70, size: 24),
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
@@ -195,22 +200,21 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
               child: ValueListenableBuilder<int>(
                 valueListenable: ProtocolLoggerService.instance.logCountNotifier,
                 builder: (context, _, __) {
-                  final logs = ProtocolLoggerService.instance.logs;
                   if (logs.isEmpty) {
                     return const Center(
                       child: Text(
                         'No logs recorded yet.\nPerform an MQTT or API action to capture logs.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white38),
+                        style: TextStyle(color: Colors.white38, fontSize: 14),
                       ),
                     );
                   }
                   WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
                   return Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: const Color(0xFF121212),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.white12),
                     ),
                     child: ListView.builder(
@@ -228,25 +232,25 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
                                 : const Color(0xFFFFB74D);
 
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.only(bottom: 8),
                           child: SelectableText.rich(
                             TextSpan(
                               children: [
                                 TextSpan(
                                   text: '[${entry.formattedTime}] ',
-                                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                  style: const TextStyle(color: Colors.white38, fontSize: 12),
                                 ),
                                 TextSpan(
                                   text: '[${entry.category}] ',
                                   style: TextStyle(
                                     color: color,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 11,
+                                    fontSize: 12,
                                   ),
                                 ),
                                 TextSpan(
                                   text: entry.message,
-                                  style: const TextStyle(color: Color(0xFFEEEEEE), fontSize: 12),
+                                  style: const TextStyle(color: Color(0xFFEEEEEE), fontSize: 13),
                                 ),
                               ],
                             ),
@@ -259,13 +263,13 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
                 },
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE5252A),
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
               onPressed: () async {
@@ -280,10 +284,10 @@ class _ProtocolLogSheetState extends State<_ProtocolLogSheet> {
                   );
                 }
               },
-              icon: const Icon(Icons.copy, color: Colors.white, size: 18),
+              icon: const Icon(Icons.copy, color: Colors.white, size: 22),
               label: const Text(
                 'Copy All Logs',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
           ],
