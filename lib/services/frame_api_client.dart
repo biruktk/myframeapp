@@ -436,11 +436,21 @@ class FrameApiClient {
   }
 
   /// GET `/api/frames` — frames accessible to the authenticated user (own + family).
+  static DateTime? _lastFetchFramesTime;
+  static List<Map<String, dynamic>> _lastFetchFramesResult = const [];
+
   Future<List<Map<String, dynamic>>> fetchFrames({
     String? baseUrlOverride,
     String? bearerToken,
     Duration? timeout,
+    bool force = false,
   }) async {
+    final now = DateTime.now();
+    if (!force &&
+        _lastFetchFramesTime != null &&
+        now.difference(_lastFetchFramesTime!) < const Duration(seconds: 10)) {
+      return _lastFetchFramesResult;
+    }
     final t = timeout ?? const Duration(seconds: 10);
     final base = _base(baseUrlOverride);
     try {
@@ -458,7 +468,10 @@ class FrameApiClient {
       if (json['ok'] != true) return [];
       final raw = json['frames'] as List<dynamic>?;
       if (raw == null) return [];
-      return raw.cast<Map<String, dynamic>>();
+      final result = raw.cast<Map<String, dynamic>>();
+      _lastFetchFramesTime = now;
+      _lastFetchFramesResult = result;
+      return result;
     } catch (_) {
       return [];
     }

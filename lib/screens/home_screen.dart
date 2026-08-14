@@ -172,22 +172,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final updated = Map<String, FrameStatus>.from(_frameStatuses);
 
     Future<void> probeOne(PairedFrame f) async {
-      FrameStatus? status;
-      // Probe BLE + STA siblings; cap so Home refresh stays snappy.
-      final macs = DeviceStore.statusMacCandidates(f).take(4);
-      for (final mac in macs) {
-        try {
-          status = await _apiClient
-              .fetchFrameStatus(mac: mac, timeout: const Duration(seconds: 4));
-          if (status != null) break;
-        } catch (_) {}
-      }
-      if (status != null) {
-        updated[f.deviceId] = status;
-      }
-      // Sticky: never wipe a last-known status on a transient probe miss.
-      // After Wi‑Fi setup the ESP turns BLE off — a failed probe must not
-      // flip the tile to "disconnected" every 10s poll.
+      final mac = DeviceStore.macForPairedFrame(f) ?? FrameMacUtil.normalizeSlug(f.deviceId);
+      if (mac == null || mac.isEmpty) return;
+      try {
+        final status = await _apiClient
+            .fetchFrameStatus(mac: mac, timeout: const Duration(seconds: 4));
+        if (status != null) {
+          updated[f.deviceId] = status;
+        }
+      } catch (_) {}
     }
 
     try {

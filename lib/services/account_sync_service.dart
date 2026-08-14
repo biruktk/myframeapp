@@ -242,6 +242,9 @@ class AccountSyncService {
   ///
   /// [pruneMissingFrames] overrides whether local frames absent from the server
   /// list are removed. Pass `false` after family join so a partial profile
+  static DateTime? _lastSyncAccountStateTime;
+  static Map<String, dynamic>? _lastSyncAccountStateResult;
+
   /// response cannot wipe frames that [DeviceStore.syncServerFrames] just added.
   Future<Map<String, dynamic>?> syncAccountState({
     bool force = false,
@@ -251,6 +254,12 @@ class AccountSyncService {
     String? authTokenOverride,
     AppSettings? appSettings,
   }) {
+    final now = DateTime.now();
+    if (!force &&
+        _lastSyncAccountStateTime != null &&
+        now.difference(_lastSyncAccountStateTime!) < const Duration(seconds: 10)) {
+      return Future.value(_lastSyncAccountStateResult);
+    }
     return _withSyncLock(() async {
       try {
         final token = (authTokenOverride ?? await _authToken()).trim();
@@ -264,6 +273,9 @@ class AccountSyncService {
 
         final body = jsonDecode(res.body) as Map<String, dynamic>;
         if (body['ok'] != true) return null;
+
+        _lastSyncAccountStateTime = now;
+        _lastSyncAccountStateResult = body;
 
         final serverVersion = (body['sync_version'] as num?)?.toInt() ?? 0;
         final localVersion = await localSyncVersion();
@@ -702,27 +714,6 @@ class AccountSyncService {
     }
 
     if (token.isEmpty) return;
-
-    try {
-      final uri = Uri.parse('$_apiBase/api/frames/pair');
-      final res = await _api
-          .post(
-            uri,
-            headers: _headers(token, json: true),
-            body: jsonEncode({'ble_mac': slug, 'set_primary': true}),
-          )
-          .timeout(const Duration(seconds: 12));
-      AppDiagLog.verbose(
-        '[account-sync] grantOwner manual pair $slug -> HTTP ${res.statusCode} ${res.body}',
-      );
-      if (res.statusCode == 200 ||
-          (res.body.isNotEmpty && res.body.contains('"ok":true'))) {
-        await _clearUnbound(slug);
-      }
-    } catch (e) {
-      // Endpoint not deployed yet — fall through to the normal bind re-push.
-      AppDiagLog.verbose('[account-sync] grantOwner pair endpoint skipped: $e');
-    }
 
     // Re-push the bind for the crowd path (also clears the ban on success).
     // Callers fire-and-forget this method, so awaiting here keeps the resync's
