@@ -111,23 +111,28 @@ class SleepModeStore {
     );
   }
 
-  /// `wifi_sleep` payload `data` per strict firmware protocol.
+  static String _toUtcTimeStr(TimeOfDay tod) {
+    final now = DateTime.now();
+    final dt = DateTime(now.year, now.month, now.day, tod.hour, tod.minute);
+    final utc = dt.toUtc();
+    final h = utc.hour.toString().padLeft(2, '0');
+    final m = utc.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  /// `wifi_sleep` payload `data` per strict firmware protocol Section 5.3.
   Map<String, dynamic> buildWifiSleepData() {
     if (!enabled) {
       return {
         'mode': 0,
-        'live': 0,
-        'timingtime': 0,
+        'begintime': '00:00',
+        'endtime': '00:00',
       };
     }
-    // Periodic Daily Sleep (mode = 2)
-    // Convert startTime/endTime to standard daily time offsets (seconds since start of day)
-    final liveSeconds = startTime.hour * 3600 + startTime.minute * 60;
-    final timingtimeSeconds = endTime.hour * 3600 + endTime.minute * 60;
     return {
       'mode': 2,
-      'live': liveSeconds,
-      'timingtime': timingtimeSeconds,
+      'begintime': _toUtcTimeStr(startTime),
+      'endtime': _toUtcTimeStr(endTime),
     };
   }
 
