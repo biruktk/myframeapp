@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
@@ -1662,6 +1663,7 @@ class _EmailNotVerifiedDialogState extends State<_EmailNotVerifiedDialog> {
   var _sent = false;
 
   Future<void> _resend() async {
+    HapticFeedback.lightImpact();
     setState(() => _busy = true);
     final r = await widget.auth.resendVerificationEmail(email: widget.email);
     if (!mounted) return;

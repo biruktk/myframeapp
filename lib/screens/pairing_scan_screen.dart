@@ -8,6 +8,7 @@ import '../models/pairing_nav_result.dart';
 import '../services/app_release_guard.dart';
 import '../services/device_store.dart';
 import '../navigation/pairing_flow_nav.dart';
+import '../widgets/shell_navigation.dart';
 import 'wifi_provision_screen.dart';
 
 /// Scan the QR shown on the frame display to capture [deviceId] + optional LAN [apiUrl].

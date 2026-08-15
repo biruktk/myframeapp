@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../utils/platform_share.dart';
 
+import '../config/api_config.dart';
 import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
 import '../services/ble_frame_device_transport.dart';
@@ -12,6 +13,9 @@ import '../models/pairing_nav_result.dart';
 import '../services/device_store.dart';
 import '../services/frame_forget_service.dart';
 import '../services/app_release_guard.dart';
+import '../services/frame_ble_mac_slug.dart';
+import '../services/frame_mac_util.dart';
+import '../services/slideshow_remote_api.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/device_transport.dart' show FrameConnectionState;
 import '../services/family_group_store.dart';
@@ -321,6 +325,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
     }
     return false;
+  }
+
+  Future<void> _stopFramePlayback(AppStrings s, PairedFrame f) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.stopPlaybackLabel),
+        content: Text(s.stopPlaybackConfirmBody),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(s.cancel)),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(s.stopPlaybackLabel),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final macSlug = frameBleMacSlug(f);
+    final token = AppSettingsScope.of(context).authToken.trim();
+    final stopped = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl)
+        .stopPlaylist(
+      bearerToken: token.isEmpty ? null : token,
+      macSlug: macSlug,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(stopped ? s.stopPlaybackSent : s.sendFailedRetry),
+      ),
+    );
   }
 
   Future<void> _confirmRemoveFrame(AppStrings s, PairedFrame f) async {
@@ -635,10 +673,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   PopupMenuButton<String>(
                                     tooltip: s.remove,
                                     onSelected: (value) {
-                                      if (value == 'remove') unawaited(_confirmRemoveFrame(s, f));
+                                      if (value == 'stop') {
+                                        unawaited(_stopFramePlayback(s, f));
+                                      } else if (value == 'remove') {
+                                        unawaited(_confirmRemoveFrame(s, f));
+                                      }
                                     },
                                     icon: Icon(Icons.more_horiz, color: cs.onSurfaceVariant, size: 20),
                                     itemBuilder: (ctx) => [
+                                      PopupMenuItem<String>(
+                                        value: 'stop',
+                                        child: Text(s.stopPlaybackLabel),
+                                      ),
                                       PopupMenuItem<String>(
                                         value: 'remove',
                                         child: Text(s.remove),

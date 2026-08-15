@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/device_store.dart';
@@ -26,7 +27,7 @@ class PlaylistScreen extends StatefulWidget {
 class _PlaylistScreenState extends State<PlaylistScreen> {
   var _loading = true;
   UserDashboardSnapshot? _dashboard;
-  ({List<String> imageIds, int intervalMinutes})? _localSlideshow;
+  ({List<String> imageIds, int intervalMinutes, String? albumId})? _localSlideshow;
   List<SendAlbumEntry> _albums = [];
 
   @override
@@ -117,6 +118,7 @@ class _PlaylistScreenState extends State<PlaylistScreen> {
   }
 
   Future<void> _sendAlbum(SendAlbumEntry album) async {
+    HapticFeedback.lightImpact();
     if (!await PlaylistSendNav.ensureReadyToSend(context)) return;
     if (!mounted) return;
     var paths = album.paths.where((p) {

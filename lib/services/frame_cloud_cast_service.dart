@@ -87,19 +87,6 @@ class FrameCloudCastService {
     final targets = _uploadTargets(paired);
     PhotoUploadResponse? lastRes;
 
-    if (!skipPlay) {
-      final stored = await SlideshowPlaylistStore.instance.load(paired);
-      if (stored != null && stored.imageIds.isNotEmpty) {
-        AppDiagLog.verbose('[CastService] Active playlist detected before single photo play — sending strategy_stop');
-        await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).stopPlaylist(
-          bearerToken: userAuthToken,
-          pairingToken: paired.resolvedPairingToken,
-          macSlug: frameBleMacSlug(paired),
-        ).catchError((_) => false);
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-      }
-    }
-
     for (var ti = 0; ti < targets.length; ti++) {
       final tryId = targets[ti];
 

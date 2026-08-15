@@ -165,10 +165,9 @@ final class ShareViewController: UIViewController {
     let encoded = (try? JSONEncoder().encode(Array(selectedFrameIds)))
       .flatMap { String(data: $0, encoding: .utf8) }
     defaults.set(encoded ?? "[]", forKey: selectedFramesKey)
-    defaults.synchronize()
   }
 
-  // MARK: - Attachment processing (transcoding)
+  // MARK: - Attachment processing (transcoding & iCloud resolution)
 
   private func processAttachments() {
     guard let item = extensionContext?.inputItems.first as? NSExtensionItem,
@@ -177,9 +176,25 @@ final class ShareViewController: UIViewController {
       return
     }
 
-    attachmentProviders = attachments.filter {
-      $0.hasItemConformingToTypeIdentifier(imageType)
+    let supportedUTIs = [
+      UTType.image.identifier,
+      "public.image",
+      "public.jpeg",
+      "public.png",
+      "public.heic",
+      UTType.url.identifier,
+      "public.file-url"
+    ]
+
+    attachmentProviders = attachments.filter { provider in
+      for uti in supportedUTIs {
+        if provider.hasItemConformingToTypeIdentifier(uti) {
+          return true
+        }
+      }
+      return false
     }
+
     guard !attachmentProviders.isEmpty else {
       showNoImages()
       return
@@ -190,31 +205,68 @@ final class ShareViewController: UIViewController {
     setStatus(nil, showSpinner: true)
 
     pending = attachmentProviders.count
+
     for provider in attachmentProviders {
-      provider.loadItem(forTypeIdentifier: imageType, completionHandler: { [weak self] item, error in
-        defer { self?.finishOne() }
-        guard let self, error == nil else {
-          self?.hasFailedDecode = true
-          return
-        }
-        if let url = item as? URL {
-          self.prepareImage(from: url)
-        } else if let image = item as? UIImage {
-          self.prepareImage(image, nameHint: "image")
-        } else if let data = item as? Data {
-          self.prepareImage(data)
+      // Determine conforming type identifier
+      let typeId: String
+      if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+        typeId = UTType.image.identifier
+      } else if provider.hasItemConformingToTypeIdentifier("public.image") {
+        typeId = "public.image"
+      } else if provider.hasItemConformingToTypeIdentifier("public.jpeg") {
+        typeId = "public.jpeg"
+      } else if provider.hasItemConformingToTypeIdentifier("public.png") {
+        typeId = "public.png"
+      } else if provider.hasItemConformingToTypeIdentifier("public.heic") {
+        typeId = "public.heic"
+      } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+        typeId = UTType.url.identifier
+      } else {
+        typeId = UTType.image.identifier
+      }
+
+      // Asynchronous iCloud Resolution: loadFileRepresentation fetches iCloud offloaded images automatically
+      provider.loadFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, error in
+        if let url = url, error == nil {
+          self?.prepareImage(from: url)
+          self?.finishOne()
         } else {
-          self.hasFailedDecode = true
+          // Fallback to loadInPlaceFileRepresentation
+          provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, _, error in
+            if let url = url, error == nil {
+              self?.prepareImage(from: url)
+              self?.finishOne()
+            } else {
+              // Final fallback to loadItem
+              provider.loadItem(forTypeIdentifier: typeId, options: nil) { [weak self] item, error in
+                defer { self?.finishOne() }
+                guard let self = self, error == nil else {
+                  self?.hasFailedDecode = true
+                  return
+                }
+                if let url = item as? URL {
+                  self.prepareImage(from: url)
+                } else if let image = item as? UIImage {
+                  self.prepareImage(image, nameHint: "image.jpg")
+                } else if let data = item as? Data {
+                  self.prepareImage(data)
+                } else {
+                  self.hasFailedDecode = true
+                }
+              }
+            }
+          }
         }
-      })
+      }
     }
   }
 
   private func finishOne() {
-    pending -= 1
-    if pending <= 0 {
-      DispatchQueue.main.async { [weak self] in
-        self?.finishPreparing()
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.pending -= 1
+      if self.pending <= 0 {
+        self.finishPreparing()
       }
     }
   }
@@ -236,11 +288,45 @@ final class ShareViewController: UIViewController {
   }
 
   private func prepareImage(from url: URL) {
-    guard let image = decodeImage(url: url) else {
+    guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
       hasFailedDecode = true
       return
     }
-    prepareImage(image, nameHint: url.lastPathComponent)
+
+    let uploadDir = container.appendingPathComponent("Uploads", isDirectory: true)
+    try? FileManager.default.createDirectory(at: uploadDir, withIntermediateDirectories: true)
+
+    let filename = "share_\(UUID().uuidString).jpg"
+    let destinationURL = uploadDir.appendingPathComponent(filename)
+
+    // Downsample using CGImageSource (Memory-efficient: max pixel size 2048 to prevent 120MB Extension Jetsam crash)
+    if let downsampledImage = downsample(imageAt: url, toMaxPixelSize: 2048) {
+      saveAndPrepare(image: downsampledImage, destinationURL: destinationURL, filename: filename)
+      return
+    }
+
+    // Fallback: decodeImage
+    if let fallbackImage = decodeImage(url: url) {
+      saveAndPrepare(image: fallbackImage, destinationURL: destinationURL, filename: filename)
+      return
+    }
+
+    hasFailedDecode = true
+  }
+
+  private func prepareImage(_ image: UIImage, nameHint: String) {
+    guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupId) ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+      hasFailedDecode = true
+      return
+    }
+
+    let uploadDir = container.appendingPathComponent("Uploads", isDirectory: true)
+    try? FileManager.default.createDirectory(at: uploadDir, withIntermediateDirectories: true)
+
+    let filename = "share_\(UUID().uuidString).jpg"
+    let destinationURL = uploadDir.appendingPathComponent(filename)
+
+    saveAndPrepare(image: image, destinationURL: destinationURL, filename: filename)
   }
 
   private func prepareImage(_ data: Data) {
@@ -248,38 +334,62 @@ final class ShareViewController: UIViewController {
       hasFailedDecode = true
       return
     }
-    prepareImage(image, nameHint: "image")
+    prepareImage(image, nameHint: "image.jpg")
   }
 
-  /// Transcodes any image (HEIC / RAW / Display P3 PNG / alpha / oriented) to
-  /// a plain 8-bit sRGB JPEG at 0.85 quality. Always draws through a
-  /// standard-sRGB `UIGraphicsImageRenderer` (`.preferredRange = .standard`),
-  /// which converts Display P3 into sRGB and bakes the EXIF orientation into
-  /// the pixels so the frame decodes colors correctly.
-  private func prepareImage(_ image: UIImage, nameHint: String) {
+  /// Memory-efficient downsampling via CGImageSource to prevent 120MB Extension Jetsam crash.
+  private func downsample(imageAt imageURL: URL, toMaxPixelSize maxPixelSize: CGFloat) -> UIImage? {
+    let imageSourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let imageSource = CGImageSourceCreateWithURL(imageURL as CFURL, imageSourceOptions) else {
+      return nil
+    }
+
+    let downsampleOptions = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+    ] as CFDictionary
+
+    guard let downsampledImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, downsampleOptions) else {
+      return nil
+    }
+
+    return UIImage(cgImage: downsampledImage)
+  }
+
+  private func saveAndPrepare(image: UIImage, destinationURL: URL, filename: String) {
     let size = image.size
     guard size.width > 0, size.height > 0 else {
       hasFailedDecode = true
       return
     }
+
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     format.preferredRange = .standard
     let rgb = UIGraphicsImageRenderer(size: size, format: format).image { _ in
       image.draw(in: CGRect(origin: .zero, size: size))
     }
-    guard let jpeg = rgb.jpegData(compressionQuality: jpegQuality) else {
+
+    guard let jpegData = rgb.jpegData(compressionQuality: jpegQuality) else {
       hasFailedDecode = true
       return
     }
-    let thumb = makeThumbnail(rgb)
-    prepared.append(
-      PreparedItem(
-        thumb: thumb,
-        jpeg: jpeg,
-        filename: "share_\(UUID().uuidString).jpg"
+
+    do {
+      try jpegData.write(to: destinationURL, options: .atomic)
+      let thumb = makeThumbnail(rgb)
+      prepared.append(
+        PreparedItem(
+          thumb: thumb,
+          fileURL: destinationURL,
+          filename: filename
+        )
       )
-    )
+    } catch {
+      hasFailedDecode = true
+    }
   }
 
   /// Decodes HEIC, JPEG, PNG (incl. Display P3) and RAW/DNG files.
@@ -297,7 +407,7 @@ final class ShareViewController: UIViewController {
     }
     let extent = ci.extent
     guard extent.width > 0, extent.height > 0 else { return nil }
-    let maxSide: CGFloat = 4096
+    let maxSide: CGFloat = 2048
     var scale: CGFloat = 1
     if max(extent.width, extent.height) > maxSide {
       scale = maxSide / max(extent.width, extent.height)
@@ -326,7 +436,7 @@ final class ShareViewController: UIViewController {
     }
   }
 
-  // MARK: - Send (inline progress upload)
+  // MARK: - Upload Trigger
 
   @objc private func onSendTapped() {
     guard !isSending, !selectedFrameIds.isEmpty, !prepared.isEmpty else { return }
@@ -345,29 +455,15 @@ final class ShareViewController: UIViewController {
   }
 
   private func prepareAndStartUpload() {
-    guard let container = FileManager.default
-      .containerURL(forSecurityApplicationGroupIdentifier: appGroupId),
-      !prepared.isEmpty else {
+    guard !prepared.isEmpty else {
       failSend()
       return
     }
 
-    // Sanitized JPEGs → shared container so the foreground session can read
-    // them (and retry can re-read the same files on failure).
-    let uploadDir = container.appendingPathComponent("Uploads", isDirectory: true)
-    try? FileManager.default.createDirectory(
-      at: uploadDir,
-      withIntermediateDirectories: true
-    )
-
     var jpegURLs: [URL] = []
     for item in prepared {
-      let dest = uploadDir.appendingPathComponent(item.filename)
-      do {
-        try item.jpeg.write(to: dest, options: .atomic)
-        jpegURLs.append(dest)
-      } catch {
-        NSLog("[MyFrame Share] write \(item.filename) failed: \(error)")
+      if FileManager.default.fileExists(atPath: item.fileURL.path) {
+        jpegURLs.append(item.fileURL)
       }
     }
 
@@ -1037,12 +1133,12 @@ private struct FrameInfo {
 
 private final class PreparedItem {
   let thumb: UIImage
-  let jpeg: Data
+  let fileURL: URL
   let filename: String
 
-  init(thumb: UIImage, jpeg: Data, filename: String) {
+  init(thumb: UIImage, fileURL: URL, filename: String) {
     self.thumb = thumb
-    self.jpeg = jpeg
+    self.fileURL = fileURL
     self.filename = filename
   }
 }

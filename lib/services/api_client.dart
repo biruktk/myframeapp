@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'auth_session_manager.dart';
+import 'protocol_logger_service.dart';
 
 /// Shared JSON HTTP client with a **global 401 interceptor**.
 ///

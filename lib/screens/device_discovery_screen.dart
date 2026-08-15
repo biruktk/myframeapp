@@ -17,7 +17,7 @@ import 'wifi_provision_screen.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
 import '../services/app_release_guard.dart';
-import '../widgets/debug_slog_overlay.dart';
+// import '../widgets/debug_slog_overlay.dart';
 import '../widgets/shell_navigation.dart';
 
 class DeviceDiscoveryScreen extends StatefulWidget {
@@ -591,8 +591,9 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     final bluetoothSettingsLabel =
         Platform.isIOS ? 'Open iPhone Settings' : s.openBluetoothSystemSettings;
 
-    return DebugSlogOverlay(
-      child: Scaffold(
+    // return DebugSlogOverlay(
+    //   child: Scaffold(
+    return Scaffold(
       appBar: AppBar(
         title: Text(s.scanDeviceTitle),
         actions: [
@@ -920,7 +921,6 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
             ),
         ],
       ),
-    ),
     );
   }
 

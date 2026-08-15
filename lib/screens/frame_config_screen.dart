@@ -167,6 +167,7 @@ class _FrameConfigScreenState extends State<FrameConfigScreen> {
   }
 
   Future<void> _sendConfig() async {
+    HapticFeedback.lightImpact();
     if (_selected == null || _jsonError != null || _busy) return;
     setState(() {
       _busy = true;

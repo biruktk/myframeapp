@@ -5,8 +5,8 @@ import 'package:share_plus/share_plus.dart';
 import '../l10n/app_strings.dart';
 import '../services/app_local_reset.dart';
 import '../services/auth_session_manager.dart';
-import '../services/network_link.dart';
 import '../services/device_store.dart';
+import '../services/network_link.dart';
 import '../services/protocol_logger_service.dart';
 import '../settings/app_settings.dart';
 import '../widgets/floating_log_button.dart';
@@ -29,7 +29,7 @@ class _SettingsDebugScreenState extends State<SettingsDebugScreen> {
   }
 
   Future<void> _load() async {
-    final onLink = await NetworkLink.onHomeLink();
+    final onLink = await hasNetworkInterface();
     await DeviceStore.instance.load();
     if (!mounted) return;
     setState(() {

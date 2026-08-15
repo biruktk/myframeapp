@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 
 import '../config/api_config.dart';
 import '../l10n/app_strings.dart';
@@ -128,6 +129,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
       );
 
   Future<void> _handleSendPlaylist() async {
+    HapticFeedback.lightImpact();
     if (_isSending) return;
     final total = _images.length;
     if (total == 0) return;
@@ -250,6 +252,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
         paired: activePaired,
         imageIds: allIds,
         intervalMinutes: profile.intervalMinutes,
+        albumId: widget.albumId,
       ));
       unawaited(SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
         bearerToken: authToken,

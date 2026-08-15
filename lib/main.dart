@@ -23,7 +23,7 @@ import 'services/external_share_queue.dart';
 import 'services/google_photos_service.dart';
 import 'services/icloud_photos_service.dart';
 import 'services/fcm_service.dart';
-import 'widgets/floating_log_button.dart';
+// import 'widgets/floating_log_button.dart';
 
 final DeviceTransport _globalTransport = BleFrameDeviceTransport.instance;
 
@@ -121,7 +121,8 @@ class MyFrameApp extends StatelessWidget {
                       systemFactor * comfortBoost,
                     ).clamp(minScaleFactor: 0.88, maxScaleFactor: 1.9),
                   ),
-                  child: FloatingLogOverlay(child: c),
+                  // child: FloatingLogOverlay(child: c),
+                  child: c,
                 );
               },
               supportedLocales: const [

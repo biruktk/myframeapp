@@ -52,18 +52,26 @@ class AlbumDeleteService {
           ];
     if (targets.isEmpty) return;
 
-    // One ALBUM_DELETE_SYNC for the album: drive it from the active frame's
-    // updated active list + playback strategy, and target every paired frame
-    // so each drops the deleted images and continues autonomous playback.
-    final active = targets.first;
+    // Determine per-frame whether the deleted album IS the active playlist.
+    // Only frames whose stored playlist came from this album are targeted and
+    // stopped (remaining = [] → backend publishes ONLY `strategy_stop`).
+    // Other frames keep whatever they were playing (left untouched by the
+    // sync). The album record is always deleted server-side by the route.
+    final profile = await FrameSettingsStore.instance.load(targets.first);
     final macSlugs = <String>[];
     for (final frame in targets) {
       final macSlug = frameBleMacSlug(frame);
-      if (macSlug.isNotEmpty && macSlug != 'FRAME') macSlugs.add(macSlug);
+      if (macSlug.isEmpty || macSlug == 'FRAME') continue;
+      final rec = await SlideshowPlaylistStore.instance.load(frame);
+      final isActiveAlbum = rec?.albumId != null && rec!.albumId == albumId;
+      if (isActiveAlbum) macSlugs.add(macSlug);
     }
-    final profile = await FrameSettingsStore.instance.load(active);
-    final stored = await SlideshowPlaylistStore.instance.load(active);
-    final remainingIds = stored?.imageIds ?? const <String>[];
+
+    // Full delete: send an EXPLICITLY EMPTY remaining list so
+    // `album_delete_sync.ts` falls into its stop branch and dispatches ONLY
+    // `strategy_stop` (never an empty `strategy_bin`, never a fallback
+    // `play`). Frames not matched above are simply not targeted.
+    final remainingIds = const <String>[];
 
     await FrameApiClient().deleteUserAlbumSync(
       bearerToken: tok,

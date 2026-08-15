@@ -7037,6 +7037,33 @@ class AppStrings {
       );
 
   /// Playlist delete confirmation (Gallery ▸ Playlists).
+  String get stopPlaybackLabel => _l6(
+        en: 'Stop playback',
+        zh: '停止播放',
+        es: 'Detener reproducción',
+        fr: 'Arrêter la lecture',
+        de: 'Wiedergabe stoppen',
+        ja: '再生を停止',
+      );
+
+  String get stopPlaybackConfirmBody => _l6(
+        en: 'Stop the current playlist on this frame?',
+        zh: '停止此相框上的当前播放列表？',
+        es: '¿Detener la lista actual en este marco?',
+        fr: 'Arrêter la playlist actuelle sur ce cadre ?',
+        de: 'Aktuelle Playlist auf diesem Rahmen stoppen?',
+        ja: 'このフレームの現在のプレイリストを停止しますか？',
+      );
+
+  String get stopPlaybackSent => _l6(
+        en: 'Playback stopped',
+        zh: '播放已停止',
+        es: 'Reproducción detenida',
+        fr: 'Lecture arrêtée',
+        de: 'Wiedergabe gestoppt',
+        ja: '再生を停止しました',
+      );
+
   String get deleteAlbumTitle => _l6(
         en: 'Delete Playlist',
         zh: '删除播放列表',
@@ -7503,6 +7530,14 @@ class AppStrings {
         fr: 'Échec de connexion. Réessayez.',
         de: 'Verbindung fehlgeschlagen. Erneut versuchen.',
         ja: '接続に失敗しました。再試行してください。',
+      );
+  String get wifiIncorrectPassword => _l6(
+        en: 'Incorrect Wi‑Fi password. Please check and try again.',
+        zh: 'Wi‑Fi 密码错误。请检查后重试。',
+        es: 'Contraseña Wi‑Fi incorrecta. Verifique e inténtelo de nuevo.',
+        fr: 'Mot de passe Wi‑Fi incorrect. Vérifiez et réessayez.',
+        de: 'Falsches WLAN-Passwort. Bitte überprüfen und erneut versuchen.',
+        ja: 'Wi‑Fi パスワードが正しくありません。確認して再試行してください。',
       );
   String get wifiConnectFrameFailed => _l6(
         en: 'Could not connect the frame to Wi‑Fi. Try again.',

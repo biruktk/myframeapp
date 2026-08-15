@@ -23,7 +23,7 @@ import '../services/app_release_guard.dart';
 import '../services/cloud_photo_upload_service.dart';
 import '../services/in_app_notification_store.dart';
 import '../services/sync_pipeline.dart';
-import '../widgets/debug_slog_overlay.dart';
+// import '../widgets/debug_slog_overlay.dart';
 import '../widgets/shell_navigation.dart';
 import '../services/frame_cloud_cast_service.dart';
 import '../services/editor_settings_cache.dart';
@@ -1089,6 +1089,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
           paired: activePaired,
           imageIds: allIds,
           intervalMinutes: _playlistIntervalMinutes,
+          albumId: widget.albumId,
         );
 
         try {
@@ -1330,8 +1331,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
     final viewInsets = MediaQuery.viewInsetsOf(context);
     final keyboardOpen = viewInsets.bottom > 0;
 
-    return DebugSlogOverlay(
-      child: PopScope(
+    // return DebugSlogOverlay(
+    //   child: PopScope(
+    return PopScope(
         canPop: true,
         child: Scaffold(
           resizeToAvoidBottomInset: true,
@@ -1462,8 +1464,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                   ],
                 ),
         ),
-      ),
-    );
+      );
   }
 
   String _slideshowChoiceLabel(SlideshowStyle e, AppStrings s) {
@@ -3069,8 +3070,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                           : null,
                       onPressed: _uploading
                           ? null
-                          : () async {
-                              await _send();
+                          : () {
+                              HapticFeedback.lightImpact();
+                              if (!mounted) return;
+                              setState(() => _uploading = true);
+                              unawaited(_send());
                             },
                     ),
                   ),

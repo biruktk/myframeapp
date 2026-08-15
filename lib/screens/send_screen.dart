@@ -417,22 +417,32 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
       }
       return;
     }
-    final sheet = await showSendAlbumSettingsSheet(context, photoPaths: pathList);
-    if (!context.mounted || sheet == null) return;
 
-    if (sheet.addToAlbumId != null) {
-      await SendAlbumsStore.instance.addPathsToAlbum(sheet.addToAlbumId!, pathList);
-      unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: sheet.addToAlbumId));
-    } else if (sheet.newAlbumName != null && sheet.newAlbumName!.trim().isNotEmpty) {
-      await SendAlbumsStore.instance.createAlbum(sheet.newAlbumName!.trim(), pathList);
-      await SendAlbumsStore.instance.load();
-      final id = SendAlbumsStore.instance.albums.isNotEmpty
-          ? SendAlbumsStore.instance.albums.first.id
-          : null;
-      if (id != null) {
-        unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
+    // Bypass album settings sheet for single image — go directly to editor
+    SendAlbumSheetResult? sheet;
+    if (pathList.length > 1) {
+      sheet = await showSendAlbumSettingsSheet(context, photoPaths: pathList);
+      if (!context.mounted || sheet == null) return;
+
+      if (sheet.addToAlbumId != null) {
+        await SendAlbumsStore.instance.addPathsToAlbum(sheet.addToAlbumId!, pathList);
+        unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: sheet.addToAlbumId));
+      } else if (sheet.newAlbumName != null && sheet.newAlbumName!.trim().isNotEmpty) {
+        await SendAlbumsStore.instance.createAlbum(sheet.newAlbumName!.trim(), pathList);
+        await SendAlbumsStore.instance.load();
+        final id = SendAlbumsStore.instance.albums.isNotEmpty
+            ? SendAlbumsStore.instance.albums.first.id
+            : null;
+        if (id != null) {
+          unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
+        }
       }
     }
+
+    final overlay = sheet?.overlay ?? const SendOverlayOptions();
+    final locationLine = sheet?.locationLine;
+    final displaySeconds = sheet?.displaySeconds ?? 10;
+
     for (var i = 0; i < shareBytes.length; i++) {
       if (!context.mounted) return;
       final sent = await Navigator.push<bool>(
@@ -442,9 +452,9 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
             imageBytes: shareBytes[i],
             galleryPersistPath: pathList.length > i ? pathList[i] : null,
             slideshow: slideshow,
-            overlay: sheet.overlay,
-            overlayLocationOverride: sheet.locationLine,
-            displaySeconds: sheet.displaySeconds,
+            overlay: overlay,
+            overlayLocationOverride: locationLine,
+            displaySeconds: displaySeconds,
           ),
         ),
       );
@@ -555,8 +565,9 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
       return;
     }
 
-    final skipAlbumSheet = ShellNavigation.consumeSkipAlbumSheetOnNextGalleryPick();
+    // Bypass album settings sheet for single image — go directly to editor
     SendAlbumSheetResult? sheet;
+    final skipAlbumSheet = ShellNavigation.consumeSkipAlbumSheetOnNextGalleryPick() || paths.length == 1;
     if (!skipAlbumSheet) {
       sheet = await showSendAlbumSettingsSheet(context, photoPaths: paths);
       if (!context.mounted || sheet == null) return;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/app_diag_log.dart';
@@ -102,6 +103,7 @@ class _ShareTargetBottomSheetWidgetState
       _frames.where((f) => _selectedIds.contains(f.deviceId)).toList();
 
   Future<void> _onSend() async {
+    HapticFeedback.lightImpact();
     final s = AppStrings.of(context);
     if (_paths.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

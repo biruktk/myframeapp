@@ -9,7 +9,6 @@ import '../services/ota_update_store.dart';
 import '../services/sleep_mode_store.dart';
 import '../settings/app_settings.dart';
 import 'settings_account_screen.dart';
-import 'settings_notifications_screen.dart';
 import 'settings_language_screen.dart';
 // import 'settings_appearance_screen.dart';
 // import 'settings_integrations_screen.dart';
@@ -17,6 +16,7 @@ import 'settings_ai_generate_screen.dart';
 import 'settings_app_preferences_screen.dart';
 import 'settings_help_screen.dart';
 import 'settings_log_screen.dart';
+import 'settings_debug_screen.dart';
 import 'device_discovery_screen.dart';
 
 import 'playlist_screen.dart';
@@ -214,18 +214,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               },
             ),
-            _divider(cs),
-            _tile(
-              context: context,
-              icon: Icons.playlist_play,
-              title: s.playlist,
-              subtitle: s.yourPlaylists,
-              onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const PlaylistScreen()),
-              ),
-            ),
-            _divider(cs),
-            _tile(
+_tile(
               context: context,
               icon: Icons.tune_rounded,
               title: s.frameProfileNavTitle,
@@ -270,16 +259,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildGroup(cs, [
             _tile(
               context: context,
-              icon: Icons.notifications_none,
-              title: s.notifications,
-              subtitle: s.notificationsSub,
-              onTap: () => Navigator.push<void>(
-                context, MaterialPageRoute<void>(builder: (_) => const SettingsNotificationsScreen()),
-              ),
-            ),
-            _divider(cs),
-            _tile(
-              context: context,
               icon: Icons.language,
               title: s.language,
               subtitle: _languageSubtitle(app, s),
@@ -321,18 +300,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 context, MaterialPageRoute<void>(builder: (_) => const SettingsHelpScreen()),
               ),
             ),
-            if (app.debugModeEnabled) ...[
-              _divider(cs),
-              _tile(
-                context: context,
-                icon: Icons.receipt_long_outlined,
-                title: s.operationLog,
-                subtitle: s.operationLogSub,
-                onTap: () => Navigator.push<void>(
-                  context, MaterialPageRoute<void>(builder: (_) => const SettingsLogScreen()),
-                ),
-              ),
-            ],
+            _divider(cs),
+            // _tile(
+            //   context: context,
+            //   icon: Icons.bug_report,
+            //   title: 'Debug',
+            //   subtitle: app.debugModeEnabled ? 'Debug mode active' : 'Enable debug features',
+            //   onTap: () => Navigator.push<void>(
+            //     context, MaterialPageRoute<void>(builder: (_) => const SettingsDebugScreen()),
+            //   ),
+            // ),
+            // if (app.debugModeEnabled) ...[
+            //   _divider(cs),
+            //   _tile(
+            //     context: context,
+            //     icon: Icons.receipt_long_outlined,
+            //     title: s.operationLog,
+            //     subtitle: s.operationLogSub,
+            //     onTap: () => Navigator.push<void>(
+            //       context, MaterialPageRoute<void>(builder: (_) => const SettingsLogScreen()),
+            //     ),
+            //   ),
+            // ],
           ]),
           const SizedBox(height: 24),
           SizedBox(

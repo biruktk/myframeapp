@@ -9,15 +9,26 @@ import 'device_store.dart';
 import 'frame_mac_util.dart';
 import 'app_diag_log.dart';
 
+enum BlufiErrorType {
+  none,
+  authFailure,
+  apNotFound,
+  assocFailure,
+  handshakeTimeout,
+  unknown,
+}
+
 class BlufiProvisionResult {
   const BlufiProvisionResult({
     required this.ok,
     required this.message,
     this.confirmed = false,
+    this.errorType = BlufiErrorType.none,
   });
   final bool ok;
   final String message;
   final bool confirmed;
+  final BlufiErrorType errorType;
 }
 
 /// After Wi‑Fi, optional `mqtt_config` JSON (`host`, `port`, `usr`, `pwd` in `data`).
@@ -173,6 +184,7 @@ class BlufiProvisioningService {
 
           _d('starting BluFi Wi‑Fi provisioning flow');
           var ack = false;
+          BlufiErrorType blufiErrorType = BlufiErrorType.none;
           for (var retry = 1; retry <= 3; retry++) {
             if (retry > 1) {
               _d('wi‑fi send retry=$retry — reconnecting');
@@ -194,7 +206,7 @@ class BlufiProvisioningService {
                 );
               }
             }
-            ack = await _sendBlufiStaFrames(
+            final blufiResult = await _sendBlufiStaFrames(
               writeChar: picked!.write,
               services: services,
               preferredNotify: picked!.notifyGuid,
@@ -202,8 +214,10 @@ class BlufiProvisioningService {
               password: password,
               startSeq: blufiStaStartSeq,
             );
+            ack = blufiResult.$1;
+            blufiErrorType = blufiResult.$2;
             if (ack) break;
-            _d('wi‑fi send attempt $retry failed, retrying…');
+            _d('wi‑fi send attempt $retry failed (errorType=$blufiErrorType), retrying…');
           }
           // EspBluFi order: mqtt_config only before Wi‑Fi (scan / manual config session), never after STA connect.
           if (ack && serverConfigAlreadySent) {
@@ -225,6 +239,15 @@ class BlufiProvisioningService {
               ok: true,
               confirmed: true,
               message: 'Frame confirmed Wi-Fi connection',
+            );
+          }
+          // If we got a specific error type, return a targeted message
+          if (blufiErrorType != BlufiErrorType.none) {
+            return BlufiProvisionResult(
+              ok: false,
+              confirmed: false,
+              errorType: blufiErrorType,
+              message: _errorMessageForType(blufiErrorType),
             );
           }
           wroteWifiWithoutAck = true;
@@ -257,7 +280,7 @@ class BlufiProvisioningService {
           ok: false,
           confirmed: false,
           message:
-              'The frame did not confirm Wi-Fi over Bluetooth. Check the password, use 2.4 GHz Wi‑Fi if possible, stay close to the frame, and try again.',
+              'The frame did not confirm Wi-Fi over Bluetooth. Check the password, stay close to the frame, and try again.',
         );
       }
       _d('no candidate left with usable GATT');
@@ -438,7 +461,7 @@ class BlufiProvisioningService {
     throw lastError ?? StateError('connect failed');
   }
 
-  Future<bool> _sendBlufiStaFrames({
+  Future<(bool, BlufiErrorType)> _sendBlufiStaFrames({
     required BluetoothCharacteristic writeChar,
     required List<BluetoothService> services,
     required Guid preferredNotify,
@@ -529,7 +552,8 @@ class BlufiProvisioningService {
       var ack = false;
       var seenStatusFrame = false;
       var handledNotifyCount = 0;
-      final deadline = DateTime.now().add(const Duration(seconds: 25));
+      BlufiErrorType errorType = BlufiErrorType.none;
+      final deadline = DateTime.now().add(const Duration(seconds: 12));
       var nextStatusPollAt = DateTime.now().add(const Duration(milliseconds: 1500));
       while (DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 200));
@@ -556,9 +580,20 @@ class BlufiProvisioningService {
               ack = true;
               break;
             }
-            _d(
-              'blufi: status frame opMode=0x${opMode.toRadixString(16)} staState=0x${staState.toRadixString(16)} softApConn=$softApConn',
-            );
+            // Parse failure reason code (ESP32 Wi-Fi reason codes)
+            if (parsed.data.length >= 4) {
+              final reasonCode = parsed.data[3];
+              errorType = _mapReasonCodeToErrorType(reasonCode);
+              _d(
+                'blufi: Wi-Fi failure detected staState=0x${staState.toRadixString(16)} reasonCode=$reasonCode errorType=$errorType',
+              );
+            } else {
+              // Infer error type from staState when reason code not present
+              errorType = _inferErrorTypeFromStaState(staState);
+              _d(
+                'blufi: status frame opMode=0x${opMode.toRadixString(16)} staState=0x${staState.toRadixString(16)} softApConn=$softApConn (inferred errorType=$errorType)',
+              );
+            }
           }
         }
         if (ack) break;
@@ -572,12 +607,80 @@ class BlufiProvisioningService {
           'blufi: status frame(s) received but no connected-with-ip state before timeout',
         );
       }
-      _d('blufi ack=$ack');
-      return ack;
+      _d('blufi ack=$ack errorType=$errorType');
+      return (ack, errorType);
     } catch (e, st) {
       _d('blufi error: $e');
       _d('blufi stack: $st');
-      return false;
+      return (false, BlufiErrorType.unknown);
+    }
+  }
+
+  BlufiErrorType _mapReasonCodeToErrorType(int reasonCode) {
+    // ESP32 ESP-IDF Wi-Fi reason codes
+    // 2: WIFI_REASON_AUTH_EXPIRE
+    // 15: WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT
+    // 201: WIFI_REASON_NO_AP_FOUND
+    // 202: WIFI_REASON_AUTH_FAIL
+    // 204: WIFI_REASON_HANDSHAKE_TIMEOUT
+    // 205: WIFI_REASON_ASSOC_FAIL
+    switch (reasonCode) {
+      case 2:
+      case 202:
+        return BlufiErrorType.authFailure;
+      case 15:
+      case 204:
+        return BlufiErrorType.handshakeTimeout;
+      case 201:
+        return BlufiErrorType.apNotFound;
+      case 205:
+        return BlufiErrorType.assocFailure;
+      default:
+        return BlufiErrorType.unknown;
+    }
+  }
+
+  BlufiErrorType _inferErrorTypeFromStaState(int staState) {
+    // ESP32 Wi-Fi station states (from wifi_mode.h / esp_wifi_types.h)
+    // 0: WIFI_STA_CONNECTED (success)
+    // 1: WIFI_STA_CONNECTING
+    // 2: WIFI_STA_DISCONNECTED
+    // 3: WIFI_STA_AUTHMODE_CHANGE
+    // 4: WIFI_STA_CONNECT_FAILED (generic)
+    // 5: WIFI_STA_WRONG_PASSWORD
+    // 6: WIFI_STA_NO_AP_FOUND
+    // 7: WIFI_STA_AUTH_FAIL
+    // 8: WIFI_STA_ASSOC_FAIL
+    // 9: WIFI_STA_HANDSHAKE_TIMEOUT
+    switch (staState) {
+      case 5:
+      case 7:
+        return BlufiErrorType.authFailure;
+      case 6:
+        return BlufiErrorType.apNotFound;
+      case 8:
+        return BlufiErrorType.assocFailure;
+      case 9:
+        return BlufiErrorType.handshakeTimeout;
+      default:
+        return BlufiErrorType.unknown;
+    }
+  }
+
+  String _errorMessageForType(BlufiErrorType type) {
+    switch (type) {
+      case BlufiErrorType.authFailure:
+        return 'Incorrect Wi-Fi password. Please check and try again.';
+      case BlufiErrorType.apNotFound:
+        return 'Wi-Fi network not found. Check the network name and try again.';
+      case BlufiErrorType.handshakeTimeout:
+        return 'Wi-Fi handshake timed out. Please try again.';
+      case BlufiErrorType.assocFailure:
+        return 'Failed to associate with Wi‑Fi. Check the password and try again.';
+      case BlufiErrorType.unknown:
+      case BlufiErrorType.none:
+      default:
+        return 'Wi-Fi connection failed. Check the password, stay close to the frame, and try again.';
     }
   }
 

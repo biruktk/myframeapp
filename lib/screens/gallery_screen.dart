@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/gallery_send_flow.dart';
@@ -649,6 +650,7 @@ class _PersonalPhotoViewerScreenState extends State<_PersonalPhotoViewerScreen> 
   }
 
   Future<void> _sendCurrent() async {
+    HapticFeedback.lightImpact();
     if (widget.paths.isEmpty) return;
     final path = widget.paths[_index];
     final file = File(path);

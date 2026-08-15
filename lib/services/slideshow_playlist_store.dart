@@ -18,6 +18,7 @@ class SlideshowPlaylistStore {
     required PairedFrame? paired,
     required List<String> imageIds,
     required int intervalMinutes,
+    String? albumId,
   }) async {
     final mac = frameBleMacSlug(paired);
     final p = await SharedPreferences.getInstance();
@@ -26,12 +27,13 @@ class SlideshowPlaylistStore {
       jsonEncode({
         'imageIds': imageIds,
         'intervalMinutes': intervalMinutes,
+        if (albumId != null && albumId.trim().isNotEmpty) 'albumId': albumId.trim(),
         'updatedAtMs': DateTime.now().millisecondsSinceEpoch,
       }),
     );
   }
 
-  Future<({List<String> imageIds, int intervalMinutes})?> load(
+  Future<({List<String> imageIds, int intervalMinutes, String? albumId})?> load(
     PairedFrame? paired,
   ) async {
     final mac = frameBleMacSlug(paired);
@@ -48,7 +50,12 @@ class SlideshowPlaylistStore {
           (map['imageIds'] as List<dynamic>?)?.map((e) => e.toString()).toList() ??
               [];
       final mins = map['intervalMinutes'] as int? ?? 60;
-      return (imageIds: ids, intervalMinutes: mins);
+      final albumId = map['albumId'] as String?;
+      return (
+        imageIds: ids,
+        intervalMinutes: mins,
+        albumId: (albumId == null || albumId.isEmpty) ? null : albumId,
+      );
     } catch (_) {
       return null;
     }

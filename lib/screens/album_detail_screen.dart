@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/gallery_photo_picker.dart';
@@ -253,6 +254,7 @@ class _AlbumDetailScreenState extends State<AlbumDetailScreen> {
   }
 
   Future<void> _sendPlaylist() async {
+    HapticFeedback.lightImpact();
     final a = _album;
     if (a == null) return;
     final s = AppStrings.of(context);

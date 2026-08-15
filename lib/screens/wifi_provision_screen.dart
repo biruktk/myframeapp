@@ -18,7 +18,7 @@ import 'frame_profile_setup_screen.dart';
 import '../services/permission_gate.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
-import '../widgets/debug_slog_overlay.dart';
+// import '../widgets/debug_slog_overlay.dart';
 import '../widgets/progress_action_button.dart';
 import '../widgets/shell_navigation.dart';
 
@@ -62,6 +62,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   bool _wifiConfirmed = false;
   String? _currentWifiSsid;
   String? _frameMac;
+  bool _isAuthError = false;
 
   @override
   void initState() {
@@ -317,7 +318,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       );
 
       AppDiagLog.verbose(
-        '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}"',
+        '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}" errorType=${provision.errorType}',
       );
 
       if (!mounted) return;
@@ -326,14 +327,18 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         // Never persist a failed SSID as "connected".
         await DeviceStore.instance.clearWifiProvision();
         if (!mounted) return;
+        final isAuthError = provision.errorType == BlufiErrorType.authFailure;
         setState(() {
           _busy = false;
           _wifiConfirmed = false;
           _status = null;
-          _error = AppDiagLog.userFacingStatus(
-            provision.message,
-            fallback: s.wifiConnectionFailed,
-          );
+          _isAuthError = isAuthError;
+          _error = isAuthError
+              ? provision.message
+              : AppDiagLog.userFacingStatus(
+                  provision.message,
+                  fallback: s.wifiConnectionFailed,
+                );
         });
         return;
       }
@@ -401,8 +406,9 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     final rawMac = _frameMac ?? paired?.deviceId ?? '';
     final mac = rawMac.isNotEmpty ? FrameMacUtil.normalizeSlug(rawMac) ?? rawMac : '';
 
-    return DebugSlogOverlay(
-      child: GestureDetector(
+    // return DebugSlogOverlay(
+    //   child: GestureDetector(
+    return GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         behavior: HitTestBehavior.opaque,
         child: Scaffold(
@@ -783,12 +789,27 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                                   fillColor: cs.surface,
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(color: cs.outlineVariant, width: 1.5),
+                                    borderSide: BorderSide(
+                                      color: _isAuthError ? _kRed : cs.outlineVariant,
+                                      width: 1.5,
+                                    ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(8),
-                                    borderSide: BorderSide(color: cs.outlineVariant, width: 1.5),
+                                    borderSide: BorderSide(
+                                      color: _isAuthError ? _kRed : cs.outlineVariant,
+                                      width: 1.5,
+                                    ),
                                   ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                    borderSide: BorderSide(
+                                      color: _isAuthError ? _kRed : cs.primary,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  errorText: _isAuthError ? s.wifiIncorrectPassword : null,
+                                  errorStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                                   isDense: true,
                                 ),
@@ -910,7 +931,6 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
             ),
           ],
         ),
-      ),
       ),
     );
   }
