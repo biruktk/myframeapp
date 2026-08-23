@@ -40,7 +40,7 @@ class SlideshowRemoteApi {
       'strategy': strategy,
       'begintime': nowMs.toString(),
       'endtime': durationHours > 0 ? (nowMs + durationHours * 3600 * 1000).toString() : '',
-      'idle': 0,
+      'idle': 1,
     };
     if (skipPlay) body['skipPlay'] = true;
     final res = await ApiClient(bearerToken: bt).post(

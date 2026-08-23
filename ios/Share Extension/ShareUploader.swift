@@ -263,7 +263,7 @@ final class ShareUploader {
       "strategy": rules.strategy,
       "begintime": nowMs,
       "endtime": endtime,
-      "idle": 0,
+      "idle": 1,
       "skipPlay": true,
     ]
     request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()

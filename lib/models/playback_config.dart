@@ -8,7 +8,7 @@ class PlaybackConfig {
     required this.intervalMinutes,
     this.strategy = 1,
     this.durationHours = 0,
-    this.idle = 0,
+    this.idle = 1,
   });
 
   Map<String, dynamic> toJson() => {
@@ -22,7 +22,7 @@ class PlaybackConfig {
         intervalMinutes: json['intervalMinutes'] ?? 1,
         strategy: json['strategy'] ?? 1,
         durationHours: json['durationHours'] ?? 0,
-        idle: json['idle'] ?? 0,
+        idle: json['idle'] ?? 1,
       );
 
   static const List<int> kDurationOptions = [0, 6, 12, 24, 48, 72];

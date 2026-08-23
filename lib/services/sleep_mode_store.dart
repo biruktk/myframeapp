@@ -111,28 +111,26 @@ class SleepModeStore {
     );
   }
 
-  static String _toUtcTimeStr(TimeOfDay tod) {
-    final now = DateTime.now();
-    final dt = DateTime(now.year, now.month, now.day, tod.hour, tod.minute);
-    final utc = dt.toUtc();
-    final h = utc.hour.toString().padLeft(2, '0');
-    final m = utc.minute.toString().padLeft(2, '0');
-    return '$h:$m';
-  }
-
   /// `wifi_sleep` payload `data` per strict firmware protocol Section 5.3.
+  ///
+  /// The server is authoritative for timezone math: we send the user's LOCAL
+  /// wall-clock times plus the device's UTC offset, and the backend converts to
+  /// UTC before packing `beginTime`/`endTime` for the firmware.
   Map<String, dynamic> buildWifiSleepData() {
+    final offsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
     if (!enabled) {
       return {
         'mode': 0,
         'begintime': '00:00',
         'endtime': '00:00',
+        'timezoneOffsetMinutes': offsetMinutes,
       };
     }
     return {
       'mode': 2,
-      'begintime': _toUtcTimeStr(startTime),
-      'endtime': _toUtcTimeStr(endTime),
+      'begintime': _toHhMm(startTime),
+      'endtime': _toHhMm(endTime),
+      'timezoneOffsetMinutes': offsetMinutes,
     };
   }
 

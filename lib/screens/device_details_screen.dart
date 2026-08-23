@@ -207,8 +207,11 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
     final isOnline = st?.isEffectivelyOnline ?? false;
     final battery = st?.battery ?? 100;
     final storageRatio = st?.storageFraction ?? 0;
-    // Forced current firmware display for this release.
-    const firmware = 'v0.5.0';
+    // Dynamic firmware version reported by the frame (no hardcoded fallback).
+    final fw = st?.firmwareVersion;
+    final firmware = (fw == null || fw.isEmpty)
+        ? '--'
+        : (fw.startsWith('v') ? fw : 'v$fw');
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -250,6 +253,10 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
             children: [
               _heroCard(_deviceName, _macAddress, isOnline, s),
               const SizedBox(height: 16),
+              if (st?.isNetworkSleeping == true) ...[
+                _powerSavingBanner(s),
+                const SizedBox(height: 16),
+              ],
               _sectionHeader(s.statusSection),
               _card(
                 child: Column(
@@ -457,6 +464,34 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
                 ),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _powerSavingBanner(AppStrings s) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.bedtime_outlined, size: 20, color: cs.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              s.powerSavingPlayback,
+              style: TextStyle(
+                fontSize: 13,
+                color: cs.onSurfaceVariant,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),

@@ -692,7 +692,7 @@ private fun updateFramesSelectionUI() {
                     put("strategy", strategyVal)
                     put("begintime", nowMs.toString())
                     put("endtime", endtime)
-                    put("idle", 0)
+                    put("idle", 1)
                     put("skipPlay", true)
                 }
 

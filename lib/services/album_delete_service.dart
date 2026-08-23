@@ -64,7 +64,12 @@ class AlbumDeleteService {
       if (macSlug.isEmpty || macSlug == 'FRAME') continue;
       final rec = await SlideshowPlaylistStore.instance.load(frame);
       final isActiveAlbum = rec?.albumId != null && rec!.albumId == albumId;
-      if (isActiveAlbum) macSlugs.add(macSlug);
+      if (isActiveAlbum) {
+        macSlugs.add(macSlug);
+        // Clear the local active-slideshow state so the UI reflects stopped
+        // playback immediately (no stale image list).
+        await SlideshowPlaylistStore.instance.clear(frame);
+      }
     }
 
     // Full delete: send an EXPLICITLY EMPTY remaining list so

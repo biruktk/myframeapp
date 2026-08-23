@@ -2289,6 +2289,86 @@ class AppStrings {
     de: 'Dein Rahmen ist auf dem neuesten Stand.',
     ja: 'フレームは最新です。',
   );
+  String get otaAutoUpdate => _l6(
+    en: 'Auto Firmware Update',
+    zh: '自动固件更新',
+    es: 'Actualización automática de firmware',
+    fr: 'Mise à jour automatique du firmware',
+    de: 'Automatisches Firmware-Update',
+    ja: 'ファームウェアの自動更新',
+  );
+  String get otaAutoUpdateSub => _l6(
+    en: 'Automatically download and install updates',
+    zh: '自动下载并安装最新固件',
+    es: 'Descargar e instalar actualizaciones automáticamente',
+    fr: 'Télécharger et installer automatiquement les mises à jour',
+    de: 'Updates automatisch herunterladen und installieren',
+    ja: 'アップデートを自動でダウンロードしてインストール',
+  );
+  String get otaCurrentVersion => _l6(
+    en: 'Current Version',
+    zh: '当前版本',
+    es: 'Versión actual',
+    fr: 'Version actuelle',
+    de: 'Aktuelle Version',
+    ja: '現在のバージョン',
+  );
+  String get otaLatestVersion => _l6(
+    en: 'Latest Version',
+    zh: '最新版本',
+    es: 'Última versión',
+    fr: 'Dernière version',
+    de: 'Neueste Version',
+    ja: '最新バージョン',
+  );
+  String get otaReleaseNotes => _l6(
+    en: 'Release Notes',
+    zh: '更新日志',
+    es: 'Notas de la versión',
+    fr: 'Notes de version',
+    de: 'Versionshinweise',
+    ja: 'リリースノート',
+  );
+  String get otaUpdateNow => _l6(
+    en: 'Update Now',
+    zh: '立即更新',
+    es: 'Actualizar ahora',
+    fr: 'Mettre à jour',
+    de: 'Jetzt aktualisieren',
+    ja: '今すぐ更新',
+  );
+  String get otaUpdating => _l6(
+    en: 'Update in progress...',
+    zh: '更新进行中...',
+    es: 'Actualización en curso...',
+    fr: 'Mise à jour en cours...',
+    de: 'Update läuft...',
+    ja: '更新中...',
+  );
+  String get otaFrameOffline => _l6(
+    en: 'Frame is offline. Please try again when connected.',
+    zh: '设备离线，请连接后重试。',
+    es: 'El marco está sin conexión. Inténtalo de nuevo cuando esté conectado.',
+    fr: 'Le cadre est hors ligne. Réessayez une fois connecté.',
+    de: 'Rahmen ist offline. Bitte erneut versuchen, wenn verbunden.',
+    ja: 'フレームがオフラインです。接続後に再試行してください。',
+  );
+  String get otaNoFrame => _l6(
+    en: 'No Artistic Frame connected',
+    zh: '未连接艺术相框',
+    es: 'Ningún marco artístico conectado',
+    fr: 'Aucun cadre artistique connecté',
+    de: 'Kein Artistic Frame verbunden',
+    ja: 'アートフレームが接続されていません',
+  );
+  String get otaNoFrameSub => _l6(
+    en: 'Please bind an Artistic Frame to check for firmware updates.',
+    zh: '请先绑定艺术相框以检查固件更新。',
+    es: 'Vincula un marco artístico para comprobar las actualizaciones.',
+    fr: 'Associez un cadre artistique pour vérifier les mises à jour.',
+    de: 'Bitte ein Artistic Frame binden, um nach Updates zu suchen.',
+    ja: 'ファームウェア更新を確認するにはフレームをバインドしてください。',
+  );
   String get firmwareUpdateAvailable => _l6(
     en: 'A firmware update is available.',
     zh: '有新的固件可用。',
@@ -2400,6 +2480,14 @@ class AppStrings {
     fr: 'Paramètres de veille enregistrés',
     de: 'Schlafeinstellungen gespeichert',
     ja: 'スリープ設定を保存しました',
+  );
+  String get powerSavingPlayback => _l6(
+    en: 'Frame is currently in power-saving playback.',
+    zh: '相框正在省电播放中。',
+    es: 'El marco está en reproducción de ahorro de energía.',
+    fr: 'Le cadre est en lecture à économie d’énergie.',
+    de: 'Der Rahmen befindet sich im Energiesparmodus.',
+    ja: 'フレームは省電力再生中です。',
   );
   String get save => _l6(
     en: 'Save',

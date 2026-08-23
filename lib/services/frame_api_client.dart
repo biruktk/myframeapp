@@ -15,6 +15,7 @@ class FrameStatus {
     required this.deviceId,
     required this.online,
     this.sleeping = false,
+    this.isNetworkSleeping = false,
     this.status = 'unknown',
     this.battery = 100,
     this.wifiSsid = '',
@@ -25,11 +26,22 @@ class FrameStatus {
     this.lastSeenMs,
     this.lastUploadMs,
     this.firmwareVersion,
+    this.hasUpdate = false,
+    this.latestVersion,
+    this.deliveryStatus,
+    this.deliveryTotal,
+    this.deliveryDownloaded,
+    this.deliveryFailed,
+    this.deliveryUpdatedAtMs,
+    this.deliveryStoppedAtMs,
+    this.deliveryAckMsgid,
   });
 
   final String deviceId;
   final bool online;
   final bool sleeping;
+  /// Frame Wi-Fi is powered down inside its configured sleep/offline window.
+  final bool isNetworkSleeping;
   final String status;
   final int battery;
   final String wifiSsid;
@@ -40,6 +52,19 @@ class FrameStatus {
   final int? lastSeenMs;
   final int? lastUploadMs;
   final String? firmwareVersion;
+  /// True when the backend reports an OTA firmware update is available.
+  final bool hasUpdate;
+  final String? latestVersion;
+  final String? deliveryStatus;
+  final int? deliveryTotal;
+  final int? deliveryDownloaded;
+  final int? deliveryFailed;
+  final int? deliveryUpdatedAtMs;
+  final int? deliveryStoppedAtMs;
+  final String? deliveryAckMsgid;
+
+  /// True when the frame confirmed the playlist/slideshow was halted.
+  bool get isStopped => deliveryStatus == 'stopped';
 
   double get batteryFraction => (battery / 100).clamp(0.0, 1.0);
   double get storageFraction => storageTotalMb > 0
@@ -78,6 +103,8 @@ class FrameStatus {
       deviceId: json['device_id'] as String? ?? '',
       online: online && status != 'offline',
       sleeping: sleeping,
+      isNetworkSleeping:
+          json['isNetworkSleeping'] == true || json['is_network_sleeping'] == true,
       status: status,
       battery: json['battery'] as int? ?? 100,
       wifiSsid: json['wifi'] as String? ?? '',
@@ -88,6 +115,15 @@ class FrameStatus {
       lastSeenMs: json['last_seen_ms'] as int?,
       lastUploadMs: json['last_upload_ms'] as int?,
       firmwareVersion: json['firmwareVersion'] as String?,
+      hasUpdate: (json['ota'] as Map<String, dynamic>?)?['hasUpdate'] == true,
+      latestVersion: (json['ota'] as Map<String, dynamic>?)?['latestVersion'] as String?,
+      deliveryStatus: json['delivery_status'] as String?,
+      deliveryTotal: json['delivery_total'] as int?,
+      deliveryDownloaded: json['delivery_downloaded'] as int?,
+      deliveryFailed: json['delivery_failed'] as int?,
+      deliveryUpdatedAtMs: json['delivery_updated_at_ms'] as int?,
+      deliveryStoppedAtMs: json['delivery_stopped_at_ms'] as int?,
+      deliveryAckMsgid: json['delivery_ack_msgid'] as String?,
     );
   }
 
@@ -264,6 +300,38 @@ class FrameApiClient {
         final status = FrameStatus.fromJson(json);
         _statusCache[slug] = _CachedFrameStatus(status: status, timestamp: now);
         return status;
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  /// GET `/api/frames/:mac/firmware` — dynamic firmware version + OTA availability.
+  Future<FirmwareInfo?> fetchFirmware({
+    required String mac,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length < 12) return null;
+    final slug = cleanMac.substring(cleanMac.length - 12);
+    final t = timeout ?? const Duration(seconds: 8);
+    for (final base in _frameStatusCandidateBases(null)) {
+      try {
+        final uri = Uri.parse('$base/api/frames/$slug/firmware');
+        final res = await _api
+            .get(
+              uri,
+              headers: pairingToken != null && pairingToken.trim().isNotEmpty
+                  ? {'x-pairing-token': pairingToken.trim()}
+                  : null,
+            )
+            .timeout(t);
+        if (res.statusCode != 200) continue;
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        if (json['ok'] != true) continue;
+        return FirmwareInfo.fromJson(json);
       } catch (_) {
         continue;
       }
@@ -723,6 +791,42 @@ class FrameApiClient {
     }
     return false;
   }
+}
+
+/// Firmware + OTA availability for a frame (`GET /api/frames/:mac/firmware`).
+class FirmwareInfo {
+  FirmwareInfo({
+    required this.currentVersion,
+    required this.latestVersion,
+    required this.hasUpdate,
+    this.releaseNotes,
+    this.frameOnline = false,
+    this.otaStatus = 'idle',
+  });
+
+  final String? currentVersion;
+  final String? latestVersion;
+  final bool hasUpdate;
+  final String? releaseNotes;
+  final bool frameOnline;
+  final String otaStatus;
+
+  String get currentLabel => currentVersion == null || currentVersion!.isEmpty
+      ? '--'
+      : (currentVersion!.startsWith('v') ? currentVersion! : 'v$currentVersion');
+
+  String get latestLabel => latestVersion == null || latestVersion!.isEmpty
+      ? ''
+      : (latestVersion!.startsWith('v') ? latestVersion! : 'v$latestVersion');
+
+  factory FirmwareInfo.fromJson(Map<String, dynamic> json) => FirmwareInfo(
+        currentVersion: json['currentVersion'] as String?,
+        latestVersion: json['latestVersion'] as String?,
+        hasUpdate: json['hasUpdate'] == true,
+        releaseNotes: json['releaseNotes'] as String?,
+        frameOnline: json['frameOnline'] == true,
+        otaStatus: json['otaStatus'] as String? ?? 'idle',
+      );
 }
 
 class PhotoUploadResponse {

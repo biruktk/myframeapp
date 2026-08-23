@@ -82,10 +82,11 @@ class FrameOnlineGuard {
     return false;
   }
 
-  /// Returns `true` when [frame] (or the active paired frame) exists so the
-  /// send flow can proceed. Never blocks photo delivery on cached offline
-  /// state — the send pipeline wakes the frame via MQTT instead.
-  /// Shows a connect-first dialog only when no frame is paired at all.
+  /// Returns `true` when [frame] (or the active paired frame) is reachable and
+  /// the send flow may proceed. When the frame is genuinely offline this wakes
+  /// it via MQTT, re-checks, and — if still offline — shows an explanatory
+  /// popup and blocks delivery. Shows a connect-first dialog when no frame is
+  /// paired at all.
   static Future<bool> ensureOnlineForSend(
     BuildContext context, {
     PairedFrame? frame,
@@ -98,10 +99,11 @@ class FrameOnlineGuard {
       return false;
     }
 
-    // Fire-and-forget: refresh status cache + wake MQTT session while the
-    // user picks photos / edits. Delivery is attempted regardless.
-    unawaited(_probeAndWake(paired));
-    return true;
+    final online = await _probeAndWake(paired);
+    if (online) return true;
+    if (!context.mounted) return false;
+    await showFrameOfflineSendDialog(context);
+    return false;
   }
 
   /// Before a send flow: allow whenever at least one frame is paired.
@@ -121,9 +123,9 @@ class FrameOnlineGuard {
     return true;
   }
 
-  static Future<void> _probeAndWake(PairedFrame paired) async {
+  static Future<bool> _probeAndWake(PairedFrame paired) async {
     await _wakeFrame(paired);
-    await isFrameEffectivelyOnline(paired);
+    return isFrameEffectivelyOnline(paired);
   }
 
   static Future<void> _wakeFrame(PairedFrame paired) async {

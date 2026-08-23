@@ -60,4 +60,13 @@ class SlideshowPlaylistStore {
       return null;
     }
   }
+
+  /// Clear the persisted active-slideshow state for [paired] (called when the
+  /// owning album/playlist is deleted so the UI never shows stale playback).
+  Future<void> clear(PairedFrame? paired) async {
+    final mac = frameBleMacSlug(paired);
+    final p = await SharedPreferences.getInstance();
+    await p.remove(await _key(mac));
+    await p.remove('slideshow_playlist_$mac');
+  }
 }

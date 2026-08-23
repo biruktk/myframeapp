@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/feature_flags.dart';
 import '../l10n/app_strings.dart';
 import '../services/device_store.dart';
+import '../services/frame_api_client.dart';
 import '../services/ota_update_store.dart';
 import '../services/sleep_mode_store.dart';
 import '../settings/app_settings.dart';
@@ -37,7 +38,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   var _autoOtaEnabled = false;
   TimeOfDay _sleepStart = SleepModeStore.defaultStart;
   TimeOfDay _sleepEnd = SleepModeStore.defaultEnd;
-  final _firmwareVersion = 'v0.5.0'; // Forced current firmware display
+  var _firmwareVersion = '--';
+  var _hasUpdate = false;
   var _sleepReady = false;
   var _otaReady = false;
 
@@ -81,6 +83,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _autoOtaEnabled = ota.enabled;
       _otaReady = true;
     });
+    unawaited(_loadFirmwareInfo());
+  }
+
+  /// Fetch the frame's dynamic firmware version + OTA availability.
+  Future<void> _loadFirmwareInfo() async {
+    await DeviceStore.instance.load();
+    final frames = DeviceStore.instance.pairedFrames;
+    final paired = frames.isEmpty ? DeviceStore.instance.cached : frames.first;
+    if (paired == null) return;
+    final mac = DeviceStore.macForPairedFrame(paired);
+    if (mac == null || mac.isEmpty) return;
+    final api = FrameApiClient();
+    try {
+      final st = await api.fetchFrameStatus(
+        mac: mac,
+        pairingToken: paired.resolvedPairingToken,
+      );
+      if (st == null || !mounted) return;
+      final fw = st.firmwareVersion;
+      setState(() {
+        _firmwareVersion = (fw == null || fw.isEmpty)
+            ? '--'
+            : (fw.startsWith('v') ? fw : 'v$fw');
+        _hasUpdate = st.hasUpdate;
+      });
+    } catch (_) {
+    } finally {
+      api.close();
+    }
   }
 
   String _languageSubtitle(AppSettings app, AppStrings s) {
@@ -112,7 +143,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   String _otaSubtitle(AppStrings s) {
-    return '${s.firmwareCurrentVersion} $_firmwareVersion · ${_autoOtaEnabled ? s.otaAutoCheckOn : s.otaAutoCheckOff}';
+    final auto = _autoOtaEnabled ? s.otaAutoCheckOn : s.otaAutoCheckOff;
+    if (_hasUpdate) return '${s.firmwareUpdateAvailable} ($_firmwareVersion · $auto)';
+    return '${s.firmwareCurrentVersion} $_firmwareVersion · $auto';
   }
 
   Future<void> _onSleepToggle(bool value) async {
@@ -154,11 +187,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _checkOtaUpdate() {
     final s = AppStrings.of(context);
+    final body = _hasUpdate
+        ? '${s.firmwareUpdateAvailable} ${s.firmwareCurrentVersion} $_firmwareVersion.'
+        : '${s.firmwareCurrentVersion} $_firmwareVersion. ${s.firmwareUpToDate}';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(s.firmwareUpdateTitle),
-        content: Text('${s.firmwareCurrentVersion} $_firmwareVersion. ${s.firmwareUpToDate}'),
+        content: Text(body),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
