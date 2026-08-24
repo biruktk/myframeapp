@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../config/vps_defaults.dart';
@@ -119,7 +120,22 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       final info = await _nativeBleMethod
           .invokeMethod<Map<dynamic, dynamic>>('getWifiInfo')
           .timeout(const Duration(seconds: 10));
-      final currentSsid = normalizeWifiSsid(info?['ssid']?.toString() ?? '');
+      var currentSsid = normalizeWifiSsid(info?['ssid']?.toString() ?? '');
+      
+      // Fallback: use network_info_plus if native method returns empty/unknown SSID
+      if (currentSsid.isEmpty || currentSsid == '<unknown ssid>') {
+        try {
+          final networkInfo = NetworkInfo();
+          final fallbackSsid = await networkInfo.getWifiName();
+          if (fallbackSsid != null && fallbackSsid.isNotEmpty) {
+            // Clean OS wrapping quotes if present (e.g., '"MyHome_5G"' -> 'MyHome_5G')
+            currentSsid = normalizeWifiSsid(fallbackSsid.replaceAll('"', ''));
+          }
+        } catch (e) {
+          AppDiagLog.verbose('[WiFi] network_info_plus fallback failed: $e');
+        }
+      }
+      
       if (currentSsid.isNotEmpty && currentSsid != '<unknown ssid>') {
         if (!mounted || epoch != _wifiScanEpoch) return;
         setState(() {
