@@ -818,8 +818,7 @@ class FrameApiClient {
       );
       req.headers['Authorization'] = 'Bearer $tok';
       req.files.add(await http.MultipartFile.fromPath('avatar', file.path));
-      final streamed = await _api.send(req).timeout(t);
-      final res = await http.Response.fromStream(streamed);
+      final res = await _api.send(req).timeout(t);
       if (res.statusCode == 200) {
         final json = jsonDecode(res.body) as Map<String, dynamic>;
         if (json['ok'] == true) {
