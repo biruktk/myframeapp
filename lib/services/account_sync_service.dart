@@ -726,6 +726,54 @@ class AccountSyncService {
     );
   }
 
+  /// PUT /api/v1/user/profile — update profile (nickname and/or avatarUrl).
+  Future<bool> updateProfile({
+    String? nickname,
+    String? avatarUrl,
+  }) async {
+    final token = await _authToken();
+    if (token.isEmpty) return false;
+    try {
+      final body = <String, dynamic>{};
+      if (nickname != null && nickname.trim().isNotEmpty) {
+        body['nickname'] = nickname.trim();
+      }
+      if (avatarUrl != null) {
+        body['avatarUrl'] = avatarUrl.trim();
+      }
+      if (body.isEmpty) return false;
+      final uri = Uri.parse('$_apiBase/api/v1/user/profile');
+      final res = await _api
+          .put(
+            uri,
+            headers: _headers(token, json: true),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 12));
+      return res.statusCode == 200;
+    } catch (_) {}
+    return false;
+  }
+
+  /// POST /api/v1/user/avatar — upload profile avatar image.
+  Future<String?> uploadAvatar(File file) async {
+    final token = await _authToken();
+    if (token.isEmpty || !await file.exists()) return null;
+    try {
+      final uri = Uri.parse('$_apiBase/api/v1/user/avatar');
+      final req = http.MultipartRequest('POST', uri);
+      req.headers.addAll(_headers(token));
+      req.files.add(await http.MultipartFile.fromPath('avatar', file.path));
+      final res = await _api.send(req).timeout(const Duration(seconds: 30));
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      if (json['ok'] != true) return null;
+      return json['avatarUrl'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> wipeLocalSyncState() async {
     stopPeriodicSync();
     final prefs = await SharedPreferences.getInstance();

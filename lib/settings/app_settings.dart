@@ -262,7 +262,23 @@ class AppSettings extends ChangeNotifier {
   }
 
   Future<void> setProfileAvatarPath(String path) async {
-    profileAvatarPath = path.trim();
+    final localPath = path.trim();
+    // Upload to backend first, then update local state on success.
+    final file = File(localPath);
+    if (await file.exists()) {
+      final remoteUrl = await AccountSyncService.instance.uploadAvatar(file);
+      if (remoteUrl != null) {
+        profileAvatarPath = localPath;
+        notifyListeners();
+        final p = await SharedPreferences.getInstance();
+        await p.setString(_kProfileAvatar, profileAvatarPath);
+        // Also persist the remote URL for potential future use
+        await p.setString('settings_profile_avatar_url', remoteUrl);
+        return;
+      }
+    }
+    // Fallback to local-only if upload fails
+    profileAvatarPath = localPath;
     notifyListeners();
     final p = await SharedPreferences.getInstance();
     if (profileAvatarPath.isEmpty) {
@@ -277,20 +293,44 @@ class AppSettings extends ChangeNotifier {
     required String email,
     String? birthdayValue,
   }) async {
-    profileName = name.trim();
-    accountEmail = email.trim();
-    if (birthdayValue != null) {
-      birthday = birthdayValue.trim();
-    }
-    notifyListeners();
-    final p = await SharedPreferences.getInstance();
-    await p.setString(_kProfileName, profileName);
-    await p.setString(_kAccountEmail, accountEmail);
-    if (birthdayValue != null) {
-      if (birthday.isEmpty) {
-        await p.remove(_kBirthday);
-      } else {
-        await p.setString(_kBirthday, birthday);
+    final cleanName = name.trim();
+    final cleanEmail = email.trim();
+    // Push to backend first, then update local state on success.
+    final ok = await AccountSyncService.instance.updateProfile(nickname: cleanName);
+    if (ok) {
+      profileName = cleanName;
+      accountEmail = cleanEmail;
+      if (birthdayValue != null) {
+        birthday = birthdayValue.trim();
+      }
+      notifyListeners();
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_kProfileName, profileName);
+      await p.setString(_kAccountEmail, accountEmail);
+      if (birthdayValue != null) {
+        if (birthday.isEmpty) {
+          await p.remove(_kBirthday);
+        } else {
+          await p.setString(_kBirthday, birthday);
+        }
+      }
+    } else {
+      // Still update locally even if backend fails (offline support)
+      profileName = cleanName;
+      accountEmail = cleanEmail;
+      if (birthdayValue != null) {
+        birthday = birthdayValue.trim();
+      }
+      notifyListeners();
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_kProfileName, profileName);
+      await p.setString(_kAccountEmail, accountEmail);
+      if (birthdayValue != null) {
+        if (birthday.isEmpty) {
+          await p.remove(_kBirthday);
+        } else {
+          await p.setString(_kBirthday, birthday);
+        }
       }
     }
   }

@@ -762,6 +762,74 @@ class FrameApiClient {
     return null;
   }
 
+  /// PUT `/api/v1/user/profile` — update profile (nickname and/or avatarUrl).
+  Future<bool> updateProfile({
+    required String bearerToken,
+    String? nickname,
+    String? avatarUrl,
+    Duration? timeout,
+  }) async {
+    final tok = bearerToken.trim();
+    if (tok.isEmpty) return false;
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(null);
+    final headers = <String, String>{
+      'accept': 'application/json',
+      'Authorization': 'Bearer $tok',
+      'Content-Type': 'application/json',
+    };
+    final body = <String, dynamic>{};
+    if (nickname != null && nickname.trim().isNotEmpty) {
+      body['nickname'] = nickname.trim();
+    }
+    if (avatarUrl != null) {
+      body['avatarUrl'] = avatarUrl.trim();
+    }
+    if (body.isEmpty) return false;
+    try {
+      final res = await _api
+          .put(
+            Uri.parse('$base/api/v1/user/profile'),
+            headers: headers,
+            body: jsonEncode(body),
+          )
+          .timeout(t);
+      return res.statusCode == 200;
+    } catch (_) {}
+    return false;
+  }
+
+  /// POST `/api/v1/user/avatar` — upload profile avatar image.
+  Future<String?> uploadAvatar({
+    required String bearerToken,
+    required String filePath,
+    Duration? timeout,
+  }) async {
+    final tok = bearerToken.trim();
+    if (tok.isEmpty) return null;
+    final t = timeout ?? const Duration(seconds: 30);
+    final base = _base(null);
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) return null;
+      final req = http.MultipartRequest(
+        'POST',
+        Uri.parse('$base/api/v1/user/avatar'),
+      );
+      req.headers['Authorization'] = 'Bearer $tok';
+      req.files.add(await http.MultipartFile.fromPath('avatar', file.path));
+      final streamed = await _api.send(req).timeout(t);
+      final res = await http.Response.fromStream(streamed);
+      if (res.statusCode == 200) {
+        final json = jsonDecode(res.body) as Map<String, dynamic>;
+        if (json['ok'] == true) {
+          return json['avatarUrl'] as String?;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   void close() => _api.close();
 
   static String _base(String? override) {
