@@ -134,6 +134,8 @@ class UserGalleryCloudService {
     required String authToken,
     required String localPath,
     String? deviceId,
+    String source = 'personal_album',
+    String? albumId,
   }) async {
     final tok = authToken.trim();
     if (tok.isEmpty) return null;
@@ -146,6 +148,11 @@ class UserGalleryCloudService {
         ..fields.addAll({
           if (deviceId != null && deviceId.trim().isNotEmpty)
             'device_id': deviceId.trim(),
+          // Source isolation: tag the upload so the backend can include it
+          // in the user's Personal Album feed (source=personal_album) or
+          // exclude it (e.g. source=playlist when uploading for a playlist).
+          'source': source,
+          if (albumId != null && albumId.isNotEmpty) 'album_id': albumId,
         });
       final streamed = await req.send().timeout(_uploadTimeout);
       final body = await streamed.stream.bytesToString();

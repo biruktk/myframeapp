@@ -48,6 +48,9 @@ class FrameCloudCastService {
     int? displaySeconds,
     bool skipPlay = false,
     String? editsJson,
+    UploadSource source = UploadSource.directCast,
+    String? playlistId,
+    String? albumId,
   }) async {
     void report(CastProgress p) => onProgress?.call(p);
 
@@ -96,7 +99,7 @@ class FrameCloudCastService {
           skipPlay ? 'upload_photo (skip_play)' : 'play',
           {'deviceId': tryId, 'filename': filename},
         );
-        final res = await api.uploadPhoto(
+final res = await api.uploadPhoto(
           fileBytes: jpegBytes,
           filename: filename,
           deviceId: tryId,
@@ -107,7 +110,10 @@ class FrameCloudCastService {
           pairingToken: paired.resolvedPairingToken,
           userAuthToken: userAuthToken,
           skipPlay: skipPlay,
-          editsJson: editsJson,
+          source: source,
+          playlistId: playlistId,
+          albumId: albumId,
+          displayName: filename,
         );
         lastRes = res;
 

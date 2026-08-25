@@ -178,6 +178,11 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           syncSlideshowAfterSuccess: false,
           skipPlay: true,
           onProgress: (_) {},
+          // Source isolation: playlist uploads must NOT bleed into the
+          // user's Personal Album grid. The backend uses source=playlist
+          // to exclude these from GET /api/user/gallery.
+          source: UploadSource.playlist,
+          playlistId: widget.albumId,
         );
         if (!cast.ok) {
           AppDiagLog.verbose('[Slideshow] cast failed photo $idx: ${cast.message}');
