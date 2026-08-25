@@ -257,6 +257,12 @@ final class ShareUploader {
     let nowMs = String(Int(Date().timeIntervalSince1970 * 1000))
     let endtime = rules.durationHours > 0 ? String(Int(Date().timeIntervalSince1970 * 1000) + rules.durationHours * 3600 * 1000) : ""
 
+    // CRITICAL: send `immediatePlay: true` so the backend dispatches a
+    // standalone MQTT `play` command for imageIds[0] right after the
+    // strategy_bin command. Without this, the device waits a full
+    // intervalMinutes before rendering the first shared image — and the
+    // share UI typically closes before that first tick, leaving the
+    // device appearing unresponsive.
     let payload: [String: Any] = [
       "imageIds": imageIds,
       "intervalMinutes": rules.intervalMinutes,
@@ -265,19 +271,103 @@ final class ShareUploader {
       "endtime": endtime,
       "idle": 1,
       "skipPlay": true,
+      "immediatePlay": true,
+      "intervalUnit": "minute",
+      "source": "direct_cast",
     ]
     request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
 
     do {
       let (_, response) = try await session.data(for: request)
       if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-        NSLog("[MyFrame Share] playlist published for \(macSlug): \(imageIds.count) image(s)")
+        NSLog("[MyFrame Share] playlist published for \(macSlug): \(imageIds.count) image(s) (immediatePlay=true)")
       } else {
+        // Fallback: try the dedicated /cast/batch endpoint. It accepts
+        // the same shape but is purpose-built for multi-image direct
+        // share and guarantees an immediate first-photo push.
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-        NSLog("[MyFrame Share] playlist publish HTTP \(status) for \(macSlug)")
+        NSLog("[MyFrame Share] playlist publish HTTP \(status) for \(macSlug); falling back to /cast/batch")
+        await publishBatchCast(
+          session: session,
+          target: target,
+          macSlug: macSlug,
+          imageIds: imageIds,
+          authToken: authToken,
+          rules: rules
+        )
       }
     } catch {
-      NSLog("[MyFrame Share] playlist publish failed for \(macSlug): \(error.localizedDescription)")
+      NSLog("[MyFrame Share] playlist publish failed for \(macSlug): \(error.localizedDescription); falling back to /cast/batch")
+      await publishBatchCast(
+        session: session,
+        target: target,
+        macSlug: macSlug,
+        imageIds: imageIds,
+        authToken: authToken,
+        rules: rules
+      )
+    }
+  }
+
+  /// MARK: - Batch cast (fallback for /slideshow)
+  ///
+  /// POST /api/frames/{mac}/cast/batch — unified multi-image direct cast.
+  /// Backend persists a transient slideshow marker AND dispatches the
+  /// strategy_bin + an immediate play command for imageIds[0] so the
+  /// device wakes up with the first shared image right away.
+  private func publishBatchCast(
+    session: URLSession,
+    target: Target,
+    macSlug: String,
+    imageIds: [String],
+    authToken: String,
+    rules: PlaybackRules
+  ) async {
+    let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+    var cleanUrl = rawApiUrl
+    if !cleanUrl.isEmpty {
+      if !cleanUrl.lowercased().hasPrefix("http://") && !cleanUrl.lowercased().hasPrefix("https://") {
+        cleanUrl = "http://" + cleanUrl
+      }
+      if cleanUrl.hasSuffix("/") {
+        cleanUrl = String(cleanUrl.dropLast())
+      }
+    }
+    guard let base = URL(string: cleanUrl) else { return }
+    let endpoint = base.appendingPathComponent("api/frames/\(macSlug)/cast/batch")
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 30
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    if !target.pairingToken.isEmpty {
+      request.setValue(target.pairingToken, forHTTPHeaderField: "x-pairing-token")
+    }
+    if !authToken.isEmpty {
+      request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+    }
+
+    let payload: [String: Any] = [
+      "photo_ids": imageIds,
+      "intervalMinutes": rules.intervalMinutes,
+      "strategy": rules.strategy,
+      "idle": 1,
+      "intervalUnit": "minute",
+      "immediatePlay": true,
+      "source": "direct_cast",
+    ]
+    request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
+
+    do {
+      let (_, response) = try await session.data(for: request)
+      let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+      if (200...299).contains(status) {
+        NSLog("[MyFrame Share] batch cast published for \(macSlug) (HTTP \(status))")
+      } else {
+        NSLog("[MyFrame Share] batch cast HTTP \(status) for \(macSlug)")
+      }
+    } catch {
+      NSLog("[MyFrame Share] batch cast failed for \(macSlug): \(error.localizedDescription)")
     }
   }
 
