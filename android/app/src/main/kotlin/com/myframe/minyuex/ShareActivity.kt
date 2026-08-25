@@ -677,7 +677,13 @@ private fun updateFramesSelectionUI() {
                 completed++
             }
 
-            // Publish slideshow strategy for multi-image publish matching iOS logic
+            // Publish slideshow strategy for multi-image publish matching iOS logic.
+            // CRITICAL: pass `immediatePlay: true` so the backend dispatches
+            // a standalone MQTT `play` command for imageIds[0] right after
+            // the strategy_bin command. Without this, the device waits a
+            // full intervalMinutes before rendering the first shared image
+            // — and the share UI typically closes before that first tick,
+            // leaving the device appearing unresponsive.
             if (isMultiple && uploadedImageIds.isNotEmpty()) {
                 withContext(Dispatchers.Main) {
                     updateProgress("Publishing playlist to ${frame.name}...", 70 + (20 * completed / totalUploads))
@@ -694,6 +700,9 @@ private fun updateFramesSelectionUI() {
                     put("endtime", endtime)
                     put("idle", 1)
                     put("skipPlay", true)
+                    put("immediatePlay", true)
+                    put("intervalUnit", "minute")
+                    put("source", "direct_cast")
                 }
 
                 val publishRequest = Request.Builder()
@@ -712,14 +721,48 @@ private fun updateFramesSelectionUI() {
                     publishRequest.header("Authorization", "Bearer $cleanAuthToken")
                 }
 
+                var publishOk = false
                 try {
                     val response = client.newCall(publishRequest.build()).execute()
-                    if (!response.isSuccessful) {
-                        // Log failure but proceed as images were successfully uploaded
+                    response.close()
+                    publishOk = response.isSuccessful
+                    if (!publishOk) {
                         System.err.println("Slideshow publish failed: ${response.code}")
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                }
+
+                // Fallback: dedicated /api/frames/:mac/cast/batch endpoint.
+                // Backend dispatches strategy_bin + immediate play command
+                // for image_ids[0] so the device wakes up with the first
+                // shared image immediately.
+                if (!publishOk) {
+                    try {
+                        val batchBody = JSONObject().apply {
+                            put("photo_ids", JSONArray(uploadedImageIds))
+                            put("intervalMinutes", intervalMin)
+                            put("strategy", strategyVal)
+                            put("idle", 1)
+                            put("intervalUnit", "minute")
+                            put("immediatePlay", true)
+                            put("source", "direct_cast")
+                        }
+                        val batchRequest = Request.Builder()
+                            .url("$apiBase/api/frames/$macSlug/cast/batch")
+                            .post(batchBody.toString().toRequestBody("application/json".toMediaTypeOrNull()))
+                        batchRequest.header("x-pairing-token", pairingTokenToSend)
+                        if (cleanAuthToken.isNotEmpty() && !cleanAuthToken.equals("null", ignoreCase = true)) {
+                            batchRequest.header("Authorization", "Bearer $cleanAuthToken")
+                        }
+                        val batchResponse = client.newCall(batchRequest.build()).execute()
+                        batchResponse.close()
+                        if (batchResponse.isSuccessful) {
+                            publishOk = true
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         }
