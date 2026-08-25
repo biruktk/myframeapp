@@ -291,6 +291,84 @@ Future<PhotoUploadResponse> uploadPhoto({
     throw Exception('Upload failed after retries: $lastErr');
   }
 
+  /// POST /api/frames/{MAC}/cast/batch — unified multi-image direct cast.
+  ///
+  /// After the share extension / share intent has uploaded a batch of photos,
+  /// call this to trigger an immediate device-side rotation. The backend:
+  ///   1. Verifies every photo_id exists in the upload store.
+  ///   2. Publishes `strategy_bin` so the device fetches the manifest.
+  ///   3. Immediately publishes `play` for photo_ids[0] so the device
+  ///      renders the first shared image right away (no waiting on the
+  ///      first interval tick).
+  ///   4. Persists a transient slideshow marker (source='direct_cast') so
+  ///      subsequent status polls reflect the active manifest.
+  ///
+  /// This endpoint is the dedicated, reliable fix for the system-share
+  /// multi-image flow that previously closed before the device received
+  /// its first rotation.
+  Future<Map<String, dynamic>> castMultiplePhotos({
+    required String deviceId,
+    required List<String> photoIds,
+    int? intervalMinutes,
+    int? intervalSeconds,
+    String intervalUnit = 'minute',
+    int strategy = 1,
+    int idle = 1,
+    bool immediatePlay = true,
+    String source = 'direct_cast',
+    String? baseUrlOverride,
+    String? pairingToken,
+    String? userAuthToken,
+    Duration? timeout,
+  }) async {
+    if (photoIds.isEmpty) {
+      throw ArgumentError('photoIds cannot be empty');
+    }
+    final cleanMac = deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    final macSlug = cleanMac.length >= 12
+        ? cleanMac.substring(cleanMac.length - 12)
+        : cleanMac;
+    final effectiveTimeout = timeout ?? defaultTimeout;
+    final base = _base(baseUrlOverride);
+    final uri = Uri.parse('$base/api/frames/$macSlug/cast/batch');
+
+    // Interval unit normalisation: prefer `intervalSeconds` when provided.
+    int finalIntervalMinutes = intervalMinutes ?? 10;
+    String finalIntervalUnit = intervalUnit;
+    if (intervalSeconds != null && intervalSeconds > 0) {
+      finalIntervalMinutes = (intervalSeconds / 60).ceil();
+      finalIntervalUnit = 'second';
+    }
+    if (finalIntervalMinutes < 1) finalIntervalMinutes = 1;
+
+    final body = <String, dynamic>{
+      'photo_ids': photoIds,
+      'intervalMinutes': finalIntervalMinutes,
+      'intervalUnit': finalIntervalUnit,
+      'strategy': strategy,
+      'idle': idle,
+      'immediatePlay': immediatePlay,
+      'source': source,
+    };
+
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final bearer = userAuthToken?.trim() ?? '';
+    if (bearer.isNotEmpty) headers['Authorization'] = 'Bearer $bearer';
+    final pt = pairingToken?.trim() ?? '';
+    if (pt.isNotEmpty) headers['x-pairing-token'] = pt;
+
+    final res = await _api
+        .post(uri, headers: headers, body: jsonEncode(body))
+        .timeout(effectiveTimeout);
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw FrameApiException(res.statusCode, res.body);
+    }
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
   /// Quick reachability check before a large upload (optional).
   Future<Map<String, dynamic>> getDeviceStatus({
     String? baseUrlOverride,
