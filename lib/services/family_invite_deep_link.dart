@@ -9,6 +9,7 @@ import 'family_group_store.dart';
 /// Supported:
 /// - `myframe://family/join?code=ABCD1234`
 /// - `myframe://join?code=ABCD1234`
+/// - `myframe://family/invite?code=ABCD1234`
 /// - `https://myframe.ink/join?code=ABCD1234` (+ www / locale prefixes)
 class FamilyInviteDeepLink {
   FamilyInviteDeepLink._();
@@ -51,23 +52,25 @@ class FamilyInviteDeepLink {
     return h == 'myframe.ink' || h == 'www.myframe.ink';
   }
 
-  /// Matches `/join`, `/join/`, `/en/join`, `/zh/join`, etc.
-  static bool _looksLikeJoinPath(String rawPath) {
+  /// Matches `/join`, `/join/`, `/en/join`, `/zh/join`, `/invite`, `/invite/`, etc.
+  static bool _looksLikeJoinOrInvitePath(String rawPath) {
     final collapsed = rawPath.replaceAll(RegExp(r'/+'), '/');
     final noTrail = collapsed.replaceAll(RegExp(r'/+$'), '');
     final parts = noTrail.split('/').where((s) => s.isNotEmpty).toList();
-    return parts.isNotEmpty && parts.last == 'join';
+    return parts.isNotEmpty &&
+        (parts.last == 'join' || parts.last == 'invite');
   }
 
-  /// `myframe://join…` or `myframe://family/join…`
-  static bool _isCustomSchemeJoin(Uri uri) {
+  /// `myframe://join…`, `myframe://family/join…`, `myframe://family/invite…`
+  static bool _isCustomSchemeJoinOrInvite(Uri uri) {
     if (uri.scheme.toLowerCase() != 'myframe') return false;
     final host = uri.host.toLowerCase();
     final path = uri.path.toLowerCase();
     if (host == 'join') return true;
-    if (host == 'family' && _looksLikeJoinPath(path)) return true;
-    // Rare: myframe:///family/join?code=
+    if (host == 'family' && _looksLikeJoinOrInvitePath(path)) return true;
+    // Rare: myframe:///family/join?code= or myframe:///family/invite?code=
     if (host.isEmpty && path.contains('join')) return true;
+    if (host.isEmpty && path.contains('invite')) return true;
     return false;
   }
 
@@ -76,11 +79,11 @@ class FamilyInviteDeepLink {
     final host = uri.host.toLowerCase();
     final path = uri.path;
 
-    final isHttpsJoin =
-        scheme == 'https' && _isMyframeInkHost(host) && _looksLikeJoinPath(path);
-    final isCustomJoin = _isCustomSchemeJoin(uri);
+    final isHttpsJoinOrInvite =
+        scheme == 'https' && _isMyframeInkHost(host) && _looksLikeJoinOrInvitePath(path);
+    final isCustomJoinOrInvite = _isCustomSchemeJoinOrInvite(uri);
 
-    if (!isHttpsJoin && !isCustomJoin) return;
+    if (!isHttpsJoinOrInvite && !isCustomJoinOrInvite) return;
 
     var code = uri.queryParameters['code'] ?? uri.queryParameters['family'];
     if ((code == null || code.isEmpty) && uri.fragment.contains('=')) {
@@ -94,7 +97,7 @@ class FamilyInviteDeepLink {
     _pendingCode = norm;
     revision.value++;
 
-    // Switch to Family tab so Join sheet can open (works warm + after shell mounts).
+    // Switch to Family tab so Join sheet can open (works warm + after mounts).
     try {
       ShellNavigation.goToTab(3);
     } catch (_) {}

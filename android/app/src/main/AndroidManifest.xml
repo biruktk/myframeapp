@@ -59,13 +59,13 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="myframe.ink" android:pathPrefix="/join" />
+                <data android:scheme="https" android:host="myframe.ink" android:pathPrefix="/invite" android:autoVerify="true" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="www.myframe.ink" android:pathPrefix="/join" />
+                <data android:scheme="https" android:host="www.myframe.ink" android:pathPrefix="/invite" android:autoVerify="true" />
             </intent-filter>
             <!-- Custom scheme: myframe://join?code=… -->
             <intent-filter>
@@ -79,7 +79,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="myframe" android:host="family" android:pathPrefix="/join" />
+                <data android:scheme="myframe" android:host="family" android:pathPrefix="/invite" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

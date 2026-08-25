@@ -130,10 +130,25 @@ export function FamilyJoinView({ locale, code }: Props) {
 
   useEffect(() => {
     if (!valid || typeof window === "undefined") return;
-    const deep = `myframe://join?code=${encodeURIComponent(code)}`;
-    const timer = window.setTimeout(() => {
+    const deep = `myframe://family/invite?code=${encodeURIComponent(code)}`;
+    const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
+    if (isWeChat) {
+      // WeChat blocks custom schemes; prompt user to open in external browser.
+      // We'll still attempt the scheme; if it fails, the timeout fallback will
+      // direct to the App Store / Play Store, and the user can long-press the
+      // link to choose "Open in Browser".
       window.location.href = deep;
-    }, 400);
+    } else {
+      // Standard flow: attempt custom scheme, fall back after timeout.
+      window.location.href = deep;
+    }
+    const timer = window.setTimeout(() => {
+      // If we are still on this page after 2s, the app is probably not installed.
+      // Redirect to the app store / play store so the user can install.
+      if (typeof window !== "undefined") {
+        window.location.href = `[https://myframe.ink/download](https://myframe.ink/download)`;
+      }
+    }, 2500);
     return () => window.clearTimeout(timer);
   }, [code, valid]);
 
@@ -157,7 +172,7 @@ export function FamilyJoinView({ locale, code }: Props) {
     window.setTimeout(() => setToast(false), 2000);
   }
 
-  const appDeepLink = valid ? `myframe://join?code=${encodeURIComponent(code)}` : "#";
+  const appDeepLink = valid ? `myframe://family/invite?code=${encodeURIComponent(code)}` : "#";
   const downloadHref = `/${locale}/download`;
 
   return (
