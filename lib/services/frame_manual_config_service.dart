@@ -229,13 +229,21 @@ class FrameManualConfigService {
 
   Future<bool> pollUntilOnline(
     String mac, {
-    Duration interval = const Duration(seconds: 3),
-    int maxAttempts = 10,
+    Duration interval = const Duration(seconds: 2),
+    int maxAttempts = 15,
     void Function(String line)? onLog,
   }) async {
     final slug = FrameMacUtil.normalizeSlug(mac) ?? mac;
+    // Provisioning grace window: after BluFi completes, the frame needs ~10–30s
+    // to associate to Wi-Fi, acquire DHCP, and send its first MQTT login/heart.
+    // During this window the backend returns `online: false` but also sets
+    // `provisioning: true` and `app_paired: true`. Treat those as "still booting",
+    // NOT as "not paired" — keep polling until the frame actually heartbeats.
+    DateTime? firstAttemptAt;
     for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      firstAttemptAt ??= DateTime.now();
       onLog?.call('Polling server… (attempt $attempt/$maxAttempts)');
+      bool provisionedSeen = false;
       try {
         final uri = Uri.parse(statusUrl(slug));
         final res = await http.get(uri).timeout(const Duration(seconds: 8));
@@ -246,12 +254,21 @@ class FrameManualConfigService {
             await DeviceStore.instance.savePairedFrameMac(slug);
             return true;
           }
+          // Backend hint: frame is paired but hasn't heartbeated yet. Stay
+          // on the friendly "connecting…" message — do NOT surface an error.
+          if (data['provisioning'] == true || data['app_paired'] == true) {
+            provisionedSeen = true;
+            onLog?.call('Frame is paired, waiting for first MQTT heartbeat…');
+          }
         }
       } catch (e) {
         AppDiagLog.verbose('[FrameConfig] poll: $e');
       }
       if (attempt < maxAttempts) {
         await Future<void>.delayed(interval);
+        // Continue polling as long as the backend reports the frame is in the
+        // provisioning grace window. Only fail after the full window expires.
+        if (provisionedSeen) continue;
       }
     }
     return false;

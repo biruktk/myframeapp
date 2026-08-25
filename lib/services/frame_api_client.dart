@@ -28,6 +28,8 @@ class FrameStatus {
     this.firmwareVersion,
     this.hasUpdate = false,
     this.latestVersion,
+    this.provisioning = false,
+    this.appPaired = false,
     this.deliveryStatus,
     this.deliveryTotal,
     this.deliveryDownloaded,
@@ -62,6 +64,13 @@ class FrameStatus {
   final int? deliveryUpdatedAtMs;
   final int? deliveryStoppedAtMs;
   final String? deliveryAckMsgid;
+
+  /// True when the backend reports the frame is provisioned but hasn't sent
+  /// its first MQTT heartbeat yet (post-BluFi grace window). Clients should
+  /// keep polling during this state instead of flashing "Frame not paired".
+  final bool provisioning;
+  /// True when the frame has a DB record (paired in the app account).
+  final bool appPaired;
 
   /// True when the frame confirmed the playlist/slideshow was halted.
   bool get isStopped => deliveryStatus == 'stopped';
@@ -117,6 +126,8 @@ class FrameStatus {
       firmwareVersion: json['firmwareVersion'] as String?,
       hasUpdate: (json['ota'] as Map<String, dynamic>?)?['hasUpdate'] == true,
       latestVersion: (json['ota'] as Map<String, dynamic>?)?['latestVersion'] as String?,
+      provisioning: json['provisioning'] == true,
+      appPaired: json['app_paired'] == true,
       deliveryStatus: json['delivery_status'] as String?,
       deliveryTotal: json['delivery_total'] as int?,
       deliveryDownloaded: json['delivery_downloaded'] as int?,

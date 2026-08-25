@@ -13,6 +13,7 @@ import '../services/account_sync_service.dart';
 import '../services/auth_session_manager.dart';
 import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
+import '../services/frame_api_client.dart';
 import '../services/frame_mac_util.dart';
 import '../services/wifi_credential_cache.dart';
 import 'frame_profile_setup_screen.dart';
@@ -374,8 +375,31 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
 
       if (!mounted) return;
       setState(() {
-        _busy = false;
         _wifiConfirmed = true;
+        // Keep `_busy = true` so the spinner stays visible during the
+        // post-provision server poll. The frame needs ~10–30s to associate
+        // to Wi-Fi and send its first MQTT heartbeat — without this poll
+        // we used to jump straight to profile setup while the backend
+        // still reported `online: false`, which produced a spurious
+        // "Frame not paired" error downstream.
+        _status = s.frameConnectingToWifiHint;
+      });
+
+      // Poll the server until the frame appears online (or grace window
+      // expires). NEVER surface an error dialog during this window — if the
+      // backend reports `provisioning: true` it simply means the frame is
+      // still booting Wi-Fi.
+      final frameMac = DeviceStore.macForPairedFrame(paired) ?? '';
+      if (frameMac.isNotEmpty) {
+        await _pollFrameOnlineAfterProvision(
+          frameMac,
+          pairingToken: paired.resolvedPairingToken,
+        );
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
         _status = '${s.wifiConnectedTo} $currentSsid';
       });
 
@@ -411,6 +435,58 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     } finally {
       // Re-enable 401 handling now that pairing/profile setup is complete.
       AuthSessionManager.instance.suppressUnauthorizedHandling(false);
+    }
+  }
+
+  /// After BluFi Wi‑Fi delivery succeeds, the frame needs ~10–30s to associate
+  /// to Wi‑Fi and send its first MQTT heartbeat. During this window the
+  /// backend returns `online: false` but also `provisioning: true` and
+  /// `app_paired: true` — we MUST NOT treat that as "Frame not paired".
+  ///
+  /// This poll keeps the friendly "Connecting frame to Wi‑Fi…" spinner visible
+  /// and only fails after the full grace window expires. Intermediate 404 /
+  /// not-paired responses are suppressed; only a genuinely "never provisioned"
+  /// response or a full timeout triggers the error dialog upstream.
+  Future<void> _pollFrameOnlineAfterProvision(
+    String mac, {
+    String? pairingToken,
+  }) async {
+    const maxAttempts = 15; // 15 × 2s = 30s grace window
+    const interval = Duration(seconds: 2);
+    final client = FrameApiClient();
+    try {
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (!mounted) return;
+        AppDiagLog.verbose(
+          '[WiFi] post-provision poll attempt $attempt/$maxAttempts for $mac',
+        );
+        try {
+          final status = await client.fetchFrameStatus(
+            mac: mac,
+            pairingToken: pairingToken,
+            force: true,
+          );
+          if (status != null && status.isEffectivelyOnline) {
+            AppDiagLog.verbose(
+              '[WiFi] post-provision poll: frame is online after $attempt attempt(s)',
+            );
+            return;
+          }
+          // While the backend reports the frame is in the provisioning
+          // grace window, keep spinning silently.
+          if (status == null || status.provisioning == true) {
+            continue;
+          }
+        } catch (e) {
+          AppDiagLog.verbose('[WiFi] post-provision poll: $e');
+        }
+        await Future<void>.delayed(interval);
+      }
+      AppDiagLog.verbose(
+        '[WiFi] post-provision poll: grace window expired for $mac',
+      );
+    } finally {
+      client.close();
     }
   }
 

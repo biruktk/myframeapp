@@ -8628,4 +8628,12 @@ class AppStrings {
     de: 'EIN',
     ja: 'ON',
   );
+  String get frameConnectingToWifiHint => _l6(
+    en: 'Connecting frame to Wi‑Fi… please hold on',
+    zh: '正在将相框连接至 Wi‑Fi…请稍候',
+    es: 'Conectando el marco a Wi‑Fi… espera un momento',
+    fr: 'Connexion du cadre au Wi‑Fi… veuillez patienter',
+    de: 'Rahmen wird mit WLAN verbunden… bitte warten',
+    ja: 'フレームを Wi‑Fi に接続中…お待ちください',
+  );
 }
