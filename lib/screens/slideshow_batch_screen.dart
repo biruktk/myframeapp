@@ -198,10 +198,8 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Could not send playlist photos to the frame. Try single Send first.',
-              ),
+            SnackBar(
+              content: Text(s.slideshowSendFailedHint),
             ),
           );
         }
@@ -228,13 +226,13 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             '[Slideshow] VPS publish failed ${e.statusCode}: ${e.body}',
           );
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Playlist saved locally but server sync failed (${e.statusCode}). The frame may not auto-advance.',
-                ),
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                s.slideshowServerSyncFailed(e.statusCode),
               ),
-            );
+            ),
+          );
           }
         } catch (e) {
           AppDiagLog.verbose('[Slideshow] VPS publish: $e');
@@ -259,7 +257,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           SnackBar(
             content: Text(
               partial
-                  ? 'Sent ${ids.length} of $total photos to the frame playlist.'
+                  ? s.slideshowSentXOfY(ids.length, total)
                   : s.slideshowBatchDone(ids.length),
             ),
           ),

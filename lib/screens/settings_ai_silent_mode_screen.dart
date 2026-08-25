@@ -93,7 +93,7 @@ class _SettingsAiSilentModeScreenState extends State<SettingsAiSilentModeScreen>
     _store.people.add(
       SilentPersonEntry(
         id: id,
-        nickname: nick.text.trim().isEmpty ? 'Member' : nick.text.trim(),
+        nickname: nick.text.trim().isEmpty ? s.familyRoleMember : nick.text.trim(),
         birthdayIso: bday.toIso8601String().split('T').first,
         photoPath: photoPath,
       ),
@@ -134,7 +134,7 @@ class _SettingsAiSilentModeScreenState extends State<SettingsAiSilentModeScreen>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(6)),
-                      child: Text('ON', style: TextStyle(color: cs.onPrimary, fontSize: 11, fontWeight: FontWeight.w800)),
+                      child: Text(s.onLabel, style: TextStyle(color: cs.onPrimary, fontSize: 11, fontWeight: FontWeight.w800)),
                     ),
                 ],
               ),

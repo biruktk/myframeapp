@@ -24,7 +24,7 @@ class PlaylistCreationScreen extends StatefulWidget {
 class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
   static const _maxPhotos = 10;
 
-  final _nameController = TextEditingController(text: 'My New Playlist');
+  final _nameController = TextEditingController();
   var _selectedInterval = 10;
   late List<String> _paths;
   var _isUploading = false;
@@ -34,6 +34,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
   @override
   void initState() {
     super.initState();
+    _nameController.text = AppStrings.of(context).defaultNewPlaylistName;
     _paths = List.from(widget.imagePaths);
   }
 
@@ -287,7 +288,7 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
                           elevation: 0,
                         ),
                         child: Text(
-                          'Send Playlist to Frame',
+                          s.sendPlaylistToFrame,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,

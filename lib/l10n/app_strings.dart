@@ -8522,4 +8522,110 @@ class AppStrings {
     de: 'Fehler bei der Veröffentlichung: $e',
     ja: 'スライドショー公開エラー: $e',
   );
+
+  // —— Multi-image casting / playlist ——
+  String sendingToDevice(String name) => _l6(
+    en: 'Sending to: $name',
+    zh: '发送至：$name',
+    es: 'Enviando a: $name',
+    fr: 'Envoi vers : $name',
+    de: 'Senden an: $name',
+    ja: '送信先: $name',
+  );
+  String get unknownFrameName => _l6(
+    en: 'Unknown Frame',
+    zh: '未知相框',
+    es: 'Marco desconocido',
+    fr: 'Cadre inconnu',
+    de: 'Unbekannter Rahmen',
+    ja: '不明なフレーム',
+  );
+  String appliedRuleLabel(String interval, String mode) => _l6(
+    en: 'Applied Rule: ${interval}m Interval • $mode',
+    zh: '应用规则：${interval}分钟间隔 • $mode',
+    es: 'Regla aplicada: ${interval}min • $mode',
+    fr: 'Règle appliquée : ${interval}min • $mode',
+    de: 'Regel angewendet: ${interval}Min. • $mode',
+    ja: '適用ルール: ${interval}分間隔 • $mode',
+  );
+  String get editLabel => _l6(
+    en: 'Edit',
+    zh: '编辑',
+    es: 'Editar',
+    fr: 'Modifier',
+    de: 'Bearbeiten',
+    ja: '編集',
+  );
+  String get youLabel => _l6(
+    en: 'You',
+    zh: '你',
+    es: 'Tú',
+    fr: 'Vous',
+    de: 'Du',
+    ja: 'あなた',
+  );
+  String get lastPhotoLabel => _l6(
+    en: 'Last photo',
+    zh: '上次照片',
+    es: 'Última foto',
+    fr: 'Dernière photo',
+    de: 'Letztes Foto',
+    ja: '最後の写真',
+  );
+  String get pairedDevicesLabel => _l6(
+    en: 'Paired devices',
+    zh: '已配对设备',
+    es: 'Dispositivos emparejados',
+    fr: 'Appareils appairés',
+    de: 'Gekoppelte Geräte',
+    ja: 'ペア済みデバイス',
+  );
+  String get slideshowSendFailedHint => _l6(
+    en: 'Could not send playlist photos to the frame. Try single Send first.',
+    zh: '无法将播放列表照片发送至相框。请先尝试单张发送。',
+    es: 'No se pudieron enviar las fotos de la lista al marco. Prueba Enviar individual.',
+    fr: 'Impossible d\'envoyer les photos de la playlist au cadre. Essayez l\'envoi unique.',
+    de: 'Fotos der Wiedergabeliste konnten nicht gesendet werden. Einzeln senden versuchen.',
+    ja: 'プレイリストの写真をフレームに送信できませんでした。まず単一送信を試してください。',
+  );
+  String slideshowServerSyncFailed(int code) => _l6(
+    en: 'Playlist saved locally but server sync failed ($code). The frame may not auto-advance.',
+    zh: '播放列表已保存在本地，但服务器同步失败（$code）。相框可能不会自动轮播。',
+    es: 'Lista guardada localmente pero falló la sincronización ($code).',
+    fr: 'Playlist enregistrée mais échec de synchronisation ($code).',
+    de: 'Playlist lokal gespeichert, Server-Sync fehlgeschlagen ($code).',
+    ja: 'プレイリストはローカルに保存されましたが、サーバー同期に失敗しました（$code）。',
+  );
+  String slideshowSentXOfY(int sent, int total) => _l6(
+    en: 'Sent $sent of $total photos to the frame playlist.',
+    zh: '已将 $total 张照片中的 $sent 张发送至相框播放列表。',
+    es: 'Se enviaron $sent de $total fotos a la lista del marco.',
+    fr: '$sent sur $total photos envoyées à la playlist du cadre.',
+    de: '$sent von $total Fotos an die Rahmen-Playlist gesendet.',
+    ja: '$total 枚中 $sent 枚をフレームのプレイリストに送信しました。',
+  );
+  String get defaultNewPlaylistName => _l6(
+    en: 'My New Playlist',
+    zh: '我的新播放列表',
+    es: 'Mi nueva lista',
+    fr: 'Ma nouvelle playlist',
+    de: 'Meine neue Wiedergabeliste',
+    ja: 'マイ新規プレイリスト',
+  );
+  String everyNHours(int n) => _l6(
+    en: 'Every $n hours',
+    zh: '每 $n 小时',
+    es: 'Cada $n horas',
+    fr: 'Toutes les $n heures',
+    de: 'Alle $n Stunden',
+    ja: '$n時間ごと',
+  );
+  String get onLabel => _l6(
+    en: 'ON',
+    zh: '开',
+    es: 'ACTIVO',
+    fr: 'ACTIF',
+    de: 'EIN',
+    ja: 'ON',
+  );
 }

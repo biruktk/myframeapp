@@ -154,7 +154,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (name.isNotEmpty) return name;
       final mail = app.accountEmail.trim();
       if (mail.isNotEmpty) return mail.split('@').first;
-      return 'You';
+      return AppStrings.of(context).youLabel;
     });
     await UsageMetricsStore.instance.ensureInitialized();
     final metrics = await UsageMetricsStore.instance.load();
@@ -282,7 +282,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (name.isNotEmpty) return name;
       final mail = app.accountEmail.trim();
       if (mail.isNotEmpty) return mail.split('@').first;
-      return 'You';
+      return AppStrings.of(context).youLabel;
     });
     if (!mounted) return;
     final g = FamilyGroupStore.instance;

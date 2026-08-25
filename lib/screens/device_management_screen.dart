@@ -64,13 +64,13 @@ class _DeviceManagementScreenState extends State<DeviceManagementScreen> {
                 children: [
                   _Metric(label: s.photos, value: '$photoCount'),
                   _Metric(label: s.uptime, value: uptime),
-                  _Metric(label: 'Last photo', value: lastPhoto),
+                  _Metric(label: s.lastPhotoLabel, value: lastPhoto),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 8),
-          Text('Paired devices', style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+          Text(s.pairedDevicesLabel, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Card(
             child: ListTile(
@@ -104,7 +104,7 @@ class _DeviceManagementScreenState extends State<DeviceManagementScreen> {
             label: Text(s.repairPairing),
           ),
           const SizedBox(height: 14),
-          Text('Device details', style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
+          Text(s.deviceDetails, style: TextStyle(color: cs.onSurfaceVariant, fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
           Card(
             child: Column(

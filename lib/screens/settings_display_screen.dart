@@ -54,7 +54,7 @@ class _SettingsDisplayScreenState extends State<SettingsDisplayScreen> {
                 ListTile(
                   leading: const Icon(Icons.refresh),
                   title: Text(s.displayAutoRefreshTitle),
-                  subtitle: Text('Every ${_hours[_currentStepIndex]} hours'),
+                  subtitle: Text(s.everyNHours(_hours[_currentStepIndex])),
                 ),
                 Slider(
                   value: _currentStepIndex.toDouble(),

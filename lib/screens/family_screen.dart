@@ -122,7 +122,7 @@ class _FamilyScreenState extends State<FamilyScreen>
       if (fromName.isNotEmpty) return fromName;
       final mail = app.accountEmail.trim();
       if (mail.isNotEmpty) return mail.split('@').first;
-      return 'You';
+      return AppStrings.of(context).youLabel;
     };
     try {
       await FamilyGroupStore.instance.ensureLoaded(ownerDisplayName: owner);
@@ -544,7 +544,7 @@ class _FamilyScreenState extends State<FamilyScreen>
         if (fromName.isNotEmpty) return fromName;
         final mail = app.accountEmail.trim();
         if (mail.isNotEmpty) return mail.split('@').first;
-        return 'You';
+        return AppStrings.of(context).youLabel;
       };
       await FamilyGroupStore.instance.leaveServerFamily(
         ApiConfig.baseUrl,

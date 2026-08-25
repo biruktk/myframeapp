@@ -306,13 +306,13 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
 
     // Target frame parsing
     final paired = DeviceStore.instance.cached;
-    final frameName = paired?.frameName ?? 'Unknown Frame';
+    final frameName = paired?.frameName ?? s.unknownFrameName;
     final frameSlug = paired != null ? frameBleMacSlug(paired).toUpperCase() : '';
     final isOnline = _frameOnline;
 
     // Apply rule strings localization
-    final modeLabel = _globalProfile.playbackMode == FramePlaybackProfile.modeRandom ? 'Random' : 'Sequential';
-    final ruleText = 'Applied Rule: ${_globalProfile.intervalMinutes}m Interval • $modeLabel';
+    final modeLabel = _globalProfile.playbackMode == FramePlaybackProfile.modeRandom ? s.randomShuffle : s.sequential;
+    final ruleText = s.appliedRuleLabel('${_globalProfile.intervalMinutes}', modeLabel);
 
     return PopScope(
       canPop: !_isSending,
@@ -437,7 +437,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'Sending to: $frameName',
+                                            s.sendingToDevice(frameName),
                                             style: TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
@@ -462,7 +462,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      isOnline ? 'Online' : 'Offline',
+                                      isOnline ? s.statusOnline : s.statusOffline,
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
@@ -504,7 +504,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
                                         ),
                                       ),
                                       Text(
-                                        'Edit',
+                                        s.editLabel,
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
