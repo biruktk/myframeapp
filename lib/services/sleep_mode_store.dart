@@ -113,9 +113,11 @@ class SleepModeStore {
 
   /// `wifi_sleep` payload `data` per strict firmware protocol Section 5.3.
   ///
-  /// The server is authoritative for timezone math: we send the user's LOCAL
-  /// wall-clock times plus the device's UTC offset, and the backend converts to
-  /// UTC before packing `beginTime`/`endTime` for the firmware.
+  /// Time contract: the server is authoritative for timezone math, but we also
+  /// pre-compute the UTC wall-clock times client-side and flag `is_utc: true`
+  /// so the backend can use the verified UTC values directly (defense against
+  /// any server-side offset drift). The frame ALWAYS receives UTC `beginTime` /
+  /// `endTime`, never local wall-clock times.
   Map<String, dynamic> buildWifiSleepData() {
     final offsetMinutes = DateTime.now().timeZoneOffset.inMinutes;
     if (!enabled) {
@@ -124,6 +126,9 @@ class SleepModeStore {
         'begintime': '00:00',
         'endtime': '00:00',
         'timezoneOffsetMinutes': offsetMinutes,
+        'is_utc': true,
+        'utc_begintime': '00:00',
+        'utc_endtime': '00:00',
       };
     }
     return {
@@ -131,7 +136,20 @@ class SleepModeStore {
       'begintime': _toHhMm(startTime),
       'endtime': _toHhMm(endTime),
       'timezoneOffsetMinutes': offsetMinutes,
+      'is_utc': true,
+      'utc_begintime': _localToUtcHhMm(startTime, offsetMinutes),
+      'utc_endtime': _localToUtcHhMm(endTime, offsetMinutes),
     };
+  }
+
+  /// Convert a LOCAL [TimeOfDay] wall-clock time to UTC HH:mm given the
+  /// device's UTC offset in minutes (east of UTC). Wraps midnight correctly.
+  static String _localToUtcHhMm(TimeOfDay local, int offsetMinutes) {
+    final totalMinutes = ((local.hour * 60 + local.minute) - offsetMinutes) % 1440;
+    final normalized = (totalMinutes + 1440) % 1440;
+    final hh = (normalized ~/ 60).toString().padLeft(2, '0');
+    final mm = (normalized % 60).toString().padLeft(2, '0');
+    return '$hh:$mm';
   }
 
   /// Relay `wifi_sleep` to the paired frame via the server.
