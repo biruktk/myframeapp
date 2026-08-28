@@ -519,6 +519,34 @@ Future<PhotoUploadResponse> uploadPhoto({
     return {'ok': false, 'sent': false, 'error': 'relay_unreachable'};
   }
 
+  /// GET `/api/v1/tasks/:taskId/status` — poll the backend dispatch queue for
+  /// hardware-ACK state. Returns a map like
+  /// `{ taskId, status, progress, queuePosition, completed }` or null.
+  Future<Map<String, dynamic>?> fetchTaskStatus(
+    String taskId, {
+    String? baseUrlOverride,
+    Duration? timeout,
+  }) async {
+    final t = timeout ?? const Duration(seconds: 6);
+    for (final base in _frameStatusCandidateBases(baseUrlOverride)) {
+      try {
+        final res = await _api
+            .get(Uri.parse('$base/api/v1/tasks/$taskId/status'))
+            .timeout(t);
+        if (res.statusCode == 200) {
+          final json = jsonDecode(res.body) as Map<String, dynamic>;
+          final task = json['task'];
+          if (task is Map<String, dynamic>) return task;
+          return json;
+        }
+        if (res.statusCode == 404) {
+          return null;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   /// GET `/api/frames/:mac/status` — MQTT/display confirmation (works when
   /// `delivery-status` never flips `delivered_to_frame` on iOS uploads).
   Future<FrameCastStatusResponse> getFrameCastStatus({
@@ -1128,6 +1156,8 @@ class PhotoUploadResponse {
     /// Original JPEG/PNG basename kept on server (not used in MQTT).
     this.previewStoredPath,
     this.myfmFileBytes,
+    /// Dispatch-queue taskId used to poll hardware ACK status.
+    this.taskId,
   });
 
   final bool ok;
@@ -1141,6 +1171,7 @@ class PhotoUploadResponse {
   final bool? myfmSidecar;
   final String? previewStoredPath;
   final int? myfmFileBytes;
+  final String? taskId;
 
   factory PhotoUploadResponse.fromJson(Map<String, dynamic> json) {
     return PhotoUploadResponse(
@@ -1155,6 +1186,7 @@ class PhotoUploadResponse {
       myfmSidecar: json['myfm_sidecar'] as bool?,
       previewStoredPath: json['preview_stored_path'] as String?,
       myfmFileBytes: json['myfm_file_bytes'] as int?,
+      taskId: json['task_id'] as String?,
     );
   }
 }

@@ -378,7 +378,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                   _AnimatedCheckmark(size: 80),
                   const SizedBox(height: 28),
                   Text(
-                    _strings?.sentSuccessfully ?? 'Sent Successfully!',
+                    _strings?.pushingToFrameBackground ??
+                        'Pushing to frame in background…',
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w700,

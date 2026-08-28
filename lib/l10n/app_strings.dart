@@ -2513,6 +2513,46 @@ class AppStrings {
     de: 'Deaktiviert',
     ja: '無効',
   );
+  String get pushingToFrameBackground => _l6(
+    en: 'Pushing to frame in background…',
+    zh: '正在后台推送到相框…',
+    es: 'Enviando al marco en segundo plano…',
+    fr: 'Envoi au cadre en arrière-plan…',
+    de: 'Wird im Hintergrund zum Rahmen gesendet…',
+    ja: 'フレームにバックグラウンドで送信中…',
+  );
+  String get displayComplete => _l6(
+    en: 'Display Complete',
+    zh: '展示已完成',
+    es: 'Pantalla completada',
+    fr: 'Affichage terminé',
+    de: 'Anzeige abgeschlossen',
+    ja: '表示完了',
+  );
+  String get displayCompleteBody => _l6(
+    en: 'Your photo is now displaying on the frame.',
+    zh: '您的照片已显示在相框上。',
+    es: 'Tu foto ya se muestra en el marco.',
+    fr: 'Votre photo s’affiche désormais sur le cadre.',
+    de: 'Ihr Foto wird jetzt auf dem Rahmen angezeigt.',
+    ja: '写真がフレームに表示されました。',
+  );
+  String get taskPushedFailed => _l6(
+    en: 'Push failed',
+    zh: '推送失败',
+    es: 'Envío fallido',
+    fr: 'Échec de l’envoi',
+    de: 'Übertragung fehlgeschlagen',
+    ja: '送信に失敗しました',
+  );
+  String get queuedStepOf => _l6(
+    en: 'Queued (step {current}/{total})',
+    zh: '已排队（第 {current}/{total} 步）',
+    es: 'En cola (paso {current}/{total})',
+    fr: 'En file (étape {current}/{total})',
+    de: 'In der Warteschlange (Schritt {current}/{total})',
+    ja: 'キューに入っています（ステップ {current}/{total}）',
+  );
   String get otaFirmwareUpdate => _l6(
     en: 'OTA Firmware Update',
     zh: 'OTA 固件更新',

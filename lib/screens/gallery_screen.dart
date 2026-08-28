@@ -18,6 +18,7 @@ import '../services/send_albums_store.dart';
 import '../widgets/app_status_toast.dart';
 import '../widgets/busy_status_dialog.dart';
 import '../widgets/custom_segmented_toggle.dart';
+import '../widgets/task_progress_overlay.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
 import 'image_editor_screen.dart';
@@ -262,26 +263,33 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
           ),
         ),
       ),
-      body: IndexedStack(
-        index: _tab,
+      body: Column(
         children: [
-          _PersonalGrid(
-            paths: paths,
-            onAdd: _addFromPicker,
-            onRefresh: _onPullToRefresh,
-            onRemove: (i) => unawaited(_confirmDeletePersonalPhoto(i)),
-            onSendToFrame: (path) => sendGalleryPhotoToFrame(context, path: path),
-          ),
-          _AlbumsGrid(
-            albums: albums,
-            emptyHint: s.galleryAlbumsEmptyHint,
-            strings: s,
-            colorScheme: cs,
-            onCreateAlbum: _showCreateAlbumDialog,
-            onAlbumTap: _openAlbumDetail,
-            onDeleteAlbum: _confirmDeleteAlbum,
-            onRefresh: _onPullToRefresh,
-            previewFor: _firstPreviewPath,
+          TaskProgressOverlay(strings: s),
+          Expanded(
+            child: IndexedStack(
+              index: _tab,
+              children: [
+                _PersonalGrid(
+                  paths: paths,
+                  onAdd: _addFromPicker,
+                  onRefresh: _onPullToRefresh,
+                  onRemove: (i) => unawaited(_confirmDeletePersonalPhoto(i)),
+                  onSendToFrame: (path) => sendGalleryPhotoToFrame(context, path: path),
+                ),
+                _AlbumsGrid(
+                  albums: albums,
+                  emptyHint: s.galleryAlbumsEmptyHint,
+                  strings: s,
+                  colorScheme: cs,
+                  onCreateAlbum: _showCreateAlbumDialog,
+                  onAlbumTap: _openAlbumDetail,
+                  onDeleteAlbum: _confirmDeleteAlbum,
+                  onRefresh: _onPullToRefresh,
+                  previewFor: _firstPreviewPath,
+                ),
+              ],
+            ),
           ),
         ],
       ),

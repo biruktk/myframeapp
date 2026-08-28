@@ -211,6 +211,43 @@ class FcmService {
     );
   }
 
+  /// Show a local (system) notification, used when a background dispatch task
+  /// completes — e.g. "Image is now displaying on your frame".
+  Future<void> showCompletionNotification({
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    try {
+      if (!_initialized) {
+        await init();
+      }
+      await _local.show(
+        id: DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _androidChannel.id,
+            _androidChannel.name,
+            channelDescription: _androidChannel.description,
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: true,
+          ),
+        ),
+        payload: payload,
+      );
+    } catch (e) {
+      AppDiagLog.verbose('[fcm] local completion notification failed: $e');
+    }
+  }
+
   void dispose() {
     unawaited(_tokenSub?.cancel());
     unawaited(_foregroundSub?.cancel());
