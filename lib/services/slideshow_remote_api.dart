@@ -11,9 +11,17 @@ class SlideshowRemoteApi {
 
   final String _origin;
 
-  /// Publish a playlist/slideshow to the frame. Returns the backend dispatch
-  /// taskId (for hardware-ACK background tracking) or null when unavailable.
-  Future<String?> publish({
+  /// Publish a playlist/slideshow to the frame.
+  ///
+  /// Sends the strict 1037346b firmware-protocol payload that the backend
+  /// pubnspwards 1:1 to the device as a `strategy_bin` MQTT command:
+  ///   { imageIds, intervalMinutes, strategy, idle, begintime:"00:00",
+  ///     endtime:"23:59", skipPlay }
+  ///
+  /// The device autonomously fetches the manifest + .bin files and rotates
+  /// per the configured interval. The dispatch is fire-and-forget — a 2xx
+  /// response is treated as immediate success (no task-id polling).
+  Future<void> publish({
     String? bearerToken,
     String? pairingToken,
     required String macSlug,
@@ -22,19 +30,18 @@ class SlideshowRemoteApi {
     int strategy = 1,
     int durationHours = 0,
     bool skipPlay = false,
-    /// Explicit unit for `intervalMinutes`. 'minute' (default) or 'second'.
+    /// Routing hint only (newer clients). Defaults to `'minute'`. Backend
+    /// reads both `intervalMinutes` and `intervalUnit`.
     String intervalUnit = 'minute',
     /// Explicit seconds override. When set (>0), takes precedence over
     /// `intervalMinutes` and forces intervalUnit='second'.
     int? intervalSeconds,
-    /// When true (or when skipPlay=false), the backend fires an immediate
-    /// MQTT `play` command so the device renders the first photo right after
-    /// the strategy_bin dispatch instead of waiting for the first interval tick.
-    bool immediatePlay = true,
-    /// Isolation tag forwarded to the backend ('direct_cast' | 'playlist').
+    /// Isolation tag forwarded to the backend
+    /// (`'direct_cast'` | `'playlist'`).
     String source = 'direct_cast',
   }) async {
-    if (imageIds.isEmpty) return null;    final encoded = Uri.encodeComponent(macSlug);
+    if (imageIds.isEmpty) return;
+    final encoded = Uri.encodeComponent(macSlug);
     final uri = Uri.parse('$_origin/api/frames/$encoded/slideshow');
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -55,28 +62,17 @@ class SlideshowRemoteApi {
       finalIntervalUnit = 'second';
     }
     if (finalIntervalMinutes < 1) finalIntervalMinutes = 1;
-    final intervalSec = finalIntervalMinutes * 60;
 
-    // Strict firmware protocol (v1.3 §2.10):
-    //  - begintime/endtime are a DAILY playback window "00:00"–"23:59"
-    //    (never 00:00–00:00 which the firmware treats as zero-length).
-    //  - the triple interval fields keep the device's NVS refresh timer in sync.
-    //  - skipPlay is sent explicitly (false = push photo[0] now).
+    // Strict firmware protocol — daily playback window + explicit strategy.
     final body = <String, dynamic>{
       'imageIds': imageIds,
       'intervalMinutes': finalIntervalMinutes,
-      'interval_sec': intervalSec,
-      'global_interval': intervalSec,
       'intervalUnit': finalIntervalUnit,
       'strategy': strategy,
       'begintime': '00:00',
       'endtime': '23:59',
       'idle': 1,
       'skipPlay': skipPlay,
-      // Immediate first-photo push: the backend fires an MQTT `play` command
-      // for `imageIds[0]` immediately after `strategy_bin`. Default ON so the
-      // device displays the first new photo right away.
-      'immediatePlay': immediatePlay,
       'source': source,
     };
     final res = await ApiClient(bearerToken: bt).post(
@@ -88,14 +84,6 @@ class SlideshowRemoteApi {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw SlideshowPublishException(res.statusCode, res.body);
     }
-    // Return the backend dispatch-queue taskId so callers can poll hardware
-    // ACK status (background push indicator + completion notification).
-    try {
-      final decoded = jsonDecode(res.body) as Map<String, dynamic>;
-      final taskId = decoded['task_id'];
-      if (taskId is String && taskId.isNotEmpty) return taskId;
-    } catch (_) {}
-    return null;
   }
 
   /// Clear frame slideshow, MQTT stop, play last single / connected fallback.

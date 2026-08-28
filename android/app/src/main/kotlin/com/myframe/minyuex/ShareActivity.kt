@@ -689,23 +689,17 @@ private fun updateFramesSelectionUI() {
                     updateProgress("Publishing playlist to ${frame.name}...", 70 + (20 * completed / totalUploads))
                 }
 
-                val intervalSec = intervalMin * 60
-
                 val publishBody = JSONObject().apply {
                     put("imageIds", JSONArray(uploadedImageIds))
                     put("intervalMinutes", intervalMin)
-                    put("interval_sec", intervalSec)
-                    put("global_interval", intervalSec)
                     put("strategy", strategyVal)
-                    // Strict firmware protocol: daily playback window
-                    // 00:00–23:59 (never 00:00–00:00), skipPlay explicit false
-                    // = push photo[0] immediately (immediatePlay also set).
+                    // Strict 1037346b firmware protocol: daily playback window
+                    // 00:00–23:59 (never 00:00–00:00), explicit skipPlay. The
+                    // backend publishes exactly one strategy_bin MQTT command.
                     put("begintime", "00:00")
                     put("endtime", "23:59")
                     put("idle", 1)
                     put("skipPlay", false)
-                    put("immediatePlay", true)
-                    put("intervalUnit", "minute")
                     put("source", "direct_cast")
                 }
 
@@ -738,23 +732,18 @@ private fun updateFramesSelectionUI() {
                 }
 
                 // Fallback: dedicated /api/frames/:mac/cast/batch endpoint.
-                // Backend dispatches strategy_bin + immediate play command
-                // for image_ids[0] so the device wakes up with the first
-                // shared image immediately.
+                // Backend publishes a single strategy_bin MQTT command; the
+                // device autonomously fetches manifest + .bin files.
                 if (!publishOk) {
                     try {
                         val batchBody = JSONObject().apply {
                             put("photo_ids", JSONArray(uploadedImageIds))
                             put("intervalMinutes", intervalMin)
-                            put("interval_sec", intervalSec)
-                            put("global_interval", intervalSec)
                             put("strategy", strategyVal)
                             put("begintime", "00:00")
                             put("endtime", "23:59")
                             put("idle", 1)
                             put("skipPlay", false)
-                            put("intervalUnit", "minute")
-                            put("immediatePlay", true)
                             put("source", "direct_cast")
                         }
                         val batchRequest = Request.Builder()

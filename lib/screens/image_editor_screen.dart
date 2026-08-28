@@ -33,7 +33,6 @@ import '../services/sd_card_export.dart';
 import '../services/slideshow_style.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
-import '../services/task_queue_service.dart';
 import '../services/frame_ble_mac_slug.dart';
 import '../services/frame_online_guard.dart';
 import '../services/frame_recovery_service.dart';
@@ -1095,7 +1094,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
         );
 
         try {
-          final taskId = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+          await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
             bearerToken: authToken,
             pairingToken: pairingToken,
             macSlug: frameBleMacSlug(activePaired),
@@ -1104,15 +1103,6 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
             skipPlay: true,
             source: 'playlist',
           );
-          if (taskId != null && taskId.isNotEmpty) {
-            unawaited(TaskQueueService.instance.trackTask(
-              taskId: taskId,
-              deviceId: frameBleMacSlug(activePaired),
-              displayName: 'Playlist (${allIds.length})',
-              totalItems: allIds.length,
-              notifyOnComplete: true,
-            ));
-          }
         } on SlideshowPublishException catch (e) {
           AppDiagLog.verbose('[Playlist] VPS publish failed ${e.statusCode}: ${e.body}');
           if (mounted) {

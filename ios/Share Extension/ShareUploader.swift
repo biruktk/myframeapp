@@ -254,31 +254,19 @@ final class ShareUploader {
       request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
     }
 
-    let intervalSec = max(60, rules.intervalMinutes * 60)
-
-    // CRITICAL: send `immediatePlay: true` so the backend dispatches a
-    // standalone MQTT `play` command for imageIds[0] right after the
-    // strategy_bin command. Without this, the device waits a full
-    // intervalMinutes before rendering the first shared image — and the
-    // share UI typically closes before that first tick, leaving the
-    // device appearing unresponsive.
-    //
-    // Strict firmware protocol: begintime/endtime are the DAILY playback
-    // window ("00:00"–"23:59", never 00:00–00:00), skipPlay is explicit
-    // (false = push photo[0] now), and the triple interval fields keep the
-    // device's NVS refresh timer in sync.
+    // Strict 1037346b firmware protocol: begintime/endtime are the DAILY
+    // playback window ("00:00"–"23:59", never 00:00–00:00), skipPlay is
+    // explicit, and the backend publishes exactly one `strategy_bin` MQTT
+    // command. The device autonomously fetches the manifest + .bin files
+    // and rotates per the interval — no server-side auto play.
     let payload: [String: Any] = [
       "imageIds": imageIds,
       "intervalMinutes": rules.intervalMinutes,
-      "interval_sec": intervalSec,
-      "global_interval": intervalSec,
       "strategy": rules.strategy,
       "begintime": "00:00",
       "endtime": "23:59",
       "idle": 1,
       "skipPlay": false,
-      "immediatePlay": true,
-      "intervalUnit": "minute",
       "source": "direct_cast",
     ]
     request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
@@ -286,7 +274,7 @@ final class ShareUploader {
     do {
       let (_, response) = try await session.data(for: request)
       if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
-        NSLog("[MyFrame Share] playlist published for \(macSlug): \(imageIds.count) image(s) (immediatePlay=true)")
+        NSLog("[MyFrame Share] playlist published for \(macSlug): \(imageIds.count) image(s)")
       } else {
         // Fallback: try the dedicated /cast/batch endpoint. It accepts
         // the same shape but is purpose-built for multi-image direct
@@ -353,19 +341,14 @@ final class ShareUploader {
       request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
     }
 
-    let intervalSec = max(60, rules.intervalMinutes * 60)
     let payload: [String: Any] = [
       "photo_ids": imageIds,
       "intervalMinutes": rules.intervalMinutes,
-      "interval_sec": intervalSec,
-      "global_interval": intervalSec,
       "strategy": rules.strategy,
       "begintime": "00:00",
       "endtime": "23:59",
       "idle": 1,
       "skipPlay": false,
-      "intervalUnit": "minute",
-      "immediatePlay": true,
       "source": "direct_cast",
     ]
     request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()

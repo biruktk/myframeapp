@@ -18,7 +18,6 @@ import '../services/send_albums_store.dart';
 import '../widgets/app_status_toast.dart';
 import '../widgets/busy_status_dialog.dart';
 import '../widgets/custom_segmented_toggle.dart';
-import '../widgets/task_progress_overlay.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
 import 'image_editor_screen.dart';
@@ -265,7 +264,6 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
       ),
       body: Column(
         children: [
-          TaskProgressOverlay(strings: s),
           Expanded(
             child: IndexedStack(
               index: _tab,

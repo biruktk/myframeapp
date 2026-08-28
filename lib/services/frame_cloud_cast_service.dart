@@ -13,7 +13,6 @@ import 'frame_cast_progress.dart';
 import 'network_link.dart';
 import 'slideshow_playlist_store.dart';
 import 'slideshow_remote_api.dart';
-import 'task_queue_service.dart';
 import 'transport_kind.dart';
 import 'app_diag_log.dart';
 import 'frame_ble_mac_slug.dart';
@@ -118,20 +117,9 @@ final res = await api.uploadPhoto(
         );
         lastRes = res;
 
-        // If the backend returned a dispatch-queue taskId, hand it to the
-        // global task queue so the UI keeps showing background progress until
-        // the hardware ACK arrives — instead of an instant success modal.
-        final taskId = res.taskId;
-        if (taskId != null && taskId.trim().isNotEmpty) {
-          unawaited(TaskQueueService.instance.trackTask(
-            taskId: taskId,
-            deviceId: tryId,
-            displayName: filename,
-            totalItems: 1,
-            notifyOnComplete: true,
-          ));
-        }
-
+        // Strict 1037346b backend: no task_id in the upload response, no
+        // background polling — the device fetches the manifest + .bin files
+        // autonomously per the strategy interval.
         report(CastProgress(
           phase: CastPhase.success,
           message: 'Photo uploaded — frame will update shortly.',
