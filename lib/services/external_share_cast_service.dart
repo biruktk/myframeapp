@@ -177,6 +177,9 @@ class ExternalShareCastService {
     FramePlaybackProfile profile,
   ) async {
     try {
+      // Multi-image external share = a playlist dispatch. immediatePlay defaults
+      // true so photo[0] renders immediately; source tagged 'playlist' for the
+      // backend isolation filter.
       await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
         bearerToken: authToken.trim().isEmpty ? null : authToken.trim(),
         pairingToken: frame.resolvedPairingToken,
@@ -186,6 +189,7 @@ class ExternalShareCastService {
         strategy: profile.strategy,
         durationHours: profile.durationHours,
         skipPlay: true,
+        source: 'playlist',
       );
     } catch (e) {
       AppDiagLog.verbose('[ExternalShare] slideshow publish failed: $e');

@@ -11,7 +11,9 @@ class SlideshowRemoteApi {
 
   final String _origin;
 
-  Future<void> publish({
+  /// Publish a playlist/slideshow to the frame. Returns the backend dispatch
+  /// taskId (for hardware-ACK background tracking) or null when unavailable.
+  Future<String?> publish({
     String? bearerToken,
     String? pairingToken,
     required String macSlug,
@@ -29,9 +31,10 @@ class SlideshowRemoteApi {
     /// MQTT `play` command so the device renders the first photo right after
     /// the strategy_bin dispatch instead of waiting for the first interval tick.
     bool immediatePlay = true,
+    /// Isolation tag forwarded to the backend ('direct_cast' | 'playlist').
+    String source = 'direct_cast',
   }) async {
-    if (imageIds.isEmpty) return;
-    final encoded = Uri.encodeComponent(macSlug);
+    if (imageIds.isEmpty) return null;    final encoded = Uri.encodeComponent(macSlug);
     final uri = Uri.parse('$_origin/api/frames/$encoded/slideshow');
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -42,7 +45,6 @@ class SlideshowRemoteApi {
     if (pt.isNotEmpty) {
       headers['x-pairing-token'] = pt;
     }
-    final nowMs = DateTime.now().toUtc().millisecondsSinceEpoch;
 
     // Interval unit normalisation: prefer `intervalSeconds` (seconds) when
     // provided; otherwise fall back to `intervalMinutes` with explicit unit.
@@ -53,21 +55,30 @@ class SlideshowRemoteApi {
       finalIntervalUnit = 'second';
     }
     if (finalIntervalMinutes < 1) finalIntervalMinutes = 1;
+    final intervalSec = finalIntervalMinutes * 60;
 
+    // Strict firmware protocol (v1.3 §2.10):
+    //  - begintime/endtime are a DAILY playback window "00:00"–"23:59"
+    //    (never 00:00–00:00 which the firmware treats as zero-length).
+    //  - the triple interval fields keep the device's NVS refresh timer in sync.
+    //  - skipPlay is sent explicitly (false = push photo[0] now).
     final body = <String, dynamic>{
       'imageIds': imageIds,
       'intervalMinutes': finalIntervalMinutes,
+      'interval_sec': intervalSec,
+      'global_interval': intervalSec,
       'intervalUnit': finalIntervalUnit,
       'strategy': strategy,
-      'begintime': nowMs.toString(),
-      'endtime': durationHours > 0 ? (nowMs + durationHours * 3600 * 1000).toString() : '',
+      'begintime': '00:00',
+      'endtime': '23:59',
       'idle': 1,
+      'skipPlay': skipPlay,
       // Immediate first-photo push: the backend fires an MQTT `play` command
       // for `imageIds[0]` immediately after `strategy_bin`. Default ON so the
       // device displays the first new photo right away.
       'immediatePlay': immediatePlay,
+      'source': source,
     };
-    if (skipPlay) body['skipPlay'] = true;
     final res = await ApiClient(bearerToken: bt).post(
       uri,
       headers: headers,
@@ -77,6 +88,14 @@ class SlideshowRemoteApi {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw SlideshowPublishException(res.statusCode, res.body);
     }
+    // Return the backend dispatch-queue taskId so callers can poll hardware
+    // ACK status (background push indicator + completion notification).
+    try {
+      final decoded = jsonDecode(res.body) as Map<String, dynamic>;
+      final taskId = decoded['task_id'];
+      if (taskId is String && taskId.isNotEmpty) return taskId;
+    } catch (_) {}
+    return null;
   }
 
   /// Clear frame slideshow, MQTT stop, play last single / connected fallback.

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -19,6 +20,7 @@ import '../services/network_link.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_style.dart';
 import '../services/slideshow_remote_api.dart';
+import '../services/task_queue_service.dart';
 import '../services/frame_ble_mac_slug.dart';
 import '../widgets/shell_navigation.dart';
 import '../services/user_playlist_remote_api.dart';
@@ -218,14 +220,24 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           intervalMinutes: _intervalMinutes,
         );
         try {
-          await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+          final taskId = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
             bearerToken: token.isNotEmpty ? token : null,
             pairingToken: pairingToken,
             macSlug: frameBleMacSlug(pFrame),
             imageIds: ids,
             intervalMinutes: _intervalMinutes,
             skipPlay: true,
+            source: 'playlist',
           );
+          if (taskId != null && taskId.isNotEmpty) {
+            unawaited(TaskQueueService.instance.trackTask(
+              taskId: taskId,
+              deviceId: frameBleMacSlug(pFrame),
+              displayName: 'Playlist (${ids.length})',
+              totalItems: ids.length,
+              notifyOnComplete: true,
+            ));
+          }
         } on SlideshowPublishException catch (e) {
           AppDiagLog.verbose(
             '[Slideshow] VPS publish failed ${e.statusCode}: ${e.body}',

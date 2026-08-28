@@ -689,17 +689,21 @@ private fun updateFramesSelectionUI() {
                     updateProgress("Publishing playlist to ${frame.name}...", 70 + (20 * completed / totalUploads))
                 }
 
-                val nowMs = System.currentTimeMillis()
-                val endtime = if (durationHrs > 0) (nowMs + durationHrs.toLong() * 3600 * 1000).toString() else ""
-                
+                val intervalSec = intervalMin * 60
+
                 val publishBody = JSONObject().apply {
                     put("imageIds", JSONArray(uploadedImageIds))
                     put("intervalMinutes", intervalMin)
+                    put("interval_sec", intervalSec)
+                    put("global_interval", intervalSec)
                     put("strategy", strategyVal)
-                    put("begintime", nowMs.toString())
-                    put("endtime", endtime)
+                    // Strict firmware protocol: daily playback window
+                    // 00:00–23:59 (never 00:00–00:00), skipPlay explicit false
+                    // = push photo[0] immediately (immediatePlay also set).
+                    put("begintime", "00:00")
+                    put("endtime", "23:59")
                     put("idle", 1)
-                    put("skipPlay", true)
+                    put("skipPlay", false)
                     put("immediatePlay", true)
                     put("intervalUnit", "minute")
                     put("source", "direct_cast")
@@ -742,8 +746,13 @@ private fun updateFramesSelectionUI() {
                         val batchBody = JSONObject().apply {
                             put("photo_ids", JSONArray(uploadedImageIds))
                             put("intervalMinutes", intervalMin)
+                            put("interval_sec", intervalSec)
+                            put("global_interval", intervalSec)
                             put("strategy", strategyVal)
+                            put("begintime", "00:00")
+                            put("endtime", "23:59")
                             put("idle", 1)
+                            put("skipPlay", false)
                             put("intervalUnit", "minute")
                             put("immediatePlay", true)
                             put("source", "direct_cast")

@@ -157,6 +157,7 @@ class FrameSettingsStore {
           strategy: profile.strategy,
           durationHours: profile.durationHours,
           skipPlay: true,
+          source: 'playlist',
         );
       }
     } catch (e) {

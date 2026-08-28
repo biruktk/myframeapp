@@ -255,6 +255,7 @@ class ExternalShareQueue {
           strategy: queued.strategy,
           durationHours: queued.durationHours,
           skipPlay: true,
+          source: 'playlist',
         );
       } catch (e) {
         // Photos still landed; the frame auto-plays them. Keep best-effort.

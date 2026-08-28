@@ -263,6 +263,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
         strategy: profile.playbackMode == FramePlaybackProfile.modeRandom ? 2 : 1,
         durationHours: profile.durationHours,
         skipPlay: true,
+        source: 'playlist',
       ));
 
       if (!mounted) return;

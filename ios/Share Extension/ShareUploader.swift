@@ -254,8 +254,7 @@ final class ShareUploader {
       request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
     }
 
-    let nowMs = String(Int(Date().timeIntervalSince1970 * 1000))
-    let endtime = rules.durationHours > 0 ? String(Int(Date().timeIntervalSince1970 * 1000) + rules.durationHours * 3600 * 1000) : ""
+    let intervalSec = max(60, rules.intervalMinutes * 60)
 
     // CRITICAL: send `immediatePlay: true` so the backend dispatches a
     // standalone MQTT `play` command for imageIds[0] right after the
@@ -263,14 +262,21 @@ final class ShareUploader {
     // intervalMinutes before rendering the first shared image — and the
     // share UI typically closes before that first tick, leaving the
     // device appearing unresponsive.
+    //
+    // Strict firmware protocol: begintime/endtime are the DAILY playback
+    // window ("00:00"–"23:59", never 00:00–00:00), skipPlay is explicit
+    // (false = push photo[0] now), and the triple interval fields keep the
+    // device's NVS refresh timer in sync.
     let payload: [String: Any] = [
       "imageIds": imageIds,
       "intervalMinutes": rules.intervalMinutes,
+      "interval_sec": intervalSec,
+      "global_interval": intervalSec,
       "strategy": rules.strategy,
-      "begintime": nowMs,
-      "endtime": endtime,
+      "begintime": "00:00",
+      "endtime": "23:59",
       "idle": 1,
-      "skipPlay": true,
+      "skipPlay": false,
       "immediatePlay": true,
       "intervalUnit": "minute",
       "source": "direct_cast",
@@ -347,11 +353,17 @@ final class ShareUploader {
       request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
     }
 
+    let intervalSec = max(60, rules.intervalMinutes * 60)
     let payload: [String: Any] = [
       "photo_ids": imageIds,
       "intervalMinutes": rules.intervalMinutes,
+      "interval_sec": intervalSec,
+      "global_interval": intervalSec,
       "strategy": rules.strategy,
+      "begintime": "00:00",
+      "endtime": "23:59",
       "idle": 1,
+      "skipPlay": false,
       "intervalUnit": "minute",
       "immediatePlay": true,
       "source": "direct_cast",
