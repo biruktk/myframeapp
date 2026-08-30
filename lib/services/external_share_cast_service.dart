@@ -12,6 +12,7 @@ import 'frame_ble_mac_slug.dart';
 import 'frame_cloud_cast_service.dart';
 import 'frame_api_client.dart';
 import 'frame_settings_store.dart';
+import 'frame_online_guard.dart';
 import 'gallery_image_normalizer.dart';
 import 'network_link.dart';
 import 'slideshow_playlist_store.dart';
@@ -55,6 +56,19 @@ class ExternalShareCastService {
       await DeviceStore.instance.setActiveFrameDeviceId(frame.deviceId);
       final profile = await FrameSettingsStore.instance.load(frame);
       if (!await hasNetworkInterface()) {
+        await _enqueueForFrame(
+          frame,
+          items.map((e) => e.path).toList(growable: false),
+          authToken,
+          profile,
+        );
+        queued = true;
+        continue;
+      }
+      // If the frame is offline (hasn't heartbeated recently), queue for
+      // later delivery instead of attempting a doomed upload.
+      if (!await FrameOnlineGuard.isFrameEffectivelyOnline(frame)) {
+        AppDiagLog.verbose('[ExternalShare] frame offline — queueing ${items.length} photos');
         await _enqueueForFrame(
           frame,
           items.map((e) => e.path).toList(growable: false),

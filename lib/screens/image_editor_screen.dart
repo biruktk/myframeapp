@@ -965,9 +965,21 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
     }
     final onlineNow = await FrameOnlineGuard.isFrameEffectivelyOnline(frame);
     if (mounted) setState(() => _frameOnline = onlineNow);
-    // Optimistic delivery (WeChat mini-app model): a cached offline state never
-    // blocks upload. Wake the frame's MQTT session so the VPS `play` publish
-    // delivers the photo as soon as it is uploaded.
+    // Block dispatch when the frame is genuinely offline. Previously this was
+    // an optimistic delivery path that always proceeded — now we require the
+    // frame to be reachable so photos are not silently lost.
+    if (!onlineNow) {
+      if (!mounted) return;
+      final blocked = await FrameOnlineGuard.ensureOnlineForSend(
+        context,
+        frame: frame,
+      );
+      if (!blocked) return; // user dismissed the dialog or frame stayed offline
+      // Frame came back online after the wake — refresh.
+      final recheck = await FrameOnlineGuard.isFrameEffectivelyOnline(frame);
+      if (mounted) setState(() => _frameOnline = recheck);
+      if (!recheck) return;
+    }
     if (mounted) {
       setState(() =>
           _status = _strings?.uploadWakingFrame ?? 'Waking frame MQTT session…');
@@ -3075,7 +3087,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                                           .clamp(0.05, 1.0)
                                       : null)))
                           : null,
-                      onPressed: _uploading
+                      onPressed: (_uploading || _frameOnline == false)
                           ? null
                           : () {
                               HapticFeedback.lightImpact();
