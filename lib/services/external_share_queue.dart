@@ -229,6 +229,11 @@ class ExternalShareQueue {
             userAuthToken: queued.authToken.isEmpty ? null : queued.authToken,
             skipPlay: queued.paths.length > 1,
             editsJson: null,
+            // Source isolation: multi-photo queued retries preserve the
+            // original playlist tag; single-photo retries stay direct_cast.
+            source: queued.paths.length > 1
+                ? UploadSource.playlist
+                : UploadSource.directCast,
           );
           final id = res.vpsSlideshowImageId?.trim();
           if (id != null && id.isNotEmpty && !ids.contains(id)) ids.add(id);

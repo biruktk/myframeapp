@@ -1065,6 +1065,11 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
             skipPlay: true,
             editsJson: edits,
             onProgress: (_) {},
+            // Source isolation: multi-photo playlist uploads must NOT bleed
+            // into the user's Personal Album grid. Backend uses source=playlist
+            // to exclude these from GET /api/user/gallery.
+            source: UploadSource.playlist,
+            playlistId: widget.albumId,
           );
           if (!cast.ok) {
             AppDiagLog.verbose('[Playlist] cast failed photo ${i + 1}: ${cast.message}');

@@ -127,6 +127,11 @@ class ExternalShareCastService {
         syncSlideshowAfterSuccess: false,
         skipPlay: items.length > 1,
         editsJson: null,
+        // Source isolation: multi-photo external-share payloads must NOT bleed
+        // into the user's Personal Album grid. Single-photo shares remain
+        // directCast (default). Backend uses source=playlist to exclude these
+        // from GET /api/user/gallery.
+        source: items.length > 1 ? UploadSource.playlist : UploadSource.directCast,
         onProgress: (p) {
           onProgress?.call(
             (i + (p.progress ?? 0.5)) / items.length,

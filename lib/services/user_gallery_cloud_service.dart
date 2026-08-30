@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import '../config/api_config.dart';
+import 'frame_api_client.dart';
 import 'gallery_image_cache.dart';
 import 'local_storage_service.dart';
 import 'personal_gallery_store.dart';
@@ -101,6 +102,22 @@ class UserGalleryCloudService {
   Future<List<CloudGalleryPhoto>> fetchPhotos(String authToken) async {
     final tok = authToken.trim();
     if (tok.isEmpty) return const [];
+    // Prefer the source-isolated endpoint (source === "personal_album").
+    // Falls back to the legacy /api/user/gallery + /api/v1/user/media only if
+    // the v1 endpoint is unavailable on this server deployment.
+    try {
+      final api = FrameApiClient();
+      final rows = await api.fetchPersonalAlbumPhotos(bearerToken: tok);
+      if (rows.isNotEmpty) {
+        return rows
+            .whereType<Map>()
+            .map((e) => CloudGalleryPhoto.fromJson(Map<String, dynamic>.from(e)))
+            .where((e) => e.id.isNotEmpty && e.url.isNotEmpty)
+            .toList();
+      }
+    } catch (e) {
+      AppDiagLog.verbose('[UserGallery] personal-album endpoint unavailable: $e');
+    }
     try {
       var res = await http
           .get(_uri('/api/user/gallery'), headers: _authHeaders(tok))

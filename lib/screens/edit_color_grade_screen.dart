@@ -207,6 +207,11 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
           skipPlay: true,
           editsJson: null,
           onProgress: (_) {},
+          // Source isolation: multi-photo playlist uploads must NOT bleed into
+          // the user's Personal Album grid. Backend uses source=playlist to
+          // exclude these from GET /api/user/gallery.
+          source: UploadSource.playlist,
+          playlistId: widget.albumId,
         );
 
         if (!cast.ok) {
