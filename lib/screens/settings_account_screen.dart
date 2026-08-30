@@ -30,7 +30,15 @@ class _SettingsAccountScreenState extends State<SettingsAccountScreen> {
     if (_loaded) return;
     final app = AppSettingsScope.of(context);
     _name.text = app.profileName;
-    _email.text = app.accountEmail;
+    // WeChat accounts have no email — show the auth provider label instead
+    // of an empty field so the user sees meaningful info in the account card.
+    if (app.accountEmail.isNotEmpty) {
+      _email.text = app.accountEmail;
+    } else if (app.authProvider == 'wechat') {
+      _email.text = 'WeChat Account';
+    } else {
+      _email.text = '';
+    }
     _birthday = _parseDate(app.birthday);
     _birthdayCtrl.text = _formatBirthdayField(_birthday);
     _loaded = true;

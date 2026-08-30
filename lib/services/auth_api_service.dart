@@ -382,13 +382,15 @@ class AuthApiService {
         final id = _str(userMap['id']);
         final email = _str(userMap['email']);
         final name = _str(userMap['name']);
-        if (id.isNotEmpty && email.isNotEmpty) {
+        if (id.isNotEmpty) {
           return AuthApiSuccess(
             token: token,
             user: AuthUserPayload(
               id: id,
               email: email,
-              name: name.isEmpty ? email.split('@').first : name,
+              name: name.isNotEmpty
+                  ? name
+                  : (email.isNotEmpty ? email.split('@').first : 'User'),
             ),
           );
         }
@@ -482,13 +484,20 @@ class AuthApiService {
       final id = _str(userMap['id']);
       final email = _str(userMap['email']);
       final name = _str(userMap['name']);
-      if (id.isNotEmpty && email.isNotEmpty) {
+      // Social logins (WeChat, Google, Apple) may not provide an email or
+      // may provide a hashed placeholder — id alone is sufficient to
+      // complete the auth session. Without this, a missing email silently
+      // rejects the valid token and the user stays on the previous
+      // provider's stale profile.
+      if (id.isNotEmpty) {
         return AuthApiSuccess(
           token: token,
           user: AuthUserPayload(
               id: id,
               email: email,
-              name: name.isEmpty ? email.split('@').first : name),
+              name: name.isNotEmpty
+                  ? name
+                  : (email.isNotEmpty ? email.split('@').first : 'User')),
         );
       }
     }

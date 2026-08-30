@@ -578,6 +578,15 @@ class AppSettings extends ChangeNotifier {
     if (previousUserId.isNotEmpty && previousUserId != cleanUserId) {
       await DeviceStore.instance.clear();
       await AccountSyncService.instance.wipeLocalSyncState();
+      // Clear stale avatar and profile from the previous account so the
+      // new provider's identity (WeChat / Google / Apple) is displayed
+      // immediately instead of showing the old provider's cached name/email.
+      profileAvatarPath = '';
+      profileName = '';
+      accountEmail = '';
+      await p.remove(_kProfileAvatar);
+      await p.remove(_kProfileName);
+      await p.remove(_kAccountEmail);
     }
 
     // Clear any leftover in-memory state from a prior session before binding.
