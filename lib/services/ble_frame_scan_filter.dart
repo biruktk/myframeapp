@@ -1,6 +1,6 @@
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-/// BLE discovery rules for MyFrame / InkJoy / companion hardware.
+/// BLE discovery rules for MyFrame / companion hardware.
 class BleFrameScanFilter {
   BleFrameScanFilter._();
 
@@ -38,16 +38,25 @@ class BleFrameScanFilter {
     return false;
   }
 
-  /// True if [rawName] matches MyFrame / MY / IJ frame BLE name pattern.
+  /// True if [rawName] matches MyFrame / MY_ / MY- / myframe BLE name pattern.
+  ///
+  /// MyFrame prefixes take top priority; legacy IJ_ / InkJoy prefixes remain as
+  /// backward-compatible fallbacks for older units.
   static bool matchesAdvertisedName(String rawName) {
     final t = rawName.trim();
     if (t.isEmpty) return false;
     final lower = t.toLowerCase();
+    // Primary MyFrame patterns (checked first).
     if (lower.startsWith('myframe')) return true;
     if (lower.startsWith('my_frame')) return true;
-    if (lower == 'my') return true;
+    if (lower.startsWith('my-frame')) return true;
     if (lower.startsWith('my_')) return true;
+    if (lower.startsWith('my-')) return true;
+    if (lower == 'my') return true;
+    // Legacy fallbacks (IJ_ / InkJoy) so older units keep being discovered.
     if (lower.startsWith('ij_')) return true;
+    if (lower.startsWith('ij-')) return true;
+    if (lower.startsWith('inkjoy')) return true;
     return false;
   }
 

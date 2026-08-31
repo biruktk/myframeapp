@@ -129,9 +129,9 @@
 		</dict>
 	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Used to connect and configure your InkJoy frame via Bluetooth.</string>
+	<string>Used to connect and configure your MyFrame device over Bluetooth.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Used to configure your InkJoy frame over Bluetooth.</string>
+	<string>Used to configure your MyFrame device over Bluetooth.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>MyFrame needs camera access to take photos to send to your frame.</string>
 	<key>NSLocalNetworkUsageDescription</key>

@@ -1341,7 +1341,7 @@ class PairedFrame {
 
   /// Upload targets: station (Wi‑Fi/MQTT) MAC only when it is already known.
   ///
-  /// Retrying the BLE (+2) MAC after a timeout publishes to `/inkjoyap/…161E`
+  /// Retrying the BLE (+2) MAC after a timeout publishes to `/myframe/…161E`
   /// where no subscriber exists — Android avoids that; iOS must match.
   List<String> get resolvedFrameUploadTargets {
     final station = resolvedFrameTargetId;
