@@ -23,6 +23,7 @@ import 'device_discovery_screen.dart';
 import 'playlist_screen.dart';
 import 'sleep_settings_screen.dart';
 import 'frame_settings_screen.dart';
+import 'firmware_screen.dart';
 
 const _red = Color(0xFFE53935);
 
@@ -185,26 +186,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  void _checkOtaUpdate() {
-    final s = AppStrings.of(context);
-    final body = _hasUpdate
-        ? '${s.firmwareUpdateAvailable} ${s.firmwareCurrentVersion} $_firmwareVersion.'
-        : '${s.firmwareCurrentVersion} $_firmwareVersion. ${s.firmwareUpToDate}';
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(s.firmwareUpdateTitle),
-        content: Text(body),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(s.okLabel, style: const TextStyle(color: Color(0xFFE53935))),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final s = AppStrings.of(context);
@@ -287,7 +268,9 @@ _tile(
                     ? (v) => unawaited(_onOtaToggle(v))
                     : null,
               ),
-              onTap: _checkOtaUpdate,
+              onTap: () => Navigator.push<void>(
+                context, MaterialPageRoute<void>(builder: (_) => const FirmwareScreen()),
+              ),
             ),
           ]),
           const SizedBox(height: 16),

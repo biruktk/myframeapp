@@ -481,6 +481,73 @@ Future<PhotoUploadResponse> uploadPhoto({
     return null;
   }
 
+  /// POST `/api/frames/:mac/firmware/update` — trigger an OTA firmware update.
+  ///
+  /// Returns `true` when the server accepted the request and published the OTA
+  /// MQTT payload. Returns `false` on network error, `FRAME_OFFLINE` (409), or
+  /// an already-up-to-date response.
+  Future<bool> triggerFirmwareUpdate({
+    required String mac,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length < 12) return false;
+    final slug = cleanMac.substring(cleanMac.length - 12);
+    final t = timeout ?? const Duration(seconds: 12);
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final tok = pairingToken ?? VpsDefaults.pairingToken;
+    if (tok.trim().isNotEmpty) headers['x-pairing-token'] = tok.trim();
+    for (final base in _frameStatusCandidateBases(null)) {
+      try {
+        final res = await _api
+            .post(Uri.parse('$base/api/frames/$slug/firmware/update'),
+                headers: headers)
+            .timeout(t);
+        if (res.statusCode == 200) {
+          final json = jsonDecode(res.body) as Map<String, dynamic>;
+          return json['ok'] == true;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
+  /// POST `/api/frames/:mac/auto-update` — persist the user's auto-update
+  /// preference for this frame.
+  Future<bool> toggleAutoUpdate({
+    required String mac,
+    required bool enabled,
+    String? pairingToken,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length < 12) return false;
+    final slug = cleanMac.substring(cleanMac.length - 12);
+    final t = timeout ?? const Duration(seconds: 8);
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    final tok = pairingToken ?? VpsDefaults.pairingToken;
+    if (tok.trim().isNotEmpty) headers['x-pairing-token'] = tok.trim();
+    final body = jsonEncode({'enabled': enabled});
+    for (final base in _frameStatusCandidateBases(null)) {
+      try {
+        final res = await _api
+            .post(Uri.parse('$base/api/frames/$slug/auto-update'),
+                headers: headers, body: body)
+            .timeout(t);
+        if (res.statusCode == 200) {
+          final json = jsonDecode(res.body) as Map<String, dynamic>;
+          return json['ok'] == true;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    return false;
+  }
+
   /// POST `/api/frames/:mac/mqtt-command` — relay an app-issued MQTT command
   /// (e.g. `wifi_sleep`) to the frame per the firmware protocol and
   /// return the server's send + ack result.
