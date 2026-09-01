@@ -53,6 +53,23 @@ class _FirmwareScreenState extends State<FirmwareScreen> {
     return f.deviceId;
   }
 
+  /// User-facing release notes for the current app locale. Prefers the
+  /// server's localized changelog bullets; falls back to the raw releaseNotes
+  /// string (split on newlines) when the server didn't return arrays.
+  List<String> _releaseNotesFor(FirmwareInfo info, AppStrings s) {
+    final bullets = s.locale == AppLocale.zh
+        ? (info.changelogZh.isNotEmpty ? info.changelogZh : info.changelogEn)
+        : (info.changelogEn.isNotEmpty ? info.changelogEn : info.changelogZh);
+    if (bullets.isNotEmpty) return bullets;
+    final raw = info.releaseNotes;
+    if (raw == null || raw.trim().isEmpty) return const [];
+    return raw
+        .split(RegExp(r'[\r\n]+'))
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+  }
+
   Future<void> _refresh() async {
     final f = _selected;
     if (f == null) return;
@@ -215,15 +232,30 @@ class _FirmwareScreenState extends State<FirmwareScreen> {
                           const Divider(height: 24),
                           _versionRow(s.firmwareLatestVersion, info.latestLabel, cs),
                           const SizedBox(height: 16),
-                          if (info.releaseNotes != null && info.releaseNotes!.isNotEmpty) ...[
+                          if (_releaseNotesFor(info, s).isNotEmpty) ...[
                             Text(
                               s.firmwareUpdateSub,
                               style: TextStyle(fontWeight: FontWeight.w600, color: cs.onSurface),
                             ),
                             const SizedBox(height: 8),
-                            Text(
-                              info.releaseNotes!,
-                              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13, height: 1.4),
+                            ..._releaseNotesFor(info, s).map(
+                              (line) => Padding(
+                                padding: const EdgeInsets.only(bottom: 4),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('•  ',
+                                        style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
+                                    Expanded(
+                                      child: Text(
+                                        line,
+                                        style: TextStyle(
+                                            color: cs.onSurfaceVariant, fontSize: 13, height: 1.4),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ],
                         ],

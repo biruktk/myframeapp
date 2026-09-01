@@ -1150,6 +1150,8 @@ class FirmwareInfo {
     required this.latestVersion,
     required this.hasUpdate,
     this.releaseNotes,
+    this.changelogZh = const [],
+    this.changelogEn = const [],
     this.frameOnline = false,
     this.otaStatus = 'idle',
   });
@@ -1158,6 +1160,8 @@ class FirmwareInfo {
   final String? latestVersion;
   final bool hasUpdate;
   final String? releaseNotes;
+  final List<String> changelogZh;
+  final List<String> changelogEn;
   final bool frameOnline;
   final String otaStatus;
 
@@ -1174,9 +1178,18 @@ class FirmwareInfo {
         latestVersion: json['latestVersion'] as String?,
         hasUpdate: json['hasUpdate'] == true,
         releaseNotes: json['releaseNotes'] as String?,
+        changelogZh: _asStringList(json['changelogZh']),
+        changelogEn: _asStringList(json['changelogEn']),
         frameOnline: json['frameOnline'] == true,
         otaStatus: json['otaStatus'] as String? ?? 'idle',
       );
+
+  static List<String> _asStringList(dynamic raw) {
+    if (raw is List) {
+      return raw.whereType<String>().where((s) => s.trim().isNotEmpty).toList();
+    }
+    return const [];
+  }
 }
 
 class PhotoUploadResponse {
