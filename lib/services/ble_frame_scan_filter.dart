@@ -38,10 +38,14 @@ class BleFrameScanFilter {
     return false;
   }
 
-  /// True if [rawName] matches MyFrame / MY_ / MY- / myframe BLE name pattern.
+  /// True if [rawName] matches MyFrame / MY_ / MF_ / myframe / ESP_ / IJ_ /
+  /// InkJoy BLE name patterns.
   ///
-  /// MyFrame prefixes take top priority; legacy IJ_ / InkJoy prefixes remain as
-  /// backward-compatible fallbacks for older units.
+  /// MF_ is the new (v0.0.2) BluFi/BLE advertising prefix on the ESP32-C5
+  /// firmware and takes precedence for newly-shipped frames; legacy
+  /// myframe / my_ / my- / IJ_ / InkJoy prefixes remain for backward compat
+  /// so older units keep being discovered. ESP_ is also accepted so
+  /// non-badged dev kits still show up.
   static bool matchesAdvertisedName(String rawName) {
     final t = rawName.trim();
     if (t.isEmpty) return false;
@@ -50,9 +54,17 @@ class BleFrameScanFilter {
     if (lower.startsWith('myframe')) return true;
     if (lower.startsWith('my_frame')) return true;
     if (lower.startsWith('my-frame')) return true;
+    if (lower.startsWith('myf_')) return true;
     if (lower.startsWith('my_')) return true;
     if (lower.startsWith('my-')) return true;
     if (lower == 'my') return true;
+    // New unified prefix (ESP32-C5 firmware v0.0.2+). Matches MF_D0CF13E03618 etc.
+    if (lower.startsWith('mf_')) return true;
+    if (lower.startsWith('mf-')) return true;
+    if (lower.startsWith('mf')) return true;
+    // ESP_ / generic Espressif BLE names (dev kits, unbadged units).
+    if (lower.startsWith('esp_')) return true;
+    if (lower.startsWith('esp-')) return true;
     // Legacy fallbacks (IJ_ / InkJoy) so older units keep being discovered.
     if (lower.startsWith('ij_')) return true;
     if (lower.startsWith('ij-')) return true;
