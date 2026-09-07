@@ -836,12 +836,17 @@ Future<PhotoUploadResponse> uploadPhoto({
   ///
   /// Each record contains at minimum: `id`, `name`, `frame_id`,
   /// `photo_count`, `cover_url`, `created_at`.
-  Future<List<Map<String, dynamic>>> fetchUserAlbums({
+  ///
+  /// Returns `[]` only when the server positively returned an empty album list.
+  /// Returns `null` when the request failed (non-200 / network error / bad
+  /// body) so callers can distinguish a transient failure from a genuine
+  /// empty server list and avoid wiping locally-persisted albums.
+  Future<List<Map<String, dynamic>>?> fetchUserAlbums({
     required String bearerToken,
     Duration? timeout,
   }) async {
     final tok = bearerToken.trim();
-    if (tok.isEmpty) return const [];
+    if (tok.isEmpty) return null;
     final t = timeout ?? const Duration(seconds: 12);
     final base = _base(null);
     final headers = <String, String>{
@@ -858,11 +863,12 @@ Future<PhotoUploadResponse> uploadPhoto({
         if (json['ok'] == true) {
           final raw = (json['albums'] ?? json['items']) as List?;
           if (raw != null) return raw.cast<Map<String, dynamic>>();
+          return const [];
         }
       }
     } catch (_) {}
 
-    return const [];
+    return null;
   }
 
   /// GET `/api/v1/playlists/:id/photos` — strictly returns photos whose

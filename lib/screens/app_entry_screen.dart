@@ -556,11 +556,23 @@ class _AuthScreenState extends State<_AuthScreen> with WidgetsBindingObserver {
     String provider = 'email',
   }) async {
     final app = AppSettingsScope.of(context);
-    await app.setAccountProfile(name: data.user.name, email: data.user.email);
+    // Complete the session FIRST so the new provider's bearer token is bound
+    // before any profile update. If we call setAccountProfile before, it runs
+    // `PUT /api/v1/user/profile` with the PREVIOUS provider's stale token
+    // (e.g. Apple), writing the WeChat nickname to the wrong account and
+    // leaving the old "Apple User" identity on screen.
     await app.completeAuthenticatedSession(
       token: data.token,
       userId: data.user.id,
       provider: provider,
+    );
+    // Always refresh the display profile to the authenticated identity. We
+    // clear profileName/email/avatar so a provider switch (Apple → WeChat on a
+    // merged account) shows the new identity even when the user id is shared.
+    await app.refreshAuthProfileForSignIn(provider: provider);
+    await app.setAccountProfile(
+      name: data.user.name,
+      email: data.user.email,
     );
     // Full post-login hydration: clear stale frames, take server authority,
     // then pull cloud gallery for this account.

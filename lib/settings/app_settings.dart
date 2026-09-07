@@ -611,6 +611,27 @@ class AppSettings extends ChangeNotifier {
     await InAppNotificationStore.instance.reloadForUser(cleanUserId);
   }
 
+  /// Clear the cached display profile (name / email / avatar) so a provider
+  /// switch immediately shows the newly-authenticated identity instead of the
+  /// previous provider's cached name/email. Called after
+  /// [completeAuthenticatedSession] so the new provider's token is already
+  /// bound — e.g. switching Apple → WeChat on a merged account where the
+  /// userId is shared and [completeAuthenticatedSession] would otherwise leave
+  /// the old "Apple User" profile on screen.
+  Future<void> refreshAuthProfileForSignIn({String? provider}) async {
+    final p = await SharedPreferences.getInstance();
+    final next = (provider == null || provider.trim().isEmpty)
+        ? authProvider
+        : provider.trim();
+    authProvider = next;
+    notifyListeners();
+    if (authProvider == null) {
+      await p.remove(_kAuthProvider);
+    } else {
+      await p.setString(_kAuthProvider, authProvider!);
+    }
+  }
+
   /// Persists Bearer JWT returned by `/api/auth/login` or `/api/auth/register`.
   Future<void> setAuthJwt({
     required String token,

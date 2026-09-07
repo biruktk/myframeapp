@@ -253,7 +253,17 @@ class AlbumCloudSync {
       meta.add(m);
     }
 
+    // `null` means the request failed (network/HTTP) — NOT an empty server.
+    // In that case we MUST NOT wipe locally-persisted albums below; that is
+    // the persistence regression that reset playlists to "Album"/"0 photos"
+    // after a cold start or transient network blip.
     final albums = await FrameApiClient().fetchUserAlbums(bearerToken: tok);
+    if (albums == null) {
+      AppDiagLog.verbose(
+        '[AlbumSync] pull albums failed (network/HTTP) — keeping local playlists',
+      );
+      return;
+    }
     for (final a in albums) {
       addMeta(Map<String, dynamic>.from(a));
     }
@@ -275,7 +285,10 @@ class AlbumCloudSync {
     } catch (_) {}
 
     if (meta.isEmpty) {
-      AppDiagLog.verbose('[AlbumSync] pull: no remote albums — drop synced ones');
+      // Only reached when the server positively returned an empty album list
+      // (albums != null). A genuine empty account legitimately drops synced
+      // albums; transient failures never reach here.
+      AppDiagLog.verbose('[AlbumSync] pull: server reports zero albums — drop synced ones');
       await SendAlbumsStore.instance.applyPlaylistsMeta(const []);
       return;
     }

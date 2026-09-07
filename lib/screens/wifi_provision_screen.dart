@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -32,11 +33,17 @@ class WifiProvisionScreen extends StatefulWidget {
     this.firstTimeSetup = false,
     this.serverConfigAlreadySent = false,
     this.openSendAfterSetup = true,
+    this.initialDevice,
   });
 
   final bool firstTimeSetup;
   final bool serverConfigAlreadySent;
   final bool openSendAfterSetup;
+
+  /// The live BLE handle established by the discovery screen's handshake.
+  /// When present, [BlufiProvisioningService] reuses this warm connection
+  /// instead of re-scanning, which is what made the very first attempt fail.
+  final BluetoothDevice? initialDevice;
 
   @override
   State<WifiProvisionScreen> createState() => _WifiProvisionScreenState();
@@ -305,9 +312,35 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         _wifiConfirmed = false;
       });
 
-      if (paired == null) {
-        // This is Wi‑Fi setup, not firmware management — never surface the
-        // "pair a frame to manage firmware updates" banner here.
+      // Carry the discovery screen's warm BLE handle into provisioning so it
+      // reuses the established GATT connection instead of re-scanning. This is
+      // the core fix for the first-attempt pairing race (see _selectRow).
+      final blufi = BlufiProvisioningService.instance;
+      if (widget.initialDevice != null) {
+        blufi.activeDevice = widget.initialDevice;
+      }
+
+      // Defensive guard: the BLE link can drop while the user is typing
+      // credentials. If we hold a warm handle, attempt a non-blocking
+      // auto-reconnect before failing, so the "No frame paired yet" banner is
+      // only shown when the device is genuinely unreachable — not because of an
+      // unawaited future or a transient drop.
+      if (blufi.activeDevice != null) {
+        final reachable = await blufi.ensureActiveDeviceConnected();
+        if (!reachable) {
+          setState(() {
+            _busy = false;
+            _error = s.noFramePaired;
+          });
+          return;
+        }
+      }
+
+      final nonNullPaired = paired;
+      if (nonNullPaired == null) {
+        // No frame identity persisted and nothing to recover — truly nothing
+        // paired yet. (This is Wi‑Fi setup, not firmware management, so the
+        // "pair to manage firmware" banner is intentionally not shown here.)
         setState(() {
           _busy = false;
           _error = s.noFramePaired;
@@ -326,8 +359,8 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         password: VpsDefaults.mqttPass,
       );
 
-      final provision = await BlufiProvisioningService.instance.provision(
-        paired: paired,
+      final provision = await blufi.provision(
+        paired: nonNullPaired,
         ssid: currentSsid,
         password: effectivePassword,
         selfHostedMqtt: selfHostedMqtt,
@@ -370,7 +403,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       // from a prior unlink and claim/re-push the owner binding so the frame
       // works again without logging out.
       unawaited(
-        AccountSyncService.instance.grantOwnerForManualPair(paired.deviceId),
+        AccountSyncService.instance.grantOwnerForManualPair(nonNullPaired.deviceId),
       );
 
       if (!mounted) return;
@@ -389,11 +422,11 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       // expires). NEVER surface an error dialog during this window — if the
       // backend reports `provisioning: true` it simply means the frame is
       // still booting Wi-Fi.
-      final frameMac = DeviceStore.macForPairedFrame(paired) ?? '';
+      final frameMac = DeviceStore.macForPairedFrame(nonNullPaired) ?? '';
       if (frameMac.isNotEmpty) {
         await _pollFrameOnlineAfterProvision(
           frameMac,
-          pairingToken: paired.resolvedPairingToken,
+          pairingToken: nonNullPaired.resolvedPairingToken,
         );
       }
 

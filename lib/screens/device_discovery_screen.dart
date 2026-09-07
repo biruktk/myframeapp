@@ -12,6 +12,7 @@ import '../models/pairing_nav_result.dart';
 import '../services/ble_display_name.dart';
 import '../services/ble_frame_scan_filter.dart';
 import '../services/ble_permissions_util.dart';
+import '../services/blufi_provisioning_service.dart';
 import '../services/device_store.dart';
 import 'wifi_provision_screen.dart';
 import '../navigation/pairing_flow_nav.dart';
@@ -400,6 +401,16 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         _connectFailedRow = null;
         _connectFailureMessage = null;
       });
+
+      // Stop scanning before the handshake so the OS BLE stack gives the
+      // connection its full attention (a live scan can starve the connect
+      // window on a cold first attempt).
+      try {
+        await _stopUserScan();
+      } catch (_) {}
+
+      // Gate navigation on a completed handshake: connect + discover GATT/
+      // BluFi services. Navigation below runs ONLY once this returns true.
       final ok = await _connectForRealtimeData(row.device);
       if (!ok) {
         if (!mounted) return;
@@ -416,6 +427,12 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
         return;
       }
       if (!mounted) return;
+
+      // Persist the live handle so Wi‑Fi provisioning reuses this warm GATT
+      // connection instead of tearing down + re-scanning (the root cause of the
+      // first-attempt "No frame paired yet" race).
+      BlufiProvisioningService.instance.activeDevice = row.device;
+
       final remoteMac = row.id;
       final advPrefer = adv.isNotEmpty ? adv : (pn.isNotEmpty ? pn : dn);
       final displayPrefix = advPrefer.isNotEmpty
@@ -431,12 +448,14 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
       );
       if (!mounted) return;
       _scanSuspended = true;
-      try {
-        await _stopUserScan();
-      } catch (_) {}
-      await _disconnectTelemetry();
-      if (!mounted) return;
-      AppDiagLog.verbose('[BLE] opening WifiProvisionScreen — MQTT + Wi‑Fi will run in one BluFi session…');
+
+      // NOTE: we intentionally NOT calling `_disconnectTelemetry()` here.
+      // The old code dropped the GATT connection right before navigation, which
+      // forced provisioning to re-discover the frame from a cold OS handle —
+      // that is exactly the race the previous design caused. The warm handle is
+      // now carried forward via [BlufiProvisioningService.activeDevice].
+
+      AppDiagLog.verbose('[BLE] opening WifiProvisionScreen — reusing warm GATT handle…');
       final wifiResult = await SafeNav.push<PairingNavResult>(
         context,
         MaterialPageRoute<PairingNavResult>(
@@ -444,6 +463,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
             firstTimeSetup: true,
             serverConfigAlreadySent: false,
             openSendAfterSetup: widget.openSendAfterSetup,
+            initialDevice: row.device,
           ),
         ),
       );
@@ -454,8 +474,15 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
       unawaited(_startUserBleScan());
       if (!mounted) return;
       if (wifiResult?.success == true) {
+        // Provisioning confirmed — teardown the telemetry session cleanly.
         await _disconnectTelemetry();
         ShellNavigation.completePairingAndShowFrames();
+      } else {
+        // Lifecycle cleanup: user backed out without pairing. Drop the warm
+        // handle and disconnect gracefully so the next scan starts from a
+        // clean BLE state (fixes a stale-handle connect on retry).
+        BlufiProvisioningService.instance.activeDevice = null;
+        await _disconnectTelemetry();
       }
       if (mounted) setState(() => _connectingDeviceId = null);
       await SafeNav.popPairingResult(
@@ -465,6 +492,7 @@ class _DeviceDiscoveryScreenState extends State<DeviceDiscoveryScreen>
     } catch (e, st) {
       AppDiagLog.verbose('[BLE] _selectRow failed: $e\n$st');
       _scanSuspended = false;
+      BlufiProvisioningService.instance.activeDevice = null;
       if (!mounted) return;
       setState(() {
         _connectingDeviceId = null;

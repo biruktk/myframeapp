@@ -52,6 +52,37 @@ class SelfHostedMqttConfig {
 class BlufiProvisioningService {
   BlufiProvisioningService._();
   static final BlufiProvisioningService instance = BlufiProvisioningService._();
+
+  /// The live BLE handle carried over from the discovery screen's handshake.
+  ///
+  /// The discovery screen connects + discovers GATT, then hands this device
+  /// to Wi‑Fi setup so provisioning can reuse the warm GATT connection instead
+  /// of tearing everything down and re‑scanning from scratch. Re‑scanning on
+  /// the very first attempt is what let the OS drop the frame (no warm handle
+  /// cached yet) and produced the misleading "No frame paired yet" error.
+  /// `null` means provisioning falls back to the legacy scan path.
+  BluetoothDevice? activeDevice;
+
+  /// Re‑establish the connection on [activeDevice] if it dropped while the
+  /// user was typing credentials. Non‑blocking (bounded timers); returns true
+  /// only when the device is genuinely reachable again.
+  Future<bool> ensureActiveDeviceConnected() async {
+    final dev = activeDevice;
+    if (dev == null) return false;
+    try {
+      final state = await dev.connectionState.first;
+      if (state == BluetoothConnectionState.connected) return true;
+      _d('activeDevice ${dev.remoteId.str} disconnected — auto-reconnecting (4s)');
+      await dev.connect(timeout: const Duration(seconds: 4), autoConnect: false);
+      // Post-reconnect discovery confirms BluFi GATT is ready before we hand
+      // it back to the provisioning writer.
+      await dev.discoverServices(timeout: 6);
+      return true;
+    } catch (e) {
+      _d('activeDevice reconnect failed: $e');
+      return false;
+    }
+  }
   static const _defaultFrameServiceUuid =
       '0000ffff-0000-1000-8000-00805f9b34fb';
   static const _defaultFrameDataUuid = '0000ff01-0000-1000-8000-00805f9b34fb';
@@ -109,11 +140,25 @@ class BlufiProvisioningService {
       }
       // Ensure no stale scan / GATT session competes with provisioning
       // (common after WeChat mini-program Wi‑Fi setup on the same frame).
+      // Preserve the discovery screen's warm [activeDevice] handle — clearing
+      // it would force a cold re-scan and re-introduce the first-attempt race.
       try {
         await FlutterBluePlus.stopScan();
         _d('pre-provision: stopped active BLE scan');
       } catch (_) {}
       await _clearConnectedSessions();
+      // [activeDevice] is a live reference; if it is no longer connected
+      // (e.g. the frame rebooted while we waited), re-attach it so the very
+      // next provisioning step uses the same device handle, never a re-scan.
+      if (activeDevice != null && !activeDevice!.isConnected) {
+        try {
+          _d('re-attaching warm activeDevice ${activeDevice!.remoteId.str}');
+          await _connectWithRetry(activeDevice!);
+        } catch (e) {
+          _d('activeDevice re-attach failed, clearing: $e');
+          activeDevice = null;
+        }
+      }
       await Future<void>.delayed(const Duration(milliseconds: 300));
 
       final candidates = await _scanProvisionCandidates(paired);
@@ -235,6 +280,9 @@ class BlufiProvisioningService {
           await remote.disconnect();
           _d('disconnected after candidate[${ci + 1}] ack=$ack');
           if (ack) {
+            // Provisioning succeeded — drop the warm handle so a later
+            // session starts clean instead of carrying a stale reference.
+            activeDevice = null;
             return const BlufiProvisionResult(
               ok: true,
               confirmed: true,
@@ -426,6 +474,13 @@ class BlufiProvisioningService {
     try {
       final connected = FlutterBluePlus.connectedDevices;
       for (final d in connected) {
+        // Preserve the warm handle hand-carried from the discovery screen so
+        // provisioning reuses the live GATT connection (the first-attempt fix).
+        if (activeDevice != null &&
+            d.remoteId.str == activeDevice!.remoteId.str) {
+          _d('kept warm activeDevice ${d.remoteId.str}');
+          continue;
+        }
         try {
           await d.disconnect();
           _d('cleared connected session ${d.remoteId.str}');
@@ -848,8 +903,16 @@ class BlufiProvisioningService {
     return ensureBlePermissionsBeforeScan();
   }
 
-  /// Order: paired / IJ_ primary first, then 3837 companion.
+  /// Order: active (warm) handle first, then paired / IJ_ primary, then 3837 companion.
   Future<List<BluetoothDevice>> _scanProvisionCandidates(PairedFrame p) async {
+    // Warm handle from the discovery screen handshake — its `remoteId` is the
+    // authoritative device identity, so reconnecting it (not re-scanning) is
+    // the reliable path and it is the device the user actually tapped.
+    final warm = activeDevice;
+    if (warm != null) {
+      _d('activeDevice ${warm.remoteId.str} reused — skipping scan');
+      return [warm];
+    }
     final rid = p.bleRemoteId?.trim();
     if (rid != null && rid.isNotEmpty) {
       _d('bleRemoteId=$rid known — connecting directly, skipping 30s scan');

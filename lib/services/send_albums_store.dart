@@ -283,8 +283,15 @@ class SendAlbumsStore {
       final id = '${m['id'] ?? m['album_id'] ?? ''}'.trim();
       if (id.isEmpty || deleted.contains(id)) continue;
       seen.add(id);
-      final name = '${m['name'] ?? m['title'] ?? 'Album'}'.trim();
       final existing = byId[id];
+      // Resolve name from cloud meta first; fall back to the existing local
+      // album name so a transient empty/missing title never regresses the card
+      // back to the default "Album". Empty names only occur when the payload
+      // omits both `name` and `title` (or they are blank).
+      var name = '${m['name'] ?? m['title'] ?? ''}'.trim();
+      if (name.isEmpty) {
+        name = (existing?.name ?? '').trim().isEmpty ? 'Album' : existing!.name;
+      }
       final paths = <String>[];
       final rawIds = m['photo_ids'] ?? m['photoIds'] ?? m['media_ids'];
       if (rawIds is List) {
@@ -300,9 +307,10 @@ class SendAlbumsStore {
           }
         }
       }
-      // Only keep prior local membership when cloud resolved nothing yet
-      // (avoid duplicating the same photo as local path + downloaded cloud path).
-      if (paths.isEmpty && existing != null) {
+      // Keep prior local membership for any photos the cloud resolve could not
+      // materialize this pass (offline / evicted / not-yet-downloaded), instead
+      // of dropping them to "0 photos". Merge, never clobber, the existing set.
+      if (existing != null) {
         for (final p in existing.paths) {
           final t = p.trim();
           if (t.isEmpty || paths.contains(t)) continue;
@@ -312,7 +320,7 @@ class SendAlbumsStore {
       next.add(
         SendAlbumEntry(
           id: id,
-          name: name.isEmpty ? 'Album' : name,
+          name: name,
           paths: paths,
         ),
       );
