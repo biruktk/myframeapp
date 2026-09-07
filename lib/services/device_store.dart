@@ -334,9 +334,6 @@ class DeviceStore {
         return;
       }
 
-      // Family invite / re-share: cloud listing clears any prior local Remove ban.
-      await AccountSyncService.instance.clearUnboundBansForCloudFrames(mapped);
-
       await applyBoundFramesFromServer(
         mapped,
         bearerToken: bearerToken,
@@ -364,8 +361,26 @@ class DeviceStore {
     await load();
 
     // Cloud is actively listing these frames for this account → lift Remove bans
-    // so family invitees see the owner's shared device on Home again.
-    await AccountSyncService.instance.clearUnboundBansForCloudFrames(serverFrames);
+    // so family invitees see the owner's shared device on Home again. BUT never
+    // clear the ban for a MAC the user just deleted — doing so is what let the
+    // periodic sync resurrect the frame during the ~30s unbind window. Only
+    // clear bans for frames that are NOT currently tombstoned locally.
+    final nonUnbound = <Map<String, dynamic>>[];
+    for (final f in serverFrames) {
+      final station = (f['station_mac'] as String?) ?? '';
+      final mac = (f['ble_mac'] as String?) ?? '';
+      final frameId = (f['frame_id'] as String?) ?? '';
+      final rawId = station.isNotEmpty ? station : (mac.isNotEmpty ? mac : frameId);
+      final slug = FrameMacUtil.normalizeSlug(rawId);
+      final unb = slug != null &&
+          (await AccountSyncService.instance.isUnboundFrameId(slug) ||
+              await AccountSyncService.instance.isUnboundFrameId(station) ||
+              await AccountSyncService.instance.isUnboundFrameId(mac));
+      if (!unb) nonUnbound.add(f);
+    }
+    if (nonUnbound.isNotEmpty) {
+      await AccountSyncService.instance.clearUnboundBansForCloudFrames(nonUnbound);
+    }
 
     final next = <PairedFrame>[];
     final seen = <String>{};

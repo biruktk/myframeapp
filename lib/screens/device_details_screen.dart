@@ -190,7 +190,40 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
     if (go != true || !mounted) return;
 
     // Same path as Home "Remove" — account unbind + local wipe (owner/family-owner).
-    await FrameForgetService.instance.forgetFrame(p.deviceId);
+    // Show a blocking loader while the backend unbind + local wipe complete so
+    // the user cannot re-open the deleted device during the unbind window.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Dialog(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.4),
+                ),
+                SizedBox(width: 16),
+                Flexible(child: Text('Removing device…')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await FrameForgetService.instance.forgetFrame(p.deviceId);
+    } finally {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop(); // close loader
+      }
+    }
     if (!mounted) return;
     Navigator.of(context).pop();
   }
