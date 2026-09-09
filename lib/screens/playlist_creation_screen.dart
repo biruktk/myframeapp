@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -7,10 +6,9 @@ import '../services/device_store.dart';
 import '../services/frame_online_guard.dart';
 import '../services/gallery_photo_picker.dart';
 import '../services/gallery_image_cache.dart';
-import '../services/gallery_image_normalizer.dart';
 import '../services/send_albums_store.dart';
 import '../l10n/app_strings.dart';
-import 'image_editor_screen.dart';
+import 'edit_color_grade_screen.dart';
 
 class PlaylistCreationScreen extends StatefulWidget {
   const PlaylistCreationScreen({super.key, required this.imagePaths});
@@ -22,7 +20,7 @@ class PlaylistCreationScreen extends StatefulWidget {
 }
 
 class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
-  static const _maxPhotos = 10;
+  static const _maxPhotos = kMaxMultiPick;
 
   final _nameController = TextEditingController();
   var _selectedInterval = 10;
@@ -70,9 +68,9 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
     final files = await GalleryPhotoPicker.pickMulti(context);
     if (files.isEmpty || !mounted) return;
 
-    final stored = await GalleryImageCache.persistPaths(files.map((f) => f.path));
+    final stored = await GalleryImageCache.persistPaths(files.take(remaining).map((f) => f.path));
     final allowed = stored.take(remaining).toList();
-    if (stored.length > remaining && mounted) {
+    if (files.length > remaining && mounted) {
       final s = AppStrings.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(s.onlyMoreAllowed(remaining, _maxPhotos))),
@@ -102,23 +100,6 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
         ? AppStrings.of(context).myNewPlaylist
         : _nameController.text.trim();
 
-    final allBytes = <Uint8List>[];
-    for (final path in _paths) {
-      final raw = await File(path).readAsBytes();
-      final jpeg = await GalleryImageNormalizer.toJpegBytes(raw, pathHint: path);
-      if (jpeg != null && jpeg.isNotEmpty) {
-        allBytes.add(jpeg);
-      }
-    }
-    if (allBytes.isEmpty) {
-      if (!mounted) return;
-      setState(() => _isUploading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppStrings.of(context).decodeError)),
-      );
-      return;
-    }
-
     await SendAlbumsStore.instance.createAlbum(name, _paths);
     await SendAlbumsStore.instance.load();
     String? albumId;
@@ -130,12 +111,10 @@ class _PlaylistCreationScreenState extends State<PlaylistCreationScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => ImageEditorScreen(
-          imageBytes: allBytes.first,
-          playlistImages: allBytes.length > 1 ? allBytes : null,
-          playlistPaths: _paths,
-          playlistTitle: name,
-          displaySeconds: _selectedInterval,
+        builder: (_) => EditColorGradeScreen(
+          selectedImages: _paths.map(File.new).toList(),
+          playlistName: name,
+          initialIntervalSeconds: _selectedInterval,
           albumId: albumId,
         ),
       ),

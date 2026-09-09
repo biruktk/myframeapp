@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../settings/app_settings.dart';
 import 'app_diag_log.dart';
 import 'device_store.dart';
+import 'external_share_inbox.dart';
 
 /// Keys shared with the native iOS Share Extension (App Group defaults).
 ///
@@ -21,8 +22,9 @@ class ShareExtensionCache {
 
   static final ShareExtensionCache instance = ShareExtensionCache._();
 
-  static const MethodChannel _channel =
-      MethodChannel('myframe/share_extension/cache');
+  static const MethodChannel _channel = MethodChannel(
+    'myframe/share_extension/cache',
+  );
 
   /// Frame list mirrored to the extension (JSON array of frame rows).
   static const String framesKey = 'ShareExtensionFrames';
@@ -74,10 +76,7 @@ class ShareExtensionCache {
     // Re-mirror frames whenever pairing changes.
     DeviceStore.instance.revision.addListener(_onDeviceRevision);
 
-    await Future.wait([
-      syncFrames(),
-      _syncAuthFrom(settings),
-    ]);
+    await Future.wait([syncFrames(), _syncAuthFrom(settings)]);
   }
 
   void _onDeviceRevision() {
@@ -105,8 +104,9 @@ class ShareExtensionCache {
         // The same identity `FrameApiClient.uploadPhoto` uses for the URL slug
         // and `device_id` field (station MAC preferred over BLE id).
         final uploadTargets = f.resolvedFrameUploadTargets;
-        final targetId =
-            uploadTargets.isNotEmpty ? uploadTargets.first : f.deviceId;
+        final targetId = uploadTargets.isNotEmpty
+            ? uploadTargets.first
+            : f.deviceId;
         final isOnline = onlineDeviceIds.contains(f.deviceId);
         return {
           'id': f.deviceId,
@@ -117,10 +117,10 @@ class ShareExtensionCache {
           'is_online': isOnline,
         };
       }).toList();
-      await _channel.invokeMethod<void>(
-        'write',
-        {'key': framesKey, 'value': jsonEncode(rows)},
-      );
+      await _channel.invokeMethod<void>('write', {
+        'key': framesKey,
+        'value': jsonEncode(rows),
+      });
     } catch (e) {
       AppDiagLog.verbose('[ShareExtensionCache] syncFrames failed: $e');
     }
@@ -134,14 +134,14 @@ class ShareExtensionCache {
     _lastToken = token;
     _lastUserId = userId;
     try {
-      await _channel.invokeMethod<void>(
-        'write',
-        {'key': authTokenKey, 'value': token},
-      );
-      await _channel.invokeMethod<void>(
-        'write',
-        {'key': authUserIdKey, 'value': userId},
-      );
+      await _channel.invokeMethod<void>('write', {
+        'key': authTokenKey,
+        'value': token,
+      });
+      await _channel.invokeMethod<void>('write', {
+        'key': authUserIdKey,
+        'value': userId,
+      });
     } catch (e) {
       AppDiagLog.verbose('[ShareExtensionCache] syncAuth failed: $e');
     }
@@ -160,7 +160,9 @@ class ShareExtensionCache {
         return decoded.whereType<String>().toList();
       }
     } catch (e) {
-      AppDiagLog.verbose('[ShareExtensionCache] readSelectedFrameIds failed: $e');
+      AppDiagLog.verbose(
+        '[ShareExtensionCache] readSelectedFrameIds failed: $e',
+      );
     }
     return const [];
   }
@@ -174,7 +176,9 @@ class ShareExtensionCache {
         'value': jsonEncode(ids.toList(growable: false)),
       });
     } catch (e) {
-      AppDiagLog.verbose('[ShareExtensionCache] writeSelectedFrameIds failed: $e');
+      AppDiagLog.verbose(
+        '[ShareExtensionCache] writeSelectedFrameIds failed: $e',
+      );
     }
   }
 
@@ -213,10 +217,9 @@ class ShareExtensionCache {
   Future<List<String>> consumeAutoSend() async {
     if (!_isApple) return const [];
     try {
-      final flagged = await _channel.invokeMethod<bool?>(
-        'readBool',
-        {'key': autoSendKey},
-      );
+      final flagged = await _channel.invokeMethod<bool?>('readBool', {
+        'key': autoSendKey,
+      });
       if (flagged != true) return const [];
       final ids = await readSelectedFrameIds();
       await _channel.invokeMethod<void>('remove', {'key': autoSendKey});
@@ -227,25 +230,34 @@ class ShareExtensionCache {
     }
   }
 
-  /// Consumes any external shares the native Share Extension recorded in the
-  /// App Group (list of `{filePaths, isPlaylist, timestamp, pushes[]}`), then
-  /// clears the queue. The extension pushes silently to the backend in its own
-  /// process; the HOST app ingests the payloads locally (Personal / Playlists)
-  /// and attaches [UploadQueueController] tracking via the recorded msgid+mac.
+  Future<void> acknowledgePendingShare(
+    String id, {
+    List<String> paths = const [],
+  }) async {
+    await _channel.invokeMethod<void>('acknowledgeShare', {
+      'key': pendingExternalSharesKey,
+      'id': id,
+      'paths': paths,
+    });
+  }
+
+  /// Reads pending native sessions without deleting them. The host first saves
+  /// the local gallery record, then acknowledges a completed session by ID.
+  /// Native uploads stay owned by the extension; these records never redispatch.
   Future<List<PendingExternalShare>> consumePendingExternalShares() async {
     if (!_isApple) return const [];
     try {
-      final raw = await _channel.invokeMethod<String?>(
-        'readString',
-        {'key': pendingExternalSharesKey},
-      );
+      final raw = await _channel.invokeMethod<String?>('readString', {
+        'key': pendingExternalSharesKey,
+      });
       if (raw == null || raw.trim().isEmpty) return const [];
       final decoded = jsonDecode(raw);
       if (decoded is! List) return const [];
       final out = <PendingExternalShare>[];
       for (final e in decoded) {
         if (e is! Map) continue;
-        final paths = (e['filePaths'] as List?)
+        final paths =
+            (e['filePaths'] as List?)
                 ?.whereType<String>()
                 .map((p) => p.trim())
                 .where((p) => p.isNotEmpty)
@@ -264,18 +276,23 @@ class ShareExtensionCache {
             }
           }
         }
-        out.add(PendingExternalShare(
-          paths: paths,
-          isPlaylist: e['isPlaylist'] == true || paths.length > 1,
-          pushes: pushes,
-        ));
-      }
-      if (out.isNotEmpty) {
-        await _channel.invokeMethod<void>('remove', {'key': pendingExternalSharesKey});
+        out.add(
+          PendingExternalShare(
+            id: '${e['id'] ?? ExternalShareInbox.keyFor(paths)}',
+            completed: e['state'] == null || e['state'] == 'completed',
+            failed: e['state'] == 'failed',
+            progress: (e['progress'] as num?)?.toDouble() ?? 0,
+            paths: paths,
+            isPlaylist: e['isPlaylist'] == true || paths.length > 1,
+            pushes: pushes,
+          ),
+        );
       }
       return out;
     } catch (e) {
-      AppDiagLog.verbose('[ShareExtensionCache] consumePendingExternalShares failed: $e');
+      AppDiagLog.verbose(
+        '[ShareExtensionCache] consumePendingExternalShares failed: $e',
+      );
       return const [];
     }
   }
@@ -286,12 +303,20 @@ class ShareExtensionCache {
 class PendingExternalShare {
   const PendingExternalShare({
     required this.paths,
+    required this.id,
+    this.completed = true,
+    this.failed = false,
+    this.progress = 0,
     required this.isPlaylist,
     this.pushes = const [],
   });
 
   /// Transcoded JPEG paths inside the shared App Group container.
   final List<String> paths;
+  final String id;
+  final bool completed;
+  final bool failed;
+  final double progress;
 
   /// true = 2+ images (Playlists tab), false = single image (Personal tab).
   final bool isPlaylist;

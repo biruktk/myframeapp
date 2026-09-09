@@ -1,3 +1,4 @@
+import 'widgets/push_progress_banner.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -49,9 +50,14 @@ Future<void> main() async {
     await Future.wait([
       _guardStartup('family invite deep links', FamilyInviteDeepLink.bootstrap),
       _guardStartup('mobile auth deep links', MobileAuthDeepLink.bootstrap),
-      _guardStartup('share incoming service', ShareIncomingService.instance.bootstrap),
-      _guardStartup('share extension cache', () =>
-          ShareExtensionCache.instance.bootstrap(settings: settings)),
+      _guardStartup(
+        'share incoming service',
+        ShareIncomingService.instance.bootstrap,
+      ),
+      _guardStartup(
+        'share extension cache',
+        () => ShareExtensionCache.instance.bootstrap(settings: settings),
+      ),
       _guardStartup('splash branding', SplashBranding.preload),
     ]);
 
@@ -60,10 +66,19 @@ Future<void> main() async {
     // Defer non-critical / heavy work until after UI is up.
     unawaited(() async {
       await Future.wait([
-        _guardStartup('google photos prefs', GooglePhotosService.instance.loadPrefs),
-        _guardStartup('icloud photos prefs', ICloudPhotosService.instance.loadPrefs),
+        _guardStartup(
+          'google photos prefs',
+          GooglePhotosService.instance.loadPrefs,
+        ),
+        _guardStartup(
+          'icloud photos prefs',
+          ICloudPhotosService.instance.loadPrefs,
+        ),
         _guardStartup('fcm', FcmService.instance.init),
-        _guardStartup('external share queue', ExternalShareQueue.instance.bootstrap),
+        _guardStartup(
+          'external share queue',
+          ExternalShareQueue.instance.bootstrap,
+        ),
       ]);
       await FcmService.instance.syncTokenWithAuth(settings);
     }());
@@ -139,7 +154,7 @@ class MyFrameApp extends StatelessWidget {
                     ).clamp(minScaleFactor: 0.88, maxScaleFactor: 1.9),
                   ),
                   // child: FloatingLogOverlay(child: c),
-                  child: c,
+                  child: PushProgressOverlay(child: c),
                 );
               },
               supportedLocales: const [

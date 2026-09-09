@@ -9,7 +9,7 @@ import 'gallery_image_cache.dart';
 import 'image_sanitizer.dart';
 import 'permission_gate.dart';
 
-const int kMaxMultiPick = 10;
+const int kMaxMultiPick = 50;
 
 /// Shared gallery multi-pick; avoids reopening picker on iOS cancel.
 ///
@@ -31,6 +31,7 @@ class GalleryPhotoPicker {
       }
       final picker = ImagePicker();
       var list = await picker.pickMultiImage(
+        limit: kMaxMultiPick,
         imageQuality: 85,
         maxWidth: 1920,
         maxHeight: 1080,
@@ -54,7 +55,7 @@ class GalleryPhotoPicker {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               behavior: SnackBarBehavior.floating,
-              content: Text(s.maxImagesAtATime),
+              content: Text(s.maxPhotosAllowed(kMaxMultiPick)),
               duration: const Duration(seconds: 3),
             ),
           );

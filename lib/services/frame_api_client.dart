@@ -286,6 +286,8 @@ Future<PhotoUploadResponse> uploadPhoto({
                   'display_seconds': '$displaySeconds',
                 if (transport != null && transport.isNotEmpty) 'transport': transport,
                 if (skipPlay) 'skip_play': 'true',
+                // Requires the matching server notification guard; see docs/playlist-notifications.md.
+                if (source == UploadSource.playlist) 'silent': 'true',
                 if (editsJson != null && editsJson.isNotEmpty) 'edits': editsJson,
                 // Source isolation: tag the upload with its logical context
                 // (personal_album | playlist | direct_cast | guest_invite |

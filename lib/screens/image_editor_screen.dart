@@ -1025,7 +1025,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
           }
         }
 
-        if (allIds.isEmpty) {
+        if (allIds.length != total) {
           if (mounted) {
             setState(() => _status = (_strings?.sendFailedRetry ?? 'Image sending failed. Please try again. Make sure WiFi is connected to your frame, or delete the device and resend.'));
           }
@@ -1056,6 +1056,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
             UploadQueueController.instance.trackPush(
               mac: FrameCloudCastService.instance.uploadDeviceId(activePaired),
               msgid: playlistMsgid,
+              notifyOnCompletion: false,
               pairingToken: pairingToken,
               userAuthToken: authToken,
             );

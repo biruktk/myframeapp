@@ -5,14 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../l10n/app_strings.dart';
-import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/external_share_cast_service.dart';
 import '../services/gallery_image_cache.dart';
-import '../services/send_albums_store.dart';
+import '../services/external_share_inbox.dart';
 import '../services/share_extension_cache.dart';
 import '../services/share_receiver_service.dart';
-import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
 
 /// Result of [showShareTargetBottomSheet].
@@ -106,15 +104,15 @@ class _ShareTargetBottomSheetWidgetState
     HapticFeedback.lightImpact();
     final s = AppStrings.of(context);
     if (_paths.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.noImageSelected)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(s.noImageSelected)));
       return;
     }
     if (_selectedFrames.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(s.shareIncomingConnectFrame)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(s.shareIncomingConnectFrame)));
       return;
     }
 
@@ -169,8 +167,9 @@ class _ShareTargetBottomSheetWidgetState
 
     // Keep the native Share Extension's cached frame selection in sync.
     unawaited(
-      ShareExtensionCache.instance
-          .writeSelectedFrameIds(_selectedFrames.map((f) => f.deviceId)),
+      ShareExtensionCache.instance.writeSelectedFrameIds(
+        _selectedFrames.map((f) => f.deviceId),
+      ),
     );
 
     await Future<void>.delayed(const Duration(milliseconds: 1100));
@@ -185,11 +184,7 @@ class _ShareTargetBottomSheetWidgetState
   /// Multi-image external shares land (and cloud-sync) in a default
   /// "My Playlist" album, keeping them out of loose Personal photos.
   Future<void> _routeToMyPlaylist(List<String> paths, String authToken) async {
-    await routeSharedToMyPlaylist(
-      paths,
-      authToken,
-      AppStrings.of(context),
-    );
+    await routeSharedToMyPlaylist(paths, authToken, AppStrings.of(context));
   }
 
   @override
@@ -200,9 +195,7 @@ class _ShareTargetBottomSheetWidgetState
     final photoCount = _paths.isNotEmpty ? _paths.length : widget.items.length;
 
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.viewInsetsOf(context).bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Material(
@@ -278,7 +271,10 @@ class _ShareTargetBottomSheetWidgetState
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Text(
                       s.shareIncomingConnectFrame,
-                      style: TextStyle(color: cs.onSurfaceVariant, height: 1.35),
+                      style: TextStyle(
+                        color: cs.onSurfaceVariant,
+                        height: 1.35,
+                      ),
                     ),
                   )
                 else
@@ -299,8 +295,9 @@ class _ShareTargetBottomSheetWidgetState
                         return Material(
                           color: selected
                               ? cs.primary.withValues(alpha: 0.10)
-                              : cs.surfaceContainerHighest
-                                  .withValues(alpha: 0.45),
+                              : cs.surfaceContainerHighest.withValues(
+                                  alpha: 0.45,
+                                ),
                           borderRadius: BorderRadius.circular(14),
                           child: CheckboxListTile(
                             value: selected,
@@ -324,8 +321,9 @@ class _ShareTargetBottomSheetWidgetState
                               title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                             subtitle: Text(
                               f.deviceId,
@@ -368,7 +366,8 @@ class _ShareTargetBottomSheetWidgetState
                 ],
                 const SizedBox(height: 18),
                 FilledButton(
-                  onPressed: (_phase == _ShareSheetPhase.sending ||
+                  onPressed:
+                      (_phase == _ShareSheetPhase.sending ||
                           _loadingPaths ||
                           _frames.isEmpty ||
                           _selectedIds.isEmpty)
@@ -476,28 +475,9 @@ Future<void> routeSharedToMyPlaylist(
   AppStrings s,
 ) async {
   if (paths.length < 2) return;
-  try {
-    final playlistName = s.myPlaylistName;
-    final name = playlistName.trim().toLowerCase();
-    await SendAlbumsStore.instance.load();
-    SendAlbumEntry? mine;
-    for (final a in SendAlbumsStore.instance.albums) {
-      if (a.name.trim().toLowerCase() == name) {
-        mine = a;
-        break;
-      }
-    }
-    String id;
-    if (mine == null) {
-      await SendAlbumsStore.instance.createAlbum(playlistName, paths);
-      await SendAlbumsStore.instance.load();
-      id = SendAlbumsStore.instance.albums.first.id;
-    } else {
-      await SendAlbumsStore.instance.addPathsToAlbum(mine.id, paths);
-      id = mine.id;
-    }
-    unawaited(SyncPipeline.instance.onAlbumsChanged(albumId: id));
-  } catch (e, st) {
-    AppDiagLog.verbose('[ShareSheet] route to My Playlist failed: $e\n$st');
-  }
+  await ExternalShareInbox.instance.persist(
+    paths,
+    sessionId: ExternalShareInbox.keyFor(paths),
+    playlistName: s.myPlaylistName,
+  );
 }

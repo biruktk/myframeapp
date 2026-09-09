@@ -65,6 +65,10 @@ final class ShareUploader {
     }
   }
 
+  private var playlistAttempts = Set<String>()
+  private var playlistReceipts: [String: String] = [:]
+  private var uploadedResponses: [String: Data] = [:]
+
   private let boundary = "MyFrameBoundary.\(UUID().uuidString)"
 
   /// Uploads every JPEG to every selected target sequentially (foreground
@@ -78,6 +82,7 @@ final class ShareUploader {
   /// can later attach UploadQueueController tracking and show the in-app banner.
   func upload(
     targets: [Target],
+    shareSessionId: String,
     jpegFiles: [URL],
     authToken: String,
     onProgress: @escaping (_ completed: Int, _ total: Int, _ detail: String) -> Void,
@@ -132,13 +137,18 @@ final class ShareUploader {
           guard let bodyURL = makeMultipartBody(jpeg: file, target: target, macSlug: macSlug, totalFiles: jpegFiles.count, displaySeconds: rules.displaySeconds) else {
             throw ShareUploadError.emptyBody
           }
-          let responseData = try await uploadOne(
+          let uploadKey = "\(shareSessionId):\(macSlug):\(file.path)"
+          let responseData: Data
+          if let saved = uploadedResponses[uploadKey] { responseData = saved } else {
+          responseData = try await uploadOne(
             session: session,
             to: endpoint,
             bodyURL: bodyURL,
             target: target,
             authToken: authToken
           )
+          uploadedResponses[uploadKey] = responseData
+          }
           if let id = Self.imageId(from: responseData), !imageIds.contains(id) {
             imageIds.append(id)
           }
@@ -173,8 +183,17 @@ final class ShareUploader {
         ), !mid.isEmpty {
           onReceipt(macSlug, mid)
         }
-      } else if imageIds.count > 1 {
-        let mid = await publishPlaylist(
+      } else if jpegFiles.count > 1 && imageIds.count == jpegFiles.count {
+        do {
+        let dispatchKey = "\(shareSessionId):\(macSlug)"
+        if let mid = playlistReceipts[dispatchKey] {
+          if !mid.isEmpty { onReceipt(macSlug, mid) }
+          continue
+        }
+        guard playlistAttempts.insert(dispatchKey).inserted else {
+          throw ShareUploadError.network("Playlist dispatch result is unknown. Check the frame before sharing again.")
+        }
+        let mid = try await publishPlaylist(
           session: session,
           target: target,
           macSlug: macSlug,
@@ -182,9 +201,15 @@ final class ShareUploader {
           authToken: authToken,
           rules: rules
         )
+        playlistReceipts[dispatchKey] = mid ?? ""
         if let mid, !mid.isEmpty {
           onReceipt(macSlug, mid)
         }
+        } catch {
+          results.append(FileResult(filename: "playlist", success: false, message: error.localizedDescription))
+        }
+      } else if jpegFiles.count > 1 {
+        results.append(FileResult(filename: "playlist", success: false, message: "Not every photo has a playlist image ID."))
       }
     }
     return results
@@ -307,7 +332,7 @@ final class ShareUploader {
     imageIds: [String],
     authToken: String,
     rules: PlaybackRules
-  ) async -> String? {
+  ) async throws -> String? {
     let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
     var cleanUrl = rawApiUrl
     if !cleanUrl.isEmpty {
@@ -345,7 +370,7 @@ final class ShareUploader {
       "endtime": "23:59",
       "idle": 1,
       "skipPlay": false,
-      "source": "direct_cast",
+      "source": "playlist",
     ]
     request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
 
@@ -365,99 +390,14 @@ final class ShareUploader {
         }
         return nil
       } else {
-        // Fallback: try the dedicated /cast/batch endpoint. It accepts
-        // the same shape but is purpose-built for multi-image direct
-        // share and guarantees an immediate first-photo push.
-        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-        NSLog("[MyFrame Share] playlist publish HTTP \(status) for \(macSlug); falling back to /cast/batch")
-        await publishBatchCast(
-          session: session,
-          target: target,
-          macSlug: macSlug,
-          imageIds: imageIds,
-          authToken: authToken,
-          rules: rules
-        )
-        return nil
+        throw ShareUploadError.badResponse(status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+          body: String(data: data, encoding: .utf8) ?? "")
       }
     } catch {
-      NSLog("[MyFrame Share] playlist publish failed for \(macSlug): \(error.localizedDescription); falling back to /cast/batch")
-      await publishBatchCast(
-        session: session,
-        target: target,
-        macSlug: macSlug,
-        imageIds: imageIds,
-        authToken: authToken,
-        rules: rules
-      )
-      return nil
+      // A timeout may follow an accepted POST. Never dispatch via another route.
+      throw error
     }
   }
-
-  /// MARK: - Batch cast (fallback for /slideshow)
-  ///
-  /// POST /api/frames/{mac}/cast/batch — unified multi-image direct cast.
-  /// Backend persists a transient slideshow marker AND dispatches the
-  /// strategy_bin + an immediate play command for imageIds[0] so the
-  /// device wakes up with the first shared image right away.
-  private func publishBatchCast(
-    session: URLSession,
-    target: Target,
-    macSlug: String,
-    imageIds: [String],
-    authToken: String,
-    rules: PlaybackRules
-  ) async {
-    let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-    var cleanUrl = rawApiUrl
-    if !cleanUrl.isEmpty {
-      if !cleanUrl.lowercased().hasPrefix("http://") && !cleanUrl.lowercased().hasPrefix("https://") {
-        cleanUrl = "http://" + cleanUrl
-      }
-      if cleanUrl.hasSuffix("/") {
-        cleanUrl = String(cleanUrl.dropLast())
-      }
-    }
-    guard let base = URL(string: cleanUrl) else { return }
-    let endpoint = base.appendingPathComponent("api/frames/\(macSlug)/cast/batch")
-    var request = URLRequest(url: endpoint)
-    request.httpMethod = "POST"
-    request.timeoutInterval = 30
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("application/json", forHTTPHeaderField: "Accept")
-    if !target.pairingToken.isEmpty {
-      request.setValue(target.pairingToken, forHTTPHeaderField: "x-pairing-token")
-    }
-    if !authToken.isEmpty {
-      request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
-    }
-
-    let payload: [String: Any] = [
-      "photo_ids": imageIds,
-      "intervalMinutes": rules.intervalMinutes,
-      "strategy": rules.strategy,
-      "begintime": "00:00",
-      "endtime": "23:59",
-      "idle": 1,
-      "skipPlay": false,
-      "source": "direct_cast",
-    ]
-    request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
-
-    do {
-      let (_, response) = try await session.data(for: request)
-      let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-      if (200...299).contains(status) {
-        NSLog("[MyFrame Share] batch cast published for \(macSlug) (HTTP \(status))")
-      } else {
-        NSLog("[MyFrame Share] batch cast HTTP \(status) for \(macSlug)")
-      }
-    } catch {
-      NSLog("[MyFrame Share] batch cast failed for \(macSlug): \(error.localizedDescription)")
-    }
-  }
-
-  // MARK: - Multipart body (temp file so large batches stay memory-safe)
 
   private func makeMultipartBody(
     jpeg: URL,
@@ -494,6 +434,8 @@ final class ShareUploader {
     // Multi-image batches (count > 1) upload silently (skip_play = true) first, then publish playlist.
     let isMultiImage = totalFiles > 1
     field("skip_play", isMultiImage ? "true" : "false")
+    field("source", isMultiImage ? "playlist" : "direct_cast")
+    if isMultiImage { field("silent", "true") }
 
     body.append("--\(boundary)\r\n")
     body.append(

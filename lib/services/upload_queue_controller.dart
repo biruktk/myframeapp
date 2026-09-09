@@ -26,12 +26,14 @@ class PushJobView {
     required this.progress,
     required this.msgid,
     this.status,
+    this.label,
   });
 
   final PushJobStage stage;
   final double progress;
   final String msgid;
   final String? status;
+  final String? label;
 
   /// Banner label for the current stage (client-localized by the widget).
   String get stageKey {
@@ -84,8 +86,55 @@ class UploadQueueController extends ChangeNotifier {
   /// The msgid for which a "Frame updated" notification has already fired, so
   /// the notification is emitted exactly once per job (never on repeat polls).
   String? _notifiedMsgid;
+  bool _notifyOnCompletion = true;
 
   PushJobView? get currentJob => _currentJob;
+
+  void beginShare(String sessionId, String label) {
+    cancelTracking();
+    _currentJob = PushJobView(
+      stage: PushJobStage.uploading,
+      progress: 0,
+      msgid: sessionId,
+      label: label,
+    );
+    notifyListeners();
+  }
+
+  void updateShare(String sessionId, double progress, String label) {
+    if (_currentJob?.msgid != sessionId) return;
+    _currentJob = PushJobView(
+      stage: PushJobStage.uploading,
+      progress: progress.clamp(0, .95),
+      msgid: sessionId,
+      label: label,
+    );
+    notifyListeners();
+  }
+
+  void finishShare(
+    String sessionId, {
+    bool failed = false,
+    bool queued = false,
+    String? label,
+  }) {
+    if (_currentJob?.msgid != sessionId) return;
+    _currentJob = PushJobView(
+      stage: failed
+          ? PushJobStage.failed
+          : queued
+          ? PushJobStage.queued
+          : PushJobStage.completed,
+      progress: failed || queued ? (_currentJob?.progress ?? 0) : 1,
+      msgid: sessionId,
+      label: label,
+    );
+    notifyListeners();
+    _dismissTimer?.cancel();
+    _dismissTimer = Timer(_completedHold, () {
+      if (_currentJob?.msgid == sessionId) cancelTracking();
+    });
+  }
 
   /// Start observing a push job. Polls every 1.5s until the job reaches a
   /// terminal state, then auto-dismisses the banner after [completedHold].
@@ -94,8 +143,10 @@ class UploadQueueController extends ChangeNotifier {
     required String msgid,
     String? pairingToken,
     String? userAuthToken,
+    bool notifyOnCompletion = true,
   }) {
     cancelTracking();
+    _notifyOnCompletion = notifyOnCompletion;
     _activeMac = mac;
     _pairingToken = pairingToken;
     _userAuthToken = userAuthToken;
@@ -137,7 +188,12 @@ class UploadQueueController extends ChangeNotifier {
       );
       final msgid = (res['msgid'] as String?) ?? '';
       if (msgid.isNotEmpty) {
-        trackPush(mac: mac, msgid: msgid, pairingToken: pairingToken, userAuthToken: userAuthToken);
+        trackPush(
+          mac: mac,
+          msgid: msgid,
+          pairingToken: pairingToken,
+          userAuthToken: userAuthToken,
+        );
       }
     } catch (_) {
       // Non-blocking: a failed push registration just means no banner.
@@ -165,7 +221,10 @@ class UploadQueueController extends ChangeNotifier {
   Future<void> _poll() async {
     final mac = _activeMac;
     final job = _currentJob;
-    if (mac == null || job == null || job.stage == PushJobStage.completed || job.stage == PushJobStage.failed) {
+    if (mac == null ||
+        job == null ||
+        job.stage == PushJobStage.completed ||
+        job.stage == PushJobStage.failed) {
       return;
     }
     _attempts++;
@@ -196,14 +255,19 @@ class UploadQueueController extends ChangeNotifier {
         pairingToken: _pairingToken,
         userAuthToken: _userAuthToken,
       );
-      if (_disposed || mac != _activeMac) return;
+      if (_disposed || mac != _activeMac || _currentJob?.msgid != job.msgid) {
+        return;
+      }
       if (res == null) {
         // Transient poll failure — keep waiting, don't mark failed yet.
         _setJob(job);
         return;
       }
       final status = (res['status'] as String?) ?? 'queued';
-      double progress = ((res['progress'] as num?)?.toDouble() ?? 0).clamp(0.0, 1.0);
+      double progress = ((res['progress'] as num?)?.toDouble() ?? 0).clamp(
+        0.0,
+        1.0,
+      );
       final next = _mapStatus(status, progress, job.msgid);
       if (next.stage == PushJobStage.completed) {
         _setJob(next);
@@ -211,7 +275,7 @@ class UploadQueueController extends ChangeNotifier {
         // reached 100% because the hardware sent `play_ack` (status completed).
         // Never fire from upload/dispatch, which happens before the frame
         // actually displays the image. Guarded so it fires exactly once.
-        if (_notifiedMsgid != job.msgid) {
+        if (_notifyOnCompletion && _notifiedMsgid != job.msgid) {
           _notifiedMsgid = job.msgid;
           unawaited(_notifyCompletedHome());
         }
@@ -229,7 +293,9 @@ class UploadQueueController extends ChangeNotifier {
       }
       _setJob(next);
     } catch (_) {
-      if (_disposed || mac != _activeMac) return;
+      if (_disposed || mac != _activeMac || _currentJob?.msgid != job.msgid) {
+        return;
+      }
       _setJob(job);
     } finally {
       // Restore the caller's suppression state (do not force-disable).

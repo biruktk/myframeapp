@@ -10,6 +10,7 @@ import '../l10n/app_strings.dart';
 import '../models/frame_playback_profile.dart';
 import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
+import '../services/gallery_photo_picker.dart';
 import '../services/frame_api_client.dart';
 import '../services/frame_ble_mac_slug.dart';
 import '../services/frame_cloud_cast_service.dart';
@@ -134,6 +135,12 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
     if (_isSending) return;
     final total = _images.length;
     if (total == 0) return;
+    if (total > kMaxMultiPick) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.of(context).maxPhotosAllowed(kMaxMultiPick))),
+      );
+      return;
+    }
 
     _isSending = true;
     _sendingNotifier.value = true;
@@ -179,7 +186,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
       final sendFiles = List<File>.from(_images);
 
       for (var i = 0; i < sendFiles.length; i++) {
-        if (!mounted) break;
+        if (!mounted) return;
         setState(() => _sendCurrent = i + 1);
 
         final file = sendFiles[i];
@@ -233,7 +240,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
         }
       }
 
-      if (allIds.isEmpty) {
+      if (allIds.length != sendFiles.length) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(s.allUploadsFailed), backgroundColor: Colors.red),
@@ -280,18 +287,20 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
           UploadQueueController.instance.trackPush(
             mac: FrameCloudCastService.instance.uploadDeviceId(activePaired),
             msgid: playlistMsgid,
+              notifyOnCompletion: false,
             pairingToken: pairingToken,
             userAuthToken: authToken,
           );
         }
       } catch (e) {
         AppDiagLog.verbose('[EditColorGrade] playlist publish failed: $e');
+        rethrow;
       }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(s.playlistSent),
+          content: Text('${s.playlistSent} (${s.selectedPhotos(allIds.length)})'),
           backgroundColor: const Color(0xFF4CAF50),
           duration: const Duration(seconds: 2),
         ),

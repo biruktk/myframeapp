@@ -3,6 +3,31 @@ import 'package:flutter/material.dart';
 import '../l10n/app_strings.dart';
 import '../services/upload_queue_controller.dart';
 
+/// Above the navigator, so a background share never needs to change routes.
+class PushProgressOverlay extends StatelessWidget {
+  const PushProgressOverlay({required this.child, super.key});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    children: [
+      child,
+      const Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: SafeArea(
+          bottom: false,
+          child: Material(
+            type: MaterialType.transparency,
+            child: PushProgressBanner(),
+          ),
+        ),
+      ),
+    ],
+  );
+}
+
 /// Floating progress capsule pinned beneath the AppBar / tab selector that
 /// reports the live status of an async image push.
 ///
@@ -17,6 +42,7 @@ class PushProgressBanner extends StatelessWidget {
   static const _green = Color(0xFF2E9E5B);
 
   String _label(AppStrings s, PushJobView job) {
+    if (job.label != null) return job.label!;
     switch (job.stage) {
       case PushJobStage.queued:
         return s.pushStageQueued;
@@ -56,7 +82,9 @@ class PushProgressBanner extends StatelessWidget {
         if (job == null) return const SizedBox.shrink();
 
         final accent = _accent(job.stage, isDark);
-        final isTerminal = job.stage == PushJobStage.completed || job.stage == PushJobStage.failed;
+        final isTerminal =
+            job.stage == PushJobStage.completed ||
+            job.stage == PushJobStage.failed;
 
         return AnimatedSlide(
           duration: const Duration(milliseconds: 280),
@@ -77,7 +105,9 @@ class PushProgressBanner extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.10),
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.25 : 0.10,
+                      ),
                       blurRadius: 16,
                       offset: const Offset(0, 5),
                     ),
@@ -94,7 +124,11 @@ class PushProgressBanner extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         child: Row(
                           children: [
-                            _StatusIndicator(stage: job.stage, accent: accent, dark: isDark),
+                            _StatusIndicator(
+                              stage: job.stage,
+                              accent: accent,
+                              dark: isDark,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -116,7 +150,9 @@ class PushProgressBanner extends StatelessWidget {
                                 job.stage == PushJobStage.failed
                                     ? ''
                                     : '${(job.progress * 100).round()}%',
-                                key: ValueKey('${job.stage}_${job.progress.toStringAsFixed(2)}'),
+                                key: ValueKey(
+                                  '${job.stage}_${job.progress.toStringAsFixed(2)}',
+                                ),
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -144,10 +180,14 @@ class PushProgressBanner extends StatelessWidget {
                           builder: (context, value, _) => Align(
                             alignment: Alignment.centerLeft,
                             child: Container(
-                              width: (MediaQuery.of(context).size.width - 32) * value,
+                              width:
+                                  (MediaQuery.of(context).size.width - 32) *
+                                  value,
                               height: 3,
                               decoration: BoxDecoration(
-                                color: accent.withValues(alpha: isDark ? 0.85 : 0.9),
+                                color: accent.withValues(
+                                  alpha: isDark ? 0.85 : 0.9,
+                                ),
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             ),
@@ -168,7 +208,11 @@ class PushProgressBanner extends StatelessWidget {
 
 /// Small spinner / check / alert indicator.
 class _StatusIndicator extends StatelessWidget {
-  const _StatusIndicator({required this.stage, required this.accent, required this.dark});
+  const _StatusIndicator({
+    required this.stage,
+    required this.accent,
+    required this.dark,
+  });
 
   final PushJobStage stage;
   final Color accent;
@@ -179,7 +223,11 @@ class _StatusIndicator extends StatelessWidget {
     final neutral = dark ? Colors.white70 : const Color(0xFF1F1F1F);
     switch (stage) {
       case PushJobStage.completed:
-        return Icon(Icons.check_circle_rounded, size: 16, color: _PushProgressBannerColors._green);
+        return Icon(
+          Icons.check_circle_rounded,
+          size: 16,
+          color: _PushProgressBannerColors._green,
+        );
       case PushJobStage.failed:
         return Icon(Icons.error_rounded, size: 16, color: accent);
       case PushJobStage.refreshing:
@@ -189,10 +237,7 @@ class _StatusIndicator extends StatelessWidget {
         return SizedBox(
           width: 13,
           height: 13,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.8,
-            color: neutral,
-          ),
+          child: CircularProgressIndicator(strokeWidth: 1.8, color: neutral),
         );
     }
   }

@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import '../l10n/app_strings.dart';
+import 'fcm_service.dart';
+
 import 'protocol_logger_service.dart';
 
 import '../config/api_config.dart';
@@ -88,6 +91,13 @@ class SlideshowRemoteApi {
     ProtocolLoggerService.instance.logMqttOut('strategy_bin', body);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw SlideshowPublishException(res.statusCode, res.body);
+    }
+    if (source == 'playlist') {
+      final strings = AppStrings.current;
+      await FcmService.instance.showCompletionNotification(
+        title: strings.playlistSent,
+        body: strings.slideshowBatchDone(imageIds.length),
+      );
     }
     // A 2xx slideshow publish may create a backend-tracked playlist job; surface
     // its msgid so the client can poll the hardware ACK progress.

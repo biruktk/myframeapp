@@ -67,6 +67,7 @@ final class ShareViewController: UIViewController {
   private var currentAuthToken = ""
   /// Backend push msgids captured per target after a successful upload (used to
   /// drive the in-app banner later via UploadQueueController).
+  private let shareSessionId = UUID().uuidString
   private var pendingReceipts: [(mac: String, msgid: String)] = []
 
   // MARK: - Lifecycle
@@ -509,15 +510,18 @@ final class ShareViewController: UIViewController {
     let files = currentJpegURLs
     let token = currentAuthToken
     pendingReceipts = []
+    recordPendingExternalShare()
 
     Task {
       let results = await ShareUploader.shared.upload(
         targets: targets,
+        shareSessionId: self.shareSessionId,
         jpegFiles: files,
         authToken: token,
         onProgress: { [weak self] completed, total, detail in
           DispatchQueue.main.async {
             self?.showInlineProgress(completed: completed, total: total, detail: detail)
+            self?.recordPendingExternalShare(progress: total > 0 ? Double(completed) / Double(total) : 0)
           }
         },
         onReceipt: { [weak self] mac, msgid in
@@ -552,6 +556,7 @@ final class ShareViewController: UIViewController {
         )
       }
       let detail = failures.first?.message ?? ""
+      recordPendingExternalShare(state: "failed")
       showInlineError(message: detail.isEmpty ? message : "\(message)\n\(detail)")
       return
     }
@@ -560,7 +565,7 @@ final class ShareViewController: UIViewController {
     // Record the share (files + per-target push msgids) so the host app can
     // persist to Personal/Playlists and attach banner tracking on next launch.
     // Files are intentionally kept in the App Group so the host can read them.
-    recordPendingExternalShare()
+    recordPendingExternalShare(state: "completed", progress: 1)
     uploadProgressBar.setProgress(1, animated: true)
     sendButton.isEnabled = false
     sendButton.backgroundColor = Self.brandRed
@@ -613,10 +618,12 @@ final class ShareViewController: UIViewController {
   }
 
   private func cleanUpUploadFiles() {
-    guard let container = FileManager.default
-      .containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else { return }
-    let uploadDir = container.appendingPathComponent("Uploads", isDirectory: true)
-    try? FileManager.default.removeItem(at: uploadDir)
+    // Never delete another share's staging directory or a pending receipt's files.
+    let pending = UserDefaults(suiteName: appGroupId)?.array(forKey: "pending_external_shares") as? [[String: Any]] ?? []
+    let retained = Set(pending.flatMap { $0["filePaths"] as? [String] ?? [] })
+    for item in prepared where !retained.contains(item.fileURL.path) {
+      try? FileManager.default.removeItem(at: item.fileURL)
+    }
   }
 
   /// Writes the just-completed silent share into the App Group so the Flutter
@@ -626,7 +633,7 @@ final class ShareViewController: UIViewController {
   ///   - pushes → [{mac, msgid}] the tracked backend jobs already dispatched,
   ///     which UploadQueueController will poll to render the in-app banner.
   /// No deep link / app open is performed — the sheet completes silently.
-  private func recordPendingExternalShare() {
+  private func recordPendingExternalShare(state: String = "uploading", progress: Double = 0) {
     guard let sharedDefaults = UserDefaults(suiteName: appGroupId) else { return }
     let filePaths = currentJpegURLs.map { $0.path }
     guard !filePaths.isEmpty else { return }
@@ -636,7 +643,7 @@ final class ShareViewController: UIViewController {
     let now = Date().timeIntervalSince1970
     pending.removeAll { entry in
       let ts = (entry["timestamp"] as? Double) ?? 0
-      return now - ts > 86_400
+      return (entry["id"] as? String) == shareSessionId || now - ts > 86_400
     }
 
     var pushes: [[String: String]] = []
@@ -645,6 +652,9 @@ final class ShareViewController: UIViewController {
     }
 
     let entry: [String: Any] = [
+      "id": shareSessionId,
+      "state": state,
+      "progress": progress,
       "filePaths": filePaths,
       "isPlaylist": filePaths.count > 1,
       "timestamp": now,

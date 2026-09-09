@@ -17,10 +17,10 @@ class SendAlbumEntry {
   Map<String, dynamic> toJson() => {'id': id, 'name': name, 'paths': paths};
 
   static SendAlbumEntry fromJson(Map<String, dynamic> j) => SendAlbumEntry(
-        id: '${j['id'] ?? ''}',
-        name: '${j['name'] ?? 'Album'}',
-        paths: List<String>.from((j['paths'] as List?) ?? const []),
-      );
+    id: '${j['id'] ?? ''}',
+    name: '${j['name'] ?? 'Album'}',
+    paths: List<String>.from((j['paths'] as List?) ?? const []),
+  );
 }
 
 class SendAlbumsStore {
@@ -70,7 +70,9 @@ class SendAlbumsStore {
     try {
       final list = jsonDecode(raw) as List<dynamic>;
       _albums = list
-          .map((e) => SendAlbumEntry.fromJson(Map<String, dynamic>.from(e as Map)))
+          .map(
+            (e) => SendAlbumEntry.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
           .toList();
       await _pruneMissingPaths(userId: userId);
     } catch (_) {
@@ -98,17 +100,26 @@ class SendAlbumsStore {
     }
   }
 
-  Future<void> createAlbum(String name, List<String> initialPaths) async {
+  Future<void> createAlbum(
+    String name,
+    List<String> initialPaths, {
+    String? sessionId,
+  }) async {
     await load();
+    if (sessionId != null && _albums.any((a) => a.id == sessionId)) return;
     // Prefer fast stage — picker already durable-copied; avoid JPEG re-encode lag.
     final stored = await GalleryImageCache.persistPaths(
       initialPaths,
       normalizeJpeg: false,
     );
-    final id = '${DateTime.now().millisecondsSinceEpoch}';
+    final id = sessionId ?? '${DateTime.now().millisecondsSinceEpoch}';
     _albums.insert(
       0,
-      SendAlbumEntry(id: id, name: name.trim().isEmpty ? 'Album' : name.trim(), paths: stored),
+      SendAlbumEntry(
+        id: id,
+        name: name.trim().isEmpty ? 'Album' : name.trim(),
+        paths: stored,
+      ),
     );
     await _persist();
   }
@@ -126,7 +137,11 @@ class SendAlbumsStore {
     for (final t in stored) {
       if (!cur.contains(t)) cur.add(t);
     }
-    _albums[i] = SendAlbumEntry(id: _albums[i].id, name: _albums[i].name, paths: cur);
+    _albums[i] = SendAlbumEntry(
+      id: _albums[i].id,
+      name: _albums[i].name,
+      paths: cur,
+    );
     await _persist();
   }
 
@@ -158,16 +173,26 @@ class SendAlbumsStore {
   }
 
   /// Removes paths from the album only (does not delete files or Personal library entries).
-  Future<void> removePathsFromAlbum(String albumId, Iterable<String> toRemove) async {
+  Future<void> removePathsFromAlbum(
+    String albumId,
+    Iterable<String> toRemove,
+  ) async {
     await load();
     final id = resolveAlbumId(albumId);
     final i = _albums.indexWhere((a) => a.id == id);
     if (i < 0) return;
-    final removeSet = toRemove.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+    final removeSet = toRemove
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet();
     if (removeSet.isEmpty) return;
     final cur = List<String>.from(_albums[i].paths);
     cur.removeWhere((p) => removeSet.contains(p.trim()));
-    _albums[i] = SendAlbumEntry(id: _albums[i].id, name: _albums[i].name, paths: cur);
+    _albums[i] = SendAlbumEntry(
+      id: _albums[i].id,
+      name: _albums[i].name,
+      paths: cur,
+    );
     await _persist();
   }
 
@@ -325,13 +350,7 @@ class SendAlbumsStore {
           if (await _fileExists(t)) paths.add(t);
         }
       }
-      next.add(
-        SendAlbumEntry(
-          id: id,
-          name: name,
-          paths: paths,
-        ),
-      );
+      next.add(SendAlbumEntry(id: id, name: name, paths: paths));
     }
 
     for (final a in _albums) {
@@ -372,7 +391,9 @@ class SendAlbumsStore {
       }
       _albums[existingTo] = SendAlbumEntry(
         id: to,
-        name: (name ?? dest.name).trim().isEmpty ? dest.name : (name ?? dest.name),
+        name: (name ?? dest.name).trim().isEmpty
+            ? dest.name
+            : (name ?? dest.name),
         paths: merged,
       );
       _albums.removeAt(i);

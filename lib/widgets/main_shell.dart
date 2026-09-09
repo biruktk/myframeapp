@@ -13,19 +13,14 @@ import '../services/account_sync_service.dart';
 import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/external_share_cast_service.dart';
+import '../services/external_share_inbox.dart';
 import '../services/fcm_service.dart';
-import '../services/gallery_image_cache.dart';
 import '../services/share_extension_cache.dart';
 import '../services/share_incoming_service.dart';
-import '../services/personal_gallery_store.dart';
 import '../services/upload_queue_controller.dart';
-import '../services/user_gallery_cloud_service.dart';
 import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
-import 'share_auto_send_progress.dart';
-import 'push_progress_banner.dart';
 import 'shell_navigation.dart';
-import 'share_target_bottom_sheet.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -37,8 +32,12 @@ class MainShell extends StatefulWidget {
 class MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _index = 0;
   final ValueNotifier<int> sendGalleryPickNonce = ValueNotifier<int>(0);
-  final ValueNotifier<List<String>> sendSharedPathsNonce = ValueNotifier<List<String>>(const []);
+  final ValueNotifier<List<String>> sendSharedPathsNonce =
+      ValueNotifier<List<String>>(const []);
   bool _shareSheetOpen = false;
+  bool _nativeConsuming = false;
+  Timer? _nativeTimer;
+  final Set<String> _trackedNative = {};
 
   @override
   void initState() {
@@ -48,10 +47,16 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
       _setIndex,
       openSendGalleryPick: openSendGalleryPicker,
     );
-    ShareIncomingService.instance.revision.addListener(_onShareIncomingRevision);
+    ShareIncomingService.instance.revision.addListener(
+      _onShareIncomingRevision,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _consumeSharedPaths();
       _consumePendingNativeShare();
+      _nativeTimer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _consumePendingNativeShare(),
+      );
       _startSyncPipeline();
       _syncFcmTokenIfSignedIn();
     });
@@ -63,16 +68,24 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
       _startSyncPipeline();
       // Native iOS Share Extension hand-off: reads any pending share the
       // extension wrote to the App Group and routes it through the normal
-      // auto-send pipeline (persist → trackPush → banner → Gallery).
+      // local-ingestion pipeline (persist → trackPush → banner).
       unawaited(_consumePendingNativeShare());
+      _nativeTimer ??= Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => _consumePendingNativeShare(),
+      );
       // Soft tick — not replaceFrames pull (that re-imported ghosts).
-      unawaited(SyncPipeline.instance.tick(
-        forceFrames: true,
-        forceGallery: true,
-        forceAlbums: true,
-      ));
+      unawaited(
+        SyncPipeline.instance.tick(
+          forceFrames: true,
+          forceGallery: true,
+          forceAlbums: true,
+        ),
+      );
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      _nativeTimer?.cancel();
+      _nativeTimer = null;
       SyncPipeline.instance.stop();
       AccountSyncService.instance.stopPeriodicSync();
     }
@@ -90,28 +103,29 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
   Future<void> _consumePendingNativeShare() async {
     if (!Platform.isIOS) return;
     if (!ShareExtensionCache.instance.isSupported) return;
-    if (_shareSheetOpen) return;
+    if (_nativeConsuming) return;
+    _nativeConsuming = true;
     try {
-      final pendingList =
-          await ShareExtensionCache.instance.consumePendingExternalShares();
+      final pendingList = await ShareExtensionCache.instance
+          .consumePendingExternalShares();
       if (pendingList.isEmpty) return;
-      AppDiagLog.verbose('[MainShell] pending native shares=${pendingList.length}');
-      int? lastSubTab;
+      AppDiagLog.verbose(
+        '[MainShell] pending native shares=${pendingList.length}',
+      );
       for (final pending in pendingList) {
         await _ingestPendingShare(pending);
-        // Files are now durable-copied into the app's own gallery storage;
-        // remove the App-Group staging copies to avoid re-processing.
-        await _removeStagedShareFiles(pending.paths);
-        lastSubTab = pending.isPlaylist ? 1 : 0;
-      }
-      // Land on the Gallery tab (Personal 0 / Playlists 1) so the status-bar
-      // pill for the just-shared content is visible right away — even when the
-      // push already completed server-side (it shows "Completed 100%").
-      if (mounted && lastSubTab != null) {
-        ShellNavigation.goToGallery(subTab: lastSubTab);
+        if (pending.completed) {
+          await ShareExtensionCache.instance.acknowledgePendingShare(
+            pending.id,
+            paths: pending.paths,
+          );
+          await _removeStagedShareFiles(pending.paths);
+        }
       }
     } catch (e) {
       AppDiagLog.verbose('[MainShell] consume pending native share: $e');
+    } finally {
+      _nativeConsuming = false;
     }
   }
 
@@ -134,53 +148,33 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
     if (!mounted) return;
     final app = AppSettingsScope.of(context);
     final s = AppStrings.of(context);
-    try {
-      // 1. Local folder separation: single → Personal, multi → Playlists.
-      if (pending.isPlaylist) {
-        await routeSharedToMyPlaylist(pending.paths, app.authToken, s);
-      } else if (pending.paths.isNotEmpty) {
-        await _persistSharedSingleToPersonal(
-          pending.paths.first,
-          app.authToken,
-        );
+    await ExternalShareInbox.instance.persist(
+      pending.paths,
+      sessionId: pending.id,
+      playlistName: s.myPlaylistName,
+    );
+    final queue = UploadQueueController.instance;
+    if (pending.pushes.isEmpty) {
+      if (_trackedNative.add(pending.id)) {
+        queue.beginShare(pending.id, s.sharedUploadLabel(pending.paths.length));
       }
-
-      // 2. Attach live progress for every recorded backend push so the status
-      //    bar shows in the Gallery (queued/downloading/completed or failed).
-      for (final push in pending.pushes) {
-        if (push.mac.isEmpty || push.msgid.isEmpty) continue;
-        UploadQueueController.instance.trackPush(
-          mac: push.mac,
-          msgid: push.msgid,
-          userAuthToken: app.authToken.trim().isEmpty ? null : app.authToken.trim(),
-        );
+      queue.updateShare(
+        pending.id,
+        pending.progress,
+        s.sharedUploadLabel(pending.paths.length),
+      );
+      if (pending.completed || pending.failed) {
+        queue.finishShare(pending.id, failed: pending.failed);
       }
-    } catch (e) {
-      AppDiagLog.verbose('[MainShell] ingest pending share failed: $e');
     }
-  }
-
-  /// Single-image deferred ingestion: register in the Personal gallery grid and
-  /// best-effort cloud copy (mirrors ExternalShareCastService single-share).
-  Future<void> _persistSharedSingleToPersonal(
-    String durablePath,
-    String authToken,
-  ) async {
-    try {
-      await PersonalGalleryStore.instance.addPaths([durablePath]);
-    } catch (e) {
-      AppDiagLog.verbose('[MainShell] addPaths failed: $e');
-    }
-    try {
-      if (authToken.trim().isNotEmpty) {
-        await UserGalleryCloudService.instance.uploadFile(
-          authToken: authToken,
-          localPath: durablePath,
-          source: 'personal_album',
-        );
-      }
-    } catch (e) {
-      AppDiagLog.verbose('[MainShell] personal upload failed: $e');
+    for (final push in pending.pushes) {
+      if (!_trackedNative.add('${push.mac}:${push.msgid}')) continue;
+      queue.trackPush(
+        mac: push.mac,
+        msgid: push.msgid,
+        userAuthToken: app.authToken,
+        notifyOnCompletion: !pending.isPlaylist,
+      );
     }
   }
 
@@ -206,10 +200,13 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _nativeTimer?.cancel();
     SyncPipeline.instance.stop();
     AccountSyncService.instance.stopPeriodicSync();
     WidgetsBinding.instance.removeObserver(this);
-    ShareIncomingService.instance.revision.removeListener(_onShareIncomingRevision);
+    ShareIncomingService.instance.revision.removeListener(
+      _onShareIncomingRevision,
+    );
     ShellNavigation.unregisterHost();
     sendGalleryPickNonce.dispose();
     sendSharedPathsNonce.dispose();
@@ -222,122 +219,72 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
   }
 
   Future<void> _consumeSharedPaths() async {
-    if (_shareSheetOpen) return;
-    final items = ShareIncomingService.instance.takePendingItems();
-    if (items.isEmpty) return;
-
-    // Native iOS Share Extension hand-off: the user already picked the target
-    // frame(s) in the sheet, so send straight to them (no destination picker).
-    final autoFrameIds = await ShareExtensionCache.instance.consumeAutoSend();
-    if (autoFrameIds.isNotEmpty) {
-      final handled = await _autoSendToFrames(items, autoFrameIds);
-      if (handled) return;
-    }
-
-    _shareSheetOpen = true;
+    if (_shareSheetOpen || !mounted) return;
+    _shareSheetOpen =
+        true; // Before ANY await: cold and hot deliveries can race.
     try {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted) {
-          _shareSheetOpen = false;
-          return;
-        }
+      while (mounted && ShareIncomingService.instance.hasPending) {
+        final items = ShareIncomingService.instance.takePendingItems();
+        if (items.isEmpty) break;
+        if (!mounted) break;
+        final app = AppSettingsScope.of(context);
+        final s = AppStrings.of(context);
+        final raw = items.map((e) => e.path).toList();
+        final session = items.first.sessionId.isNotEmpty
+            ? items.first.sessionId
+            : ExternalShareInbox.keyFor(raw);
+        final label = s.sharedUploadLabel(raw.length);
+        final queue = UploadQueueController.instance;
+        queue.beginShare(session, label);
         try {
-          final result = await showShareTargetBottomSheet(context, items: items);
-          // A completed send surfaced a tracked push on UploadQueueController —
-          // land on the Gallery tab so the live PushProgressBanner is visible,
-          // routing single images to the Personal tab and batches to Playlists.
-          if (mounted && result != null && !result.navigatedAway) {
-            final subTab = result.paths.length > 1 ? 1 : 0;
-            ShellNavigation.goToGallery(subTab: subTab);
+          final paths = await ExternalShareInbox.instance.persist(
+            raw,
+            sessionId: session,
+            playlistName: s.myPlaylistName,
+          );
+          await DeviceStore.instance.load();
+          final selected = await ShareExtensionCache.instance.consumeAutoSend();
+          final frames = selected.isEmpty
+              ? [
+                  if (DeviceStore.instance.cached != null)
+                    DeviceStore.instance.cached!,
+                ]
+              : DeviceStore.instance.pairedFrames
+                    .where((f) => selected.contains(f.deviceId))
+                    .toList();
+          if (frames.isEmpty) {
+            queue.finishShare(
+              session,
+              failed: true,
+              label: s.connectFrameFirst,
+            );
+            continue;
           }
+          final summary = await ExternalShareCastService.instance.castToFrames(
+            paths: paths,
+            frames: frames,
+            authToken: app.authToken,
+            strings: s,
+            sessionId: session,
+            locallyPersisted: true,
+            onProgress: (progress, _) =>
+                queue.updateShare(session, progress, label),
+          );
+          queue.finishShare(
+            session,
+            queued: summary.queued,
+            failed: !summary.queued && summary.sent == 0,
+            label: summary.queued ? s.shareSheetQueuedOffline : null,
+          );
+        } catch (e) {
+          queue.finishShare(session, failed: true);
+          AppDiagLog.verbose('[MainShell] external share failed: $e');
         } finally {
-          _shareSheetOpen = false;
-          // Drain any share that arrived while the sheet was open.
-          if (mounted && ShareIncomingService.instance.hasPending) {
-            _consumeSharedPaths();
-          }
+          ShareIncomingService.instance.completeBatch(session);
         }
-      });
-    } catch (_) {
-      _shareSheetOpen = false;
-      ShareIncomingService.instance.requeueItems(items);
-    }
-  }
-
-  /// Sends shared items to the frames the native Share Extension pre-selected.
-  /// Returns `true` when the send was handled here (no Flutter picker needed).
-  Future<bool> _autoSendToFrames(
-    List<SharedMediaItem> items,
-    List<String> frameIds,
-  ) async {
-    final app = AppSettingsScope.of(context);
-    final s = AppStrings.of(context);
-
-    // Strip file:// prefixes the extension stores for non-container files.
-    final raw = items.map((e) => e.path).map((p) {
-      return p.startsWith('file://') ? Uri.parse(p).toFilePath() : p;
-    }).toList();
-    final persisted = await GalleryImageCache.persistPaths(raw);
-    final paths = persisted.isNotEmpty ? persisted : raw;
-    if (paths.isEmpty) return false;
-
-    await DeviceStore.instance.load();
-    final all = DeviceStore.instance.pairedFrames;
-    final frames = all
-        .where((f) => frameIds.contains(f.deviceId))
-        .toList();
-    if (frames.isEmpty) return false;
-
-    if (!mounted) return false;
-    final progress = ShareAutoSendProgress(context);
-    // Fire-and-forget: the dialog closes when [progress.dismiss] is called
-    // after the cast finishes (awaiting show() would deadlock the send).
-    unawaited(progress.show());
-    try {
-      final summary = await ExternalShareCastService.instance.castToFrames(
-        paths: paths,
-        frames: frames,
-        authToken: app.authToken,
-        strings: s,
-        onProgress: (frac, status) => progress.update(frac, status),
-      );
-      if (!mounted) {
-        progress.dismiss();
-        return true;
       }
-
-      final messenger = ScaffoldMessenger.of(context);
-      if (summary.queued) {
-        messenger.showSnackBar(SnackBar(content: Text(s.shareSheetQueuedOffline)));
-      } else if (summary.sent > 0) {
-        messenger.showSnackBar(
-          SnackBar(content: Text(frames.length == 1 ? s.shareSheetPhotoSent : s.shareSheetPlaylistSent)),
-        );
-      } else {
-        messenger.showSnackBar(SnackBar(content: Text(s.shareSheetErrorRetry)));
-      }
-
-      // Remember the chosen frame for the next native share.
-      unawaited(
-        ShareExtensionCache.instance
-            .writeSelectedFrameIds(frames.map((f) => f.deviceId)),
-      );
-      // Multi-image external shares collect into the default "My Playlist".
-      unawaited(routeSharedToMyPlaylist(paths, app.authToken, s));
-
-      // Surface the live push progress (see PushProgressBanner). The upload
-      // already registered a tracked job on UploadQueueController; switch to the
-      // Gallery tab where the banner is mounted so the user watches hardware
-      // ACK progress instead of a stale "sent" toast. Single images land on the
-      // Personal tab, multi-image batches on the Playlists tab.
-      final subTab = paths.length > 1 ? 1 : 0;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ShellNavigation.goToGallery(subTab: subTab);
-      });
-      return true;
     } finally {
-      progress.dismiss();
+      _shareSheetOpen = false;
     }
   }
 
@@ -389,7 +336,8 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
         children: [
           Padding(
             padding: EdgeInsets.only(
-                bottom: ShellNavigation.contentBottomOverlap(context)),
+              bottom: ShellNavigation.contentBottomOverlap(context),
+            ),
             child: IndexedStack(
               index: _index,
               children: [
@@ -404,20 +352,6 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
               ],
             ),
           ),
-          // Live push progress floating pill on every shell tab EXCEPT Gallery
-          // (Gallery pins its own copy beneath the tab selector). This makes the
-          // banner visible the moment an external share starts tracking, even if
-          // the user is on Home / Send / Settings when the app comes to front.
-          if (_index != 1)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                bottom: false,
-                child: const PushProgressBanner(),
-              ),
-            ),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,

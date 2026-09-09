@@ -204,7 +204,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
         }
       }
 
-      if (ids.isEmpty) {
+      if (ids.length != total) {
         if (mounted) {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -237,6 +237,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             UploadQueueController.instance.trackPush(
               mac: FrameCloudCastService.instance.uploadDeviceId(pFrame),
               msgid: playlistMsgid,
+              notifyOnCompletion: false,
               pairingToken: pairingToken,
               userAuthToken: token.isNotEmpty ? token : null,
             );

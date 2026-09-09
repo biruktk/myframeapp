@@ -1,14 +1,16 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'app_diag_log.dart';
+import '../l10n/app_strings.dart';
 import 'frame_api_client.dart';
 import 'slideshow_remote_api.dart';
 import 'transport_kind.dart';
+import 'gallery_image_normalizer.dart';
+import 'upload_queue_controller.dart';
 
 /// A persisted batch of photos shared from an external app (gallery / share
 /// sheet) that could not be uploaded immediately because the device was
@@ -16,6 +18,8 @@ import 'transport_kind.dart';
 class QueuedExternalShare {
   const QueuedExternalShare({
     required this.id,
+    this.uploadedIds = const [],
+    this.dispatchAttempted = false,
     required this.paths,
     required this.uploadTargets,
     required this.baseUrl,
@@ -30,6 +34,8 @@ class QueuedExternalShare {
   });
 
   final String id;
+  final List<String> uploadedIds;
+  final bool dispatchAttempted;
   final List<String> paths;
 
   /// Upload targets (Wi-Fi/MQTT station MAC first), mirroring castPhoto.
@@ -47,19 +53,21 @@ class QueuedExternalShare {
   final int createdAtMs;
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'paths': paths,
-        'uploadTargets': uploadTargets,
-        'baseUrl': baseUrl,
-        'pairingToken': pairingToken,
-        'authToken': authToken,
-        'macSlug': macSlug,
-        'displaySeconds': displaySeconds,
-        'intervalMinutes': intervalMinutes,
-        'strategy': strategy,
-        'durationHours': durationHours,
-        'createdAtMs': createdAtMs,
-      };
+    'id': id,
+    'uploadedIds': uploadedIds,
+    'dispatchAttempted': dispatchAttempted,
+    'paths': paths,
+    'uploadTargets': uploadTargets,
+    'baseUrl': baseUrl,
+    'pairingToken': pairingToken,
+    'authToken': authToken,
+    'macSlug': macSlug,
+    'displaySeconds': displaySeconds,
+    'intervalMinutes': intervalMinutes,
+    'strategy': strategy,
+    'durationHours': durationHours,
+    'createdAtMs': createdAtMs,
+  };
 
   factory QueuedExternalShare.fromMap(Map<dynamic, dynamic> map) {
     List<String> strs(dynamic v) =>
@@ -68,11 +76,12 @@ class QueuedExternalShare {
     final pairing = map['pairingToken'];
     return QueuedExternalShare(
       id: '${map['id'] ?? ''}',
+      uploadedIds: strs(map['uploadedIds']),
+      dispatchAttempted: map['dispatchAttempted'] == true,
       paths: strs(map['paths']),
       uploadTargets: strs(map['uploadTargets']),
       baseUrl: baseUrl is String && baseUrl.isNotEmpty ? baseUrl : null,
-      pairingToken:
-          pairing is String && pairing.isNotEmpty ? pairing : null,
+      pairingToken: pairing is String && pairing.isNotEmpty ? pairing : null,
       authToken: '${map['authToken'] ?? ''}',
       macSlug: '${map['macSlug'] ?? ''}',
       displaySeconds: map['displaySeconds'] is num
@@ -85,8 +94,9 @@ class QueuedExternalShare {
       durationHours: map['durationHours'] is num
           ? (map['durationHours'] as num).toInt()
           : 6,
-      createdAtMs:
-          map['createdAtMs'] is num ? (map['createdAtMs'] as num).toInt() : 0,
+      createdAtMs: map['createdAtMs'] is num
+          ? (map['createdAtMs'] as num).toInt()
+          : 0,
     );
   }
 }
@@ -103,7 +113,8 @@ class ExternalShareQueue {
 
   static const _boxName = 'external_share_queue_v1';
 
-  dynamic _box;
+  Box<dynamic>? _box;
+  Future<Box<dynamic>>? _opening;
   bool _initialized = false;
   bool _watcherStarted = false;
   bool _flushing = false;
@@ -112,8 +123,7 @@ class ExternalShareQueue {
   /// Safe to call multiple times.
   Future<void> bootstrap() async {
     if (!_initialized) {
-      await Hive.initFlutter();
-      _box = await Hive.openBox(_boxName);
+      await _ensureBox();
       _initialized = true;
     }
     _startRetryWatcher();
@@ -133,7 +143,7 @@ class ExternalShareQueue {
   Future<int> enqueue(QueuedExternalShare entry) async {
     try {
       final box = await _ensureBox();
-      await box.add(entry.toMap());
+      if (!box.containsKey(entry.id)) await box.put(entry.id, entry.toMap());
       AppDiagLog.verbose(
         '[ExternalShareQueue] enqueued ${entry.paths.length} photo(s) to '
         '${entry.uploadTargets}',
@@ -154,12 +164,18 @@ class ExternalShareQueue {
     }
   }
 
-  Future<dynamic> _ensureBox() async {
-    if (_box != null) return _box!;
-    await Hive.initFlutter();
-    _box = await Hive.openBox(_boxName);
-    _initialized = true;
-    return _box!;
+  Future<Box<dynamic>> _ensureBox() async {
+    if (_box?.isOpen == true) return _box!;
+    return _opening ??= (() async {
+      try {
+        await Hive.initFlutter();
+        _box = await Hive.openBox<dynamic>(_boxName);
+        _initialized = true;
+        return _box!;
+      } finally {
+        _opening = null;
+      }
+    })();
   }
 
   /// Attempts to upload every queued batch. Returns the number of batches
@@ -169,14 +185,16 @@ class ExternalShareQueue {
     _flushing = true;
     try {
       final box = await _ensureBox();
-      final entries = box.entries.toList();
+      final entries = box.toMap().entries.toList();
       if (entries.isEmpty) return 0;
       var delivered = 0;
       for (final entry in entries) {
         final map = entry.value;
         if (map is! Map) continue;
         final queued = QueuedExternalShare.fromMap(map);
-        final ok = await _uploadBatch(queued);
+        final ok = await _uploadBatch(queued, (value) async {
+          await box.put(entry.key, value);
+        });
         if (ok) {
           try {
             await box.delete(entry.key);
@@ -185,7 +203,9 @@ class ExternalShareQueue {
         }
       }
       if (delivered > 0) {
-        AppDiagLog.verbose('[ExternalShareQueue] delivered $delivered batch(es)');
+        AppDiagLog.verbose(
+          '[ExternalShareQueue] delivered $delivered batch(es)',
+        );
       }
       return delivered;
     } catch (e, st) {
@@ -196,79 +216,126 @@ class ExternalShareQueue {
     }
   }
 
-  Future<bool> _uploadBatch(QueuedExternalShare queued) async {
-    if (queued.uploadTargets.isEmpty) return true; // nothing targetable — drop.
+  Future<bool> _uploadBatch(
+    QueuedExternalShare queued,
+    Future<void> Function(Map<String, dynamic>) save,
+  ) async {
+    if (queued.dispatchAttempted) {
+      // A lost response may follow an accepted POST; do not redispatch.
+      return false;
+    }
+    if (queued.uploadTargets.isEmpty) return false;
     final api = FrameApiClient();
-    final ids = <String>[];
-    var transientError = false;
+    final ids = [...queued.uploadedIds];
+    var delivered = false;
+    var attempted = false;
 
-    for (var i = 0; i < queued.paths.length; i++) {
-      final path = queued.paths[i];
-      final file = File(path);
-      if (!await file.exists()) continue; // file cleaned up — skip quietly.
-      Uint8List? bytes;
-      try {
-        bytes = await file.readAsBytes();
-      } catch (_) {
-        continue;
+    final progress = UploadQueueController.instance;
+    progress.beginShare(
+      queued.id,
+      AppStrings.current.sharedUploadLabel(queued.paths.length),
+    );
+    try {
+      for (var i = ids.length; i < queued.paths.length; i++) {
+        final path = queued.paths[i];
+        final file = File(path);
+        if (!await file.exists()) {
+          return false;
+        }
+        final normalized = await GalleryImageNormalizer.normalizeFileForUpload(
+          path,
+        );
+        if (normalized == null) return false;
+        final bytes = normalized.bytes;
+
+        var ok = false;
+        for (final target in queued.uploadTargets) {
+          try {
+            final res = await api.uploadPhoto(
+              fileBytes: bytes,
+              filename: 'share_retry_${queued.createdAtMs}_$i.jpg',
+              deviceId: target,
+              baseUrlOverride: queued.baseUrl,
+              slideshowStyle: 'classic',
+              displaySeconds: queued.displaySeconds,
+              transport: TransportKind.wifi.apiValue,
+              pairingToken: queued.pairingToken,
+              userAuthToken: queued.authToken.isEmpty ? null : queued.authToken,
+              skipPlay: queued.paths.length > 1,
+              editsJson: null,
+              // Source isolation: multi-photo queued retries preserve the
+              // original playlist tag; single-photo retries stay direct_cast.
+              source: queued.paths.length > 1
+                  ? UploadSource.playlist
+                  : UploadSource.directCast,
+            );
+            final id = res.vpsSlideshowImageId?.trim();
+            if (queued.paths.length > 1 && (id == null || id.isEmpty)) {
+              return false;
+            }
+            ids.add(id ?? 'single');
+            await save({...queued.toMap(), 'uploadedIds': ids});
+            progress.updateShare(
+              queued.id,
+              ids.length / queued.paths.length,
+              AppStrings.current.sharedUploadLabel(queued.paths.length),
+            );
+            ok = true;
+            break;
+          } catch (e) {
+            AppDiagLog.verbose(
+              '[ExternalShareQueue] upload failed to $target: $e',
+            );
+          }
+        }
+        if (!ok) return false; // keep the whole batch for the next retry.
       }
-      if (bytes.isEmpty) continue;
 
-      var ok = false;
-      for (final target in queued.uploadTargets) {
+      if (queued.paths.length > 1 && ids.length == queued.paths.length) {
+        await save({
+          ...queued.toMap(),
+          'uploadedIds': ids,
+          'dispatchAttempted': true,
+        });
+        attempted = true;
         try {
-          final res = await api.uploadPhoto(
-            fileBytes: bytes,
-            filename: 'share_retry_${queued.createdAtMs}_$i.jpg',
-            deviceId: target,
-            baseUrlOverride: queued.baseUrl,
-            slideshowStyle: 'classic',
-            displaySeconds: queued.displaySeconds,
-            transport: TransportKind.wifi.apiValue,
+          final msgid = await SlideshowRemoteApi().publish(
+            bearerToken: queued.authToken.isEmpty ? null : queued.authToken,
             pairingToken: queued.pairingToken,
-            userAuthToken: queued.authToken.isEmpty ? null : queued.authToken,
-            skipPlay: queued.paths.length > 1,
-            editsJson: null,
-            // Source isolation: multi-photo queued retries preserve the
-            // original playlist tag; single-photo retries stay direct_cast.
-            source: queued.paths.length > 1
-                ? UploadSource.playlist
-                : UploadSource.directCast,
+            macSlug: queued.macSlug,
+            imageIds: ids,
+            intervalMinutes: queued.intervalMinutes,
+            strategy: queued.strategy,
+            durationHours: queued.durationHours,
+            skipPlay: false,
+            source: 'playlist',
           );
-          final id = res.vpsSlideshowImageId?.trim();
-          if (id != null && id.isNotEmpty && !ids.contains(id)) ids.add(id);
-          ok = true;
-          break;
+          if (msgid != null && msgid.isNotEmpty) {
+            progress.trackPush(
+              mac: queued.macSlug,
+              msgid: msgid,
+              userAuthToken: queued.authToken,
+              pairingToken: queued.pairingToken,
+              notifyOnCompletion: false,
+            );
+          }
         } catch (e) {
-          transientError = true;
-          AppDiagLog.verbose(
-            '[ExternalShareQueue] upload failed to $target: $e',
-          );
+          return false;
         }
       }
-      if (!ok) return false; // keep the whole batch for the next retry.
-    }
-
-    if (ids.isNotEmpty) {
-      try {
-        await SlideshowRemoteApi().publish(
-          bearerToken: queued.authToken.isEmpty ? null : queued.authToken,
-          pairingToken: queued.pairingToken,
-          macSlug: queued.macSlug,
-          imageIds: ids,
-          intervalMinutes: queued.intervalMinutes,
-          strategy: queued.strategy,
-          durationHours: queued.durationHours,
-          skipPlay: true,
-          source: 'playlist',
-        );
-      } catch (e) {
-        // Photos still landed; the frame auto-plays them. Keep best-effort.
-        AppDiagLog.verbose(
-          '[ExternalShareQueue] slideshow publish skipped: $e',
+      delivered = true;
+      progress.finishShare(queued.id);
+      return true;
+    } finally {
+      if (!delivered) {
+        progress.finishShare(
+          queued.id,
+          failed: attempted,
+          queued: !attempted,
+          label: attempted ? null : AppStrings.current.shareSheetQueuedOffline,
         );
       }
+      api.close();
     }
-    return !transientError;
   }
 }

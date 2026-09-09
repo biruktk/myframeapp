@@ -18,7 +18,6 @@ import '../services/send_albums_store.dart';
 import '../widgets/app_status_toast.dart';
 import '../widgets/busy_status_dialog.dart';
 import '../widgets/custom_segmented_toggle.dart';
-import '../widgets/push_progress_banner.dart';
 import '../widgets/shell_navigation.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
@@ -291,7 +290,6 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
       body: Column(
         children: [
           // Live async push progress, pinned directly beneath the tab selector.
-          const PushProgressBanner(),
           Expanded(
             child: IndexedStack(
               index: _tab,

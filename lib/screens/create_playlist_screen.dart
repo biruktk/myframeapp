@@ -22,7 +22,7 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
   int _selectedIntervalSeconds = 300;
   late List<File> _images;
 
-  static const int _maxPhotos = 10;
+  static const int _maxPhotos = kMaxMultiPick;
   static const List<int> _intervalSecondsList = [60, 120, 300, 600, 1800, 3600];
 
   @override
@@ -57,9 +57,9 @@ class _CreatePlaylistScreenState extends State<CreatePlaylistScreen> {
     final files = await GalleryPhotoPicker.pickMulti(context);
     if (files.isEmpty || !mounted) return;
 
-    final stored = await GalleryImageCache.persistPaths(files.map((f) => f.path));
+    final stored = await GalleryImageCache.persistPaths(files.take(remaining).map((f) => f.path));
     final allowed = stored.take(remaining).toList();
-    if (stored.length > remaining && mounted) {
+    if (files.length > remaining && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(s.onlyMoreAllowed(remaining, _maxPhotos))),
       );

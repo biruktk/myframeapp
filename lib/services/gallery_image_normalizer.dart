@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -181,7 +182,7 @@ class GalleryImageNormalizer {
       return Uint8List.fromList(out);
     }
 
-    return _encodeWithImagePackage(raw);
+    return compute(_encodeWithImagePackage, raw);
   }
 
   /// Reads [sourcePath], normalizes to JPEG, writes under app documents.

@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:async';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
@@ -11,9 +14,11 @@ class SharedMediaItem {
     required this.path,
     this.thumbnail,
     this.mimeType,
+    this.sessionId = '',
   });
 
   final String path;
+  final String sessionId;
   final String? thumbnail;
   final String? mimeType;
 
@@ -28,7 +33,10 @@ class ShareReceiverService {
 
   static final ShareReceiverService instance = ShareReceiverService._();
 
-  final List<SharedMediaItem> _pending = [];
+  final List<List<SharedMediaItem>> _pending = [];
+  final Map<String, DateTime> _received = {};
+  final Map<String, String> _active = {};
+  StreamSubscription<List<SharedMediaFile>>? _subscription;
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   bool _listening = false;
@@ -39,22 +47,20 @@ class ShareReceiverService {
     if (!Platform.isAndroid && !Platform.isIOS) return;
     _listening = true;
 
-    try {
-      final initial = await ReceiveSharingIntent.instance.getInitialMedia();
-      _enqueueShared(initial);
-      await ReceiveSharingIntent.instance.reset();
-    } catch (e) {
-      AppDiagLog.verbose('ShareReceiverService initial: $e');
-    }
-
-    ReceiveSharingIntent.instance.getMediaStream().listen(
+    _subscription ??= ReceiveSharingIntent.instance.getMediaStream().listen(
       (files) {
-        _enqueueShared(files);
+        enqueueShared(files);
         unawaitedReset();
       },
       onError: (Object e) =>
           AppDiagLog.verbose('ShareReceiverService stream: $e'),
     );
+    try {
+      enqueueShared(await ReceiveSharingIntent.instance.getInitialMedia());
+      await ReceiveSharingIntent.instance.reset();
+    } catch (e) {
+      AppDiagLog.verbose('ShareReceiverService initial: $e');
+    }
   }
 
   void unawaitedReset() {
@@ -63,33 +69,54 @@ class ShareReceiverService {
     });
   }
 
-  void _enqueueShared(List<SharedMediaFile> files) {
-    var added = false;
-    for (final f in files) {
-      if (f.type != SharedMediaType.image) continue;
-      var path = f.path.trim();
-      if (path.isEmpty) continue;
-      if (path.startsWith('file://')) {
-        path = Uri.parse(path).toFilePath();
-      }
-      if (_pending.any((e) => e.path == path)) continue;
-      _pending.add(SharedMediaItem(
-        path: path,
-        thumbnail: f.thumbnail,
-        mimeType: f.mimeType,
-      ));
-      added = true;
+  @visibleForTesting
+  void enqueueShared(List<SharedMediaFile> files) {
+    final images = files.where((f) => f.type == SharedMediaType.image).toList();
+    final paths = images
+        .map(
+          (f) => f.path.startsWith('file://')
+              ? Uri.parse(f.path).toFilePath()
+              : f.path.trim(),
+        )
+        .where((p) => p.isNotEmpty)
+        .toSet()
+        .toList();
+    if (paths.isEmpty) return;
+    final sorted = [...paths]..sort();
+    final fingerprint = sha256
+        .convert(utf8.encode(jsonEncode(sorted)))
+        .toString();
+    final now = DateTime.now();
+    _received.removeWhere(
+      (_, at) => now.difference(at) > const Duration(seconds: 30),
+    );
+    if (_received.containsKey(fingerprint) ||
+        _active.containsKey(fingerprint)) {
+      return;
     }
-    if (added) revision.value++;
+    _received[fingerprint] = now;
+    final session = '${now.microsecondsSinceEpoch}_$fingerprint';
+    _active[fingerprint] = session;
+    _pending.add(
+      paths.map((p) => SharedMediaItem(path: p, sessionId: session)).toList(),
+    );
+    revision.value++;
   }
 
-  /// Snapshot + clear pending shared images.
-  List<SharedMediaItem> takePendingItems() {
-    if (_pending.isEmpty) return const [];
-    final out = List<SharedMediaItem>.from(_pending);
-    _pending.clear();
-    return out;
+  void completeBatch(String sessionId) {
+    final keys = _active.entries
+        .where((e) => e.value == sessionId)
+        .map((e) => e.key)
+        .toList();
+    for (final key in keys) {
+      _active.remove(key);
+      _received[key] = DateTime.now();
+    }
   }
+
+  /// Take ONE OS share batch; independent shares must never be merged.
+  List<SharedMediaItem> takePendingItems() =>
+      _pending.isEmpty ? const [] : _pending.removeAt(0);
 
   /// Snapshot + clear as bare paths (legacy).
   List<String> takePendingPaths() =>
@@ -98,17 +125,13 @@ class ShareReceiverService {
   bool get hasPending => _pending.isNotEmpty;
 
   void requeuePaths(Iterable<String> paths) {
-    var added = false;
-    for (final path in paths) {
-      final p = path.trim();
-      if (p.isEmpty || _pending.any((e) => e.path == p)) continue;
-      _pending.add(SharedMediaItem(path: p));
-      added = true;
-    }
-    if (added) revision.value++;
+    requeueItems(paths.map((p) => SharedMediaItem(path: p)));
   }
 
   void requeueItems(Iterable<SharedMediaItem> items) {
-    requeuePaths(items.map((e) => e.path));
+    final batch = items.toList();
+    if (batch.isEmpty) return;
+    _pending.insert(0, batch);
+    revision.value++;
   }
 }

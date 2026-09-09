@@ -24,7 +24,7 @@ final class ShareExtensionCachePlugin: NSObject, FlutterPlugin {
   private var appGroupId: String {
     let custom = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as? String
     if let custom, !custom.isEmpty { return custom }
-    return "group.\(Bundle.main.bundleIdentifier ?? "")"
+    return "group.com.myframe"
   }
 
   private func defaults() -> UserDefaults? {
@@ -71,7 +71,12 @@ final class ShareExtensionCachePlugin: NSObject, FlutterPlugin {
       result(nil)
 
     case "readString":
-      result(defaults.string(forKey: key))
+      if let text = defaults.string(forKey: key) {
+        result(text)
+      } else if let value = defaults.object(forKey: key), JSONSerialization.isValidJSONObject(value),
+                let data = try? JSONSerialization.data(withJSONObject: value) {
+        result(String(data: data, encoding: .utf8))
+      } else { result(nil) }
 
     case "readBool":
       result(defaults.object(forKey: key) == nil ? nil : defaults.bool(forKey: key))
@@ -81,6 +86,18 @@ final class ShareExtensionCachePlugin: NSObject, FlutterPlugin {
 
     case "readData":
       result(defaults.data(forKey: key))
+
+    case "acknowledgeShare":
+      var entries = defaults.array(forKey: key) as? [[String: Any]] ?? []
+      let id = args["id"] as? String ?? ""
+      let paths = args["paths"] as? [String] ?? []
+      entries.removeAll { entry in
+        if let entryId = entry["id"] as? String { return entryId == id }
+        return !paths.isEmpty && (entry["filePaths"] as? [String]) == paths
+      }
+      defaults.set(entries, forKey: key)
+      defaults.synchronize()
+      result(nil)
 
     case "remove":
       defaults.removeObject(forKey: key)

@@ -3033,6 +3033,16 @@ class AppStrings {
     de: 'In Warteschlange — Senden ausstehend…',
     ja: 'キュー待ち — 送信中…',
   );
+  String sharedUploadLabel(int count) => count == 1 ? _l6(
+    en: 'Uploading shared photo…', zh: '正在上传分享的照片…',
+    es: 'Subiendo foto compartida…', fr: 'Envoi de la photo partagée…',
+    de: 'Geteiltes Foto wird hochgeladen…', ja: '共有写真をアップロード中…',
+  ) : _l6(
+    en: 'Sending shared playlist ($count photos)…', zh: '正在发送分享的播放列表（$count 张）…',
+    es: 'Enviando lista compartida ($count fotos)…', fr: 'Envoi de la liste partagée ($count photos)…',
+    de: 'Geteilte Playlist wird gesendet ($count Fotos)…', ja: '共有プレイリストを送信中（$count 枚）…',
+  );
+
   String get pushStageUploading => _l6(
     en: 'Uploading to server…',
     zh: '上传到服务器…',
