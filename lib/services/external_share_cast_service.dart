@@ -15,8 +15,11 @@ import 'frame_settings_store.dart';
 import 'frame_online_guard.dart';
 import 'gallery_image_normalizer.dart';
 import 'network_link.dart';
+import 'personal_gallery_store.dart';
 import 'slideshow_playlist_store.dart';
 import 'slideshow_remote_api.dart';
+import 'upload_queue_controller.dart';
+import 'user_gallery_cloud_service.dart';
 
 /// External sharing → app (gallery / share sheet) upload orchestrator.
 ///
@@ -146,6 +149,9 @@ class ExternalShareCastService {
         // directCast (default). Backend uses source=playlist to exclude these
         // from GET /api/user/gallery.
         source: items.length > 1 ? UploadSource.playlist : UploadSource.directCast,
+        // Multi-image external shares: ONE strategy_bin playlist job (tracked
+        // after publish) powers the banner — never N per-photo single plays.
+        registerPushProgress: items.length == 1,
         onProgress: (p) {
           onProgress?.call(
             (i + (p.progress ?? 0.5)) / items.length,
@@ -158,6 +164,16 @@ class ExternalShareCastService {
         sentCount++;
         final id = cast.slideshowImageId?.trim();
         if (id != null && id.isNotEmpty && !ids.contains(id)) ids.add(id);
+        // FOLDER SEPARATION (single vs multi external share):
+        //   - ONE shared photo → register it in the Personal gallery grid
+        //     (PersonalGalleryStore + cloud source=personal_album) so it lands
+        //     under the Personal tab (index 0) and survives restart.
+        //   - MULTIPLE shared photos (2+) → do NOT touch the Personal feed; they
+        //     are collected into the "My Playlist" album (Playlists tab, index 1)
+        //     by routeSharedToMyPlaylist after the cast completes.
+        if (items.length == 1) {
+          await _persistSharedToPersonal(item.path, authToken);
+        }
         continue;
       }
 
@@ -189,6 +205,36 @@ class ExternalShareCastService {
     return (sent: sentCount, queued: queued);
   }
 
+  /// Register a shared photo into the user's Personal gallery.
+  ///
+  /// 1. `addPaths` writes the durable local path into [PersonalGalleryStore] and
+  ///    bumps its revision — [GalleryScreen] listens and refreshes the grid
+  ///    immediately (no pull-to-refresh / restart needed).
+  /// 2. `uploadFile(source: 'personal_album')` persists the photo to the server
+  ///    gallery DB so it survives cold restart and appears on other devices.
+  ///
+  /// Best-effort: failures never abort the frame cast (the photo is already on
+  /// the frame; the background sync pipeline will retry the gallery upload).
+  Future<void> _persistSharedToPersonal(String durablePath, String authToken) async {
+    if (durablePath.trim().isEmpty) return;
+    try {
+      await PersonalGalleryStore.instance.addPaths([durablePath]);
+    } catch (e) {
+      AppDiagLog.verbose('[ExternalShare] addPaths failed: $e');
+    }
+    try {
+      if (authToken.trim().isNotEmpty) {
+        await UserGalleryCloudService.instance.uploadFile(
+          authToken: authToken,
+          localPath: durablePath,
+          source: 'personal_album',
+        );
+      }
+    } catch (e) {
+      AppDiagLog.verbose('[ExternalShare] personal upload failed: $e');
+    }
+  }
+
   Future<void> _publishExternal(
     PairedFrame frame,
     List<String> imageIds,
@@ -199,7 +245,7 @@ class ExternalShareCastService {
       // Multi-image external share = a playlist dispatch. immediatePlay defaults
       // true so photo[0] renders immediately; source tagged 'playlist' for the
       // backend isolation filter.
-      await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+      final playlistMsgid = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
         bearerToken: authToken.trim().isEmpty ? null : authToken.trim(),
         pairingToken: frame.resolvedPairingToken,
         macSlug: frameBleMacSlug(frame),
@@ -210,6 +256,17 @@ class ExternalShareCastService {
         skipPlay: true,
         source: 'playlist',
       );
+      // Consolidate the whole external share into ONE tracked playlist job: the
+      // banner (mounted on the Gallery tab) follows the frame's first-render ACK
+      // for this strategy_bin command instead of queuing N per-photo `play`s.
+      if (playlistMsgid != null && playlistMsgid.isNotEmpty) {
+        UploadQueueController.instance.trackPush(
+          mac: FrameCloudCastService.instance.uploadDeviceId(frame),
+          msgid: playlistMsgid,
+          pairingToken: frame.resolvedPairingToken,
+          userAuthToken: authToken.trim().isEmpty ? null : authToken.trim(),
+        );
+      }
     } catch (e) {
       AppDiagLog.verbose('[ExternalShare] slideshow publish failed: $e');
     }

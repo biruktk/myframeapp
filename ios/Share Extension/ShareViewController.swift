@@ -65,6 +65,9 @@ final class ShareViewController: UIViewController {
   private var currentTargets: [ShareUploader.Target] = []
   private var currentJpegURLs: [URL] = []
   private var currentAuthToken = ""
+  /// Backend push msgids captured per target after a successful upload (used to
+  /// drive the in-app banner later via UploadQueueController).
+  private var pendingReceipts: [(mac: String, msgid: String)] = []
 
   // MARK: - Lifecycle
 
@@ -505,17 +508,24 @@ final class ShareViewController: UIViewController {
     let targets = currentTargets
     let files = currentJpegURLs
     let token = currentAuthToken
+    pendingReceipts = []
 
     Task {
       let results = await ShareUploader.shared.upload(
         targets: targets,
         jpegFiles: files,
-        authToken: token
-      ) { [weak self] completed, total, detail in
-        DispatchQueue.main.async {
-          self?.showInlineProgress(completed: completed, total: total, detail: detail)
+        authToken: token,
+        onProgress: { [weak self] completed, total, detail in
+          DispatchQueue.main.async {
+            self?.showInlineProgress(completed: completed, total: total, detail: detail)
+          }
+        },
+        onReceipt: { [weak self] mac, msgid in
+          DispatchQueue.main.async {
+            self?.pendingReceipts.append((mac: mac, msgid: msgid))
+          }
         }
-      }
+      )
       DispatchQueue.main.async { [weak self] in
         self?.finishUpload(results)
       }
@@ -547,7 +557,10 @@ final class ShareViewController: UIViewController {
     }
 
     // All images reached the backend — Success! state, then auto-close.
-    cleanUpUploadFiles()
+    // Record the share (files + per-target push msgids) so the host app can
+    // persist to Personal/Playlists and attach banner tracking on next launch.
+    // Files are intentionally kept in the App Group so the host can read them.
+    recordPendingExternalShare()
     uploadProgressBar.setProgress(1, animated: true)
     sendButton.isEnabled = false
     sendButton.backgroundColor = Self.brandRed
@@ -604,6 +617,43 @@ final class ShareViewController: UIViewController {
       .containerURL(forSecurityApplicationGroupIdentifier: appGroupId) else { return }
     let uploadDir = container.appendingPathComponent("Uploads", isDirectory: true)
     try? FileManager.default.removeItem(at: uploadDir)
+  }
+
+  /// Writes the just-completed silent share into the App Group so the Flutter
+  /// host can ingest it later:
+  ///   - filePaths → the transcoded JPEGs (kept in the shared container),
+  ///   - isPlaylist → 2+ images (Playlists tab) vs single (Personal tab),
+  ///   - pushes → [{mac, msgid}] the tracked backend jobs already dispatched,
+  ///     which UploadQueueController will poll to render the in-app banner.
+  /// No deep link / app open is performed — the sheet completes silently.
+  private func recordPendingExternalShare() {
+    guard let sharedDefaults = UserDefaults(suiteName: appGroupId) else { return }
+    let filePaths = currentJpegURLs.map { $0.path }
+    guard !filePaths.isEmpty else { return }
+
+    var pending = sharedDefaults.array(forKey: "pending_external_shares") as? [[String: Any]] ?? []
+    // Drop stale entries older than a day so the queue never grows unbounded.
+    let now = Date().timeIntervalSince1970
+    pending.removeAll { entry in
+      let ts = (entry["timestamp"] as? Double) ?? 0
+      return now - ts > 86_400
+    }
+
+    var pushes: [[String: String]] = []
+    for receipt in pendingReceipts where !receipt.mac.isEmpty && !receipt.msgid.isEmpty {
+      pushes.append(["mac": receipt.mac, "msgid": receipt.msgid])
+    }
+
+    let entry: [String: Any] = [
+      "filePaths": filePaths,
+      "isPlaylist": filePaths.count > 1,
+      "timestamp": now,
+      "pushes": pushes,
+    ]
+    pending.append(entry)
+    sharedDefaults.set(pending, forKey: "pending_external_shares")
+    sharedDefaults.synchronize()
+    NSLog("[MyFrame Share] recorded pending external share files=%d pushes=%d", filePaths.count, pushes.count)
   }
 
   private func failSend() {

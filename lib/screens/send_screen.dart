@@ -25,7 +25,6 @@ import '../services/frame_cloud_cast_service.dart';
 import '../services/frame_forget_service.dart';
 import '../services/frame_guest_invite_service.dart';
 import '../services/share_service.dart';
-import '../services/frame_recovery_service.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/gallery_image_normalizer.dart';
 import '../services/gallery_photo_picker.dart';
@@ -318,7 +317,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
         ? await GalleryImageCache.persistPaths([cameraPath])
         : <String>[];
 
-    final sent = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(
         builder: (_) => ImageEditorScreen(
@@ -328,11 +327,9 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
         ),
       ),
     );
-    if (sent == true && context.mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ShellNavigation.switchToSend();
-      });
-    }
+    // The editor owns post-send navigation (it pops back to the shell and
+    // switches to the Gallery tab after a successful send), so there is nothing
+    // left to do here — never force the user back to the Send screen.
   }
 
   /// Photo library: [pickMultiImage] with single-image fallback, then the editor for each selection in order.
@@ -445,7 +442,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
 
     for (var i = 0; i < shareBytes.length; i++) {
       if (!context.mounted) return;
-      final sent = await Navigator.push<bool>(
+      await Navigator.push<bool>(
         context,
         MaterialPageRoute<bool>(
           builder: (_) => ImageEditorScreen(
@@ -458,13 +455,11 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
           ),
         ),
       );
-      if (sent == true) {
-        if (!context.mounted) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          ShellNavigation.switchToSend();
-        });
-        return;
-      }
+      // The editor owns post-send navigation: after a successful send it pops
+      // back to the shell and switches to the Gallery tab. Do not push further
+      // editors on top of it or force the Send screen.
+      if (!context.mounted) return;
+      return;
     }
   }
 
@@ -593,7 +588,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
 
     for (var i = 0; i < fileBytes.length; i++) {
       if (!context.mounted) return;
-      final sent = await Navigator.push<bool>(
+      await Navigator.push<bool>(
         context,
         MaterialPageRoute<bool>(
           builder: (_) => ImageEditorScreen(
@@ -607,34 +602,13 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
           ),
         ),
       );
-      if (sent == true) {
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              behavior: SnackBarBehavior.floating,
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              duration: const Duration(seconds: 5),
-              content: Text(
-                AppStrings.of(context).sendQueueWaitForFrame(i + 1, fileBytes.length),
-              ),
-            ),
-          );
-          await DeviceStore.instance.load();
-          final paired = DeviceStore.instance.cached;
-          if (paired != null) {
-            try {
-              await FrameRecoveryService.instance.sendLoginAck(paired);
-            } catch (_) {}
-          }
-          await Future<void>.delayed(const Duration(seconds: 120));
-        } else {
-          // User backed out of the editor — stay on Send Photo.
-          if (!context.mounted) return;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            ShellNavigation.switchToSend();
-          });
-          return;
-        }
+      // The editor owns post-send navigation: on a successful send it pops
+      // back to the shell and routes to the Gallery tab (Personal / Playlists),
+      // while the per-image wait-and-retry choreography runs in the push queue
+      // pipeline. On a back-out the user simply stays on the Send screen — so
+      // either way there is nothing more to do here.
+      if (!context.mounted) return;
+      return;
     }
   }
 
@@ -769,7 +743,7 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     final slideshow = app.defaultSlideshowStyle;
-    final sent = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(
         builder: (_) => ImageEditorScreen(
@@ -779,11 +753,6 @@ class _SendScreenState extends State<SendScreen> with WidgetsBindingObserver {
         ),
       ),
     );
-    if (sent == true && context.mounted) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ShellNavigation.switchToSend();
-      });
-    }
   }
 
   @override

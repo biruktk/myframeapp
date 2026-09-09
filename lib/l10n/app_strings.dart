@@ -10,6 +10,11 @@ class AppStrings {
 
   final AppLocale locale;
 
+  /// Last-known locale, kept in sync at app start (see [main.dart]) so
+  /// non-widget services (e.g. [UploadQueueController], notifications) can
+  /// resolve localized strings without a [BuildContext]. Defaults to English.
+  static AppStrings current = AppStrings(AppLocale.en);
+
   static AppStrings of(BuildContext context) {
     final code = Localizations.localeOf(context).languageCode;
     final loc = switch (code) {
@@ -3020,6 +3025,70 @@ class AppStrings {
     de: 'An Rahmen senden',
     ja: 'フレームへ送信',
   );
+  String get pushStageQueued => _l6(
+    en: 'Queued — waiting to send…',
+    zh: '已排队 — 等待发送…',
+    es: 'En cola — esperando enviar…',
+    fr: 'En file — en attente d\u2019envoi…',
+    de: 'In Warteschlange — Senden ausstehend…',
+    ja: 'キュー待ち — 送信中…',
+  );
+  String get pushStageUploading => _l6(
+    en: 'Uploading to server…',
+    zh: '上传到服务器…',
+    es: 'Subiendo al servidor…',
+    fr: 'Téléversement vers le serveur…',
+    de: 'Wird auf den Server hochgeladen…',
+    ja: 'サーバーへアップロード中…',
+  );
+  String get pushStageDownloading => _l6(
+    en: 'Frame downloading image…',
+    zh: '相框正在下载图片…',
+    es: 'El marco descargando la imagen…',
+    fr: 'Le cadre télécharge l\u2019image…',
+    de: 'Rahmen lädt Bild herunter…',
+    ja: 'フレームが画像をダウンロード中…',
+  );
+  String get pushStageRefreshing => _l6(
+    en: 'Refreshing E-Ink display…',
+    zh: '正在刷新电子墨屏…',
+    es: 'Actualizando pantalla E-Ink…',
+    fr: 'Rafraîchissement de l\u2019écran E-Ink…',
+    de: 'E-Ink-Display wird aktualisiert…',
+    ja: 'E-Ink画面を更新中…',
+  );
+  String get pushStageCompleted => _l6(
+    en: 'Displayed successfully!',
+    zh: '显示成功！',
+    es: '¡Mostrado con éxito!',
+    fr: 'Affiché avec succès !',
+    de: 'Erfolgreich angezeigt!',
+    ja: '正常に表示しました！',
+  );
+  String get frameUpdatedNotificationTitle => _l6(
+    en: 'Frame Updated',
+    zh: '相框已更新',
+    es: 'Marco actualizado',
+    fr: 'Cadre mis à jour',
+    de: 'Rahmen aktualisiert',
+    ja: 'フレームを更新しました',
+  );
+  String get frameUpdatedNotificationBody => _l6(
+    en: 'Your photo is now displaying on the frame.',
+    zh: '您的照片正在相框上显示。',
+    es: 'Tu foto se está mostrando en el marco.',
+    fr: 'Votre photo s\u2019affiche sur le cadre.',
+    de: 'Dein Foto wird jetzt auf dem Rahmen angezeigt.',
+    ja: '写真がフレームに表示されています。',
+  );
+  String get pushStageFailed => _l6(
+    en: 'Push failed — timed out',
+    zh: '推送失败 — 超时',
+    es: 'Envío fallido — tiempo agotado',
+    fr: 'Échec de l\u2019envoi — délai dépassé',
+    de: 'Push fehlgeschlagen — Zeitüberschreitung',
+    ja: 'プッシュ失敗 — タイムアウト',
+  );
   String get chooseFrameToSendHint => _l6(
     en: 'Choose which frame should receive this photo.',
     zh: '选择要接收照片的相框。',
@@ -3375,6 +3444,30 @@ class AppStrings {
     fr: 'Compris',
     de: 'Verstanden',
     ja: '了解',
+  );
+  String get pushingToFrameTitle => _l6(
+    en: 'Pushing to Frame',
+    zh: '正在推送至相框',
+    es: 'Enviando al marco',
+    fr: 'Envoi au cadre',
+    de: 'An Rahmen senden',
+    ja: 'フレームへ送信中',
+  );
+  String pushInBackgroundSubtitle(String frameName) => _l6(
+    en: 'Your photo is being sent to $frameName. You can monitor the progress above in your Gallery.',
+    zh: '照片正在发送到 $frameName。你可以在相册上方查看推送进度。',
+    es: 'Tu foto se está enviando a $frameName. Puedes ver el progreso en tu galería.',
+    fr: 'Votre photo est envoyée à $frameName. Suivez la progression dans votre galerie.',
+    de: 'Dein Foto wird an $frameName gesendet. Verfolge den Fortschritt in deiner Galerie.',
+    ja: '$frameName に写真を送信中です。ギャラリー上部で進捗を確認できます。',
+  );
+  String get viewInGalleryLabel => _l6(
+    en: 'View in Gallery',
+    zh: '在相册中查看',
+    es: 'Ver en la galería',
+    fr: 'Voir dans la galerie',
+    de: 'In Galerie ansehen',
+    ja: 'ギャラリーで見る',
   );
   String get aiContentSafetyNotice => _l6(
     en: 'AI-generated content may be inaccurate or inappropriate. Please review before use.',
@@ -7603,6 +7696,30 @@ class AppStrings {
         de: 'Bei offenen Netzen leer lassen.',
         ja: 'オープンネットワークの場合は空白のままにしてください。',
       );
+  String get wifiPasswordGuidePrompt => _l6(
+        en: 'Tap here to enter your Wi-Fi password',
+        zh: '点击此处输入 Wi-Fi 密码以完成配置',
+        es: 'Toca aquí para introducir tu contraseña de Wi-Fi',
+        fr: 'Touchez ici pour saisir votre mot de passe Wi-Fi',
+        de: 'Tippe hier, um dein Wi-Fi-Passwort einzugeben',
+        ja: 'ここをタップして Wi-Fi パスワードを入力',
+      );
+  String get wifiPasswordGuideGotIt => _l6(
+        en: 'Got it',
+        zh: '知道了',
+        es: 'Entendido',
+        fr: 'Compris',
+        de: 'Verstanden',
+        ja: 'わかりました',
+      );
+  String get wifiPasswordCoachHint => _l6(
+        en: 'Enter Wi-Fi password here',
+        zh: '在此输入 Wi-Fi 密码',
+        es: 'Introduce aquí la contraseña Wi-Fi',
+        fr: 'Saisissez votre mot de passe Wi-Fi ici',
+        de: 'Wi-Fi-Passwort hier eingeben',
+        ja: 'ここに Wi-Fi パスワードを入力',
+      );
   String get wifiConnectingSavedPassword => _l6(
         en: 'Connecting with saved password…',
         zh: '正在使用保存的密码连接…',
@@ -7717,6 +7834,14 @@ class AppStrings {
         fr: 'Assurez-vous que votre Frame est en ligne et connecté au Wi-Fi, ou vérifiez le Wi-Fi / la connexion de votre téléphone, ou reconnectez votre Frame.',
         de: 'Stellen Sie sicher, dass Ihr Frame online und mit WLAN verbunden ist, prüfen Sie das WLAN / die Verbindung Ihres Telefons, oder verbinden Sie Ihren Frame erneut.',
         ja: 'フレームがオンラインでWi-Fiに接続されているか、電話のWi-Fi/接続を確認するか、フレームを再接続してください。',
+      );
+  String get frameSleepSendBlockedBody => _l6(
+        en: 'Your frame is currently in sleep mode to conserve battery. Message sending is temporarily paused.',
+        zh: '相框当前处于休眠省电模式，暂无法推送照片。',
+        es: 'Tu marco está en modo de suspensión para ahorrar batería. El envío de mensajes está pausado temporalmente.',
+        fr: 'Votre cadre est en mode veille pour économiser la batterie. L\u2019envoi de messages est temporairement suspendu.',
+        de: 'Dein Rahmen befindet sich im Energiesparmodus. Das Senden ist vorübergehend pausiert.',
+        ja: 'フレームはバッテリー節約のためスリープモードです。メッセージ送信は一時停止しています。',
       );
 
   // —— Email Verification ——
@@ -8126,6 +8251,38 @@ class AppStrings {
     de: 'Speicher',
     ja: 'ストレージ',
   );
+  String get networkSignalLabel => _l6(
+    en: 'Wi-Fi signal',
+    zh: 'Wi-Fi 信号',
+    es: 'Señal Wi-Fi',
+    fr: 'Signal Wi-Fi',
+    de: 'WLAN-Signal',
+    ja: 'Wi-Fi 信号',
+  );
+  String get chargingState => _l6(
+    en: 'Charging',
+    zh: '充电中',
+    es: 'Cargando',
+    fr: 'En charge',
+    de: 'Lädt',
+    ja: '充電中',
+  );
+  String get dischargingState => _l6(
+    en: 'On battery',
+    zh: '使用电池',
+    es: 'Con batería',
+    fr: 'Sur batterie',
+    de: 'Mit Akku',
+    ja: 'バッテリー使用中',
+  );
+  String get sdCardNotMounted => _l6(
+    en: 'SD card not detected',
+    zh: '未检测到 SD 卡',
+    es: 'Tarjeta SD no detectada',
+    fr: 'Carte SD non détectée',
+    de: 'SD-Karte nicht erkannt',
+    ja: 'SDカードが検出されません',
+  );
   String get deviceInfoSection => _l6(
     en: 'Device Info',
     zh: '设备信息',
@@ -8197,6 +8354,22 @@ class AppStrings {
     fr: 'Hors ligne',
     de: 'Offline',
     ja: 'オフライン',
+  );
+  String get frameSleepModeLabel => _l6(
+    en: 'In Sleep Mode',
+    zh: '休眠中',
+    es: 'En modo de suspensión',
+    fr: 'En mode veille',
+    de: 'Im Energiesparmodus',
+    ja: 'スリープモード中',
+  );
+  String frameSleepWakeScheduledAt(String time) => _l6(
+    en: 'Scheduled wake-up at $time',
+    zh: '计划在 $time 唤醒',
+    es: 'Activación programada a las $time',
+    fr: 'Réveil prévu à $time',
+    de: 'Geplantes Aufwachen um $time',
+    ja: '$time に起動予定',
   );
   String get deleteDevice => _l6(
     en: 'Delete Device',

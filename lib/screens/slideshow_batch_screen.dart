@@ -15,6 +15,7 @@ import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
 import '../services/frame_cloud_cast_service.dart';
+import '../services/upload_queue_controller.dart';
 import '../services/frame_online_guard.dart';
 import '../services/network_link.dart';
 import '../services/slideshow_playlist_store.dart';
@@ -184,6 +185,9 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           // to exclude these from GET /api/user/gallery.
           source: UploadSource.playlist,
           playlistId: widget.albumId,
+          // Multi-image batches: banner driven by ONE strategy_bin job (tracked
+          // after publish). A lone photo still registers its single push.
+          registerPushProgress: total == 1,
         );
         if (!cast.ok) {
           AppDiagLog.verbose('[Slideshow] cast failed photo $idx: ${cast.message}');
@@ -219,7 +223,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
           intervalMinutes: _intervalMinutes,
         );
         try {
-          await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+          final playlistMsgid = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
             bearerToken: token.isNotEmpty ? token : null,
             pairingToken: pairingToken,
             macSlug: frameBleMacSlug(pFrame),
@@ -228,6 +232,15 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             skipPlay: true,
             source: 'playlist',
           );
+          // Track the ONE playlist push job (banner completes on first render ACK).
+          if (playlistMsgid != null && playlistMsgid.isNotEmpty) {
+            UploadQueueController.instance.trackPush(
+              mac: FrameCloudCastService.instance.uploadDeviceId(pFrame),
+              msgid: playlistMsgid,
+              pairingToken: pairingToken,
+              userAuthToken: token.isNotEmpty ? token : null,
+            );
+          }
         } on SlideshowPublishException catch (e) {
           AppDiagLog.verbose(
             '[Slideshow] VPS publish failed ${e.statusCode}: ${e.body}',
@@ -269,7 +282,7 @@ class _SlideshowBatchScreenState extends State<SlideshowBatchScreen> {
             ),
           ),
         );
-        ShellNavigation.returnToSendAfterCast(context);
+        ShellNavigation.routeToGalleryAfterCast(context, isPlaylist: true);
       }
     } catch (e, st) {
       AppDiagLog.verbose('[Slideshow] pipeline failed: $e\n$st');

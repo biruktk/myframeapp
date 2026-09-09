@@ -72,11 +72,16 @@ final class ShareUploader {
   /// [onProgress] after every completed file→target upload so the HUD can
   /// render "Uploading X of Y…". Returns per-file results; the caller shows
   /// an error + retry when any result reports failure.
+  ///
+  /// After a target's batch is dispatched, [onReceipt] fires once per target
+  /// with the backend push-job `msgid` (when one was obtained) so the host app
+  /// can later attach UploadQueueController tracking and show the in-app banner.
   func upload(
     targets: [Target],
     jpegFiles: [URL],
     authToken: String,
-    onProgress: @escaping (_ completed: Int, _ total: Int, _ detail: String) -> Void
+    onProgress: @escaping (_ completed: Int, _ total: Int, _ detail: String) -> Void,
+    onReceipt: @escaping (_ mac: String, _ msgid: String) -> Void
   ) async -> [FileResult] {
     let session = URLSession(
       configuration: .default,
@@ -119,6 +124,7 @@ final class ShareUploader {
 
       let endpoint = base.appendingPathComponent("api/frames/\(macSlug)/upload")
       var imageIds: [String] = []
+      var lastImageURL: String?
 
       for file in jpegFiles {
         let detail = "to \(target.name) · \(file.lastPathComponent)"
@@ -136,6 +142,7 @@ final class ShareUploader {
           if let id = Self.imageId(from: responseData), !imageIds.contains(id) {
             imageIds.append(id)
           }
+          lastImageURL = Self.imageURL(from: responseData) ?? lastImageURL
           completed += 1
           onProgress(completed, total, detail)
           results.append(
@@ -151,11 +158,23 @@ final class ShareUploader {
         }
       }
 
-      // >1 images → assign the batch to a frame Playlist, mirroring
-      // ExternalShareCastService._publishExternal (interval from the saved
-      // global playback profile / sequential or random as configured).
-      if imageIds.count > 1 {
-        await publishPlaylist(
+      // Obtain a trackable push msgid per target so the host can show the
+      // in-app banner later:
+      //   - 1 image  → enqueue a single `play` push (mirrors the app's
+      //                registerPushAfterUpload) and capture its msgid.
+      //   - >1 image → the slideshow publish returns the playlist job msgid.
+      if jpegFiles.count == 1, let imageURL = lastImageURL {
+        if let mid = await pushSingleToTrack(
+          session: session,
+          target: target,
+          macSlug: macSlug,
+          imageURL: imageURL,
+          authToken: authToken
+        ), !mid.isEmpty {
+          onReceipt(macSlug, mid)
+        }
+      } else if imageIds.count > 1 {
+        let mid = await publishPlaylist(
           session: session,
           target: target,
           macSlug: macSlug,
@@ -163,9 +182,68 @@ final class ShareUploader {
           authToken: authToken,
           rules: rules
         )
+        if let mid, !mid.isEmpty {
+          onReceipt(macSlug, mid)
+        }
       }
     }
     return results
+  }
+
+  /// Enqueues a tracked single-image push job (same endpoint the Flutter host
+  /// uses) and returns the job `msgid`. The push job drives the frame ACK
+  /// progress that UploadQueueController polls for the in-app banner.
+  private func pushSingleToTrack(
+    session: URLSession,
+    target: Target,
+    macSlug: String,
+    imageURL: String,
+    authToken: String
+  ) async -> String? {
+    let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+    var cleanUrl = rawApiUrl
+    if !cleanUrl.isEmpty {
+      if !cleanUrl.lowercased().hasPrefix("http://") && !cleanUrl.lowercased().hasPrefix("https://") {
+        cleanUrl = "http://" + cleanUrl
+      }
+      if cleanUrl.hasSuffix("/") {
+        cleanUrl = String(cleanUrl.dropLast())
+      }
+    }
+    guard let base = URL(string: cleanUrl) else { return nil }
+    let endpoint = base.appendingPathComponent("api/v1/frames/\(macSlug)/push")
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 20
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    if !target.pairingToken.isEmpty {
+      request.setValue(target.pairingToken, forHTTPHeaderField: "x-pairing-token")
+    }
+    if !authToken.isEmpty {
+      request.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+    }
+    let basename = (imageURL as NSString).lastPathComponent
+    let payload: [String: Any] = [
+      "type": "single",
+      "imgs": [["imgid": basename, "imgurl": imageURL]],
+    ]
+    request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
+
+    do {
+      let (data, response) = try await session.data(for: request)
+      guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        return nil
+      }
+      guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        return nil
+      }
+      let msgid = (json["msgid"] as? String)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      return (msgid?.isEmpty == false) ? msgid : nil
+    } catch {
+      return nil
+    }
   }
 
   // MARK: - Upload request
@@ -229,7 +307,7 @@ final class ShareUploader {
     imageIds: [String],
     authToken: String,
     rules: PlaybackRules
-  ) async {
+  ) async -> String? {
     let rawApiUrl = target.apiUrl.trimmingCharacters(in: .whitespacesAndNewlines)
     var cleanUrl = rawApiUrl
     if !cleanUrl.isEmpty {
@@ -240,7 +318,7 @@ final class ShareUploader {
         cleanUrl = String(cleanUrl.dropLast())
       }
     }
-    guard let base = URL(string: cleanUrl) else { return }
+    guard let base = URL(string: cleanUrl) else { return nil }
     let endpoint = base.appendingPathComponent("api/frames/\(macSlug)/slideshow")
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
@@ -272,9 +350,20 @@ final class ShareUploader {
     request.httpBody = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
 
     do {
-      let (_, response) = try await session.data(for: request)
+      let (data, response) = try await session.data(for: request)
       if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
         NSLog("[MyFrame Share] playlist published for \(macSlug): \(imageIds.count) image(s)")
+        // The backend returns the tracked playlist push-job msgid when it
+        // created one (ids>1 & MQTT connected) — surface it so the host app can
+        // attach UploadQueueController tracking for the in-app banner.
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+          let msgid = (json["msgid"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+          if let msgid, !msgid.isEmpty {
+            return msgid
+          }
+        }
+        return nil
       } else {
         // Fallback: try the dedicated /cast/batch endpoint. It accepts
         // the same shape but is purpose-built for multi-image direct
@@ -289,6 +378,7 @@ final class ShareUploader {
           authToken: authToken,
           rules: rules
         )
+        return nil
       }
     } catch {
       NSLog("[MyFrame Share] playlist publish failed for \(macSlug): \(error.localizedDescription); falling back to /cast/batch")
@@ -300,6 +390,7 @@ final class ShareUploader {
         authToken: authToken,
         rules: rules
       )
+      return nil
     }
   }
 
@@ -473,6 +564,18 @@ final class ShareUploader {
   private static func sanitizeMac(_ raw: String) -> String {
     let hex = raw.uppercased().filter { $0.isHexDigit }
     return hex.count >= 12 ? String(hex.suffix(12)) : hex
+  }
+
+  /// Mirrors `PhotoUploadResponse.imageUrl` — the absolute frame-facing media
+  /// URL the backend returns for a stored upload (used to enqueue a tracked
+  /// single push from the extension).
+  private static func imageURL(from data: Data) -> String? {
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
+    let url = (json["image_url"] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return (url?.isEmpty == false) ? url : nil
   }
 
   /// Mirrors `PhotoUploadResponse.vpsSlideshowImageId` — the image identity the

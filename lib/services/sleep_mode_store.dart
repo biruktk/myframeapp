@@ -166,7 +166,27 @@ class SleepModeStore {
         action: 'wifi_sleep',
         data: buildWifiSleepData(),
       );
-      return result['ok'] == true;
+      final mqttOk = result['ok'] == true;
+
+      // When the user DISABLES sleep, ALSO hit the sleep-config REST endpoint:
+      // it immediately clears the backend sleep lock, publishes a wake +
+      // update_config (request_telemetry) to the frame, and returns the live
+      // status so the UI flips from "In Sleep Mode" straight to "Online".
+      if (!enabled) {
+        final paired = DeviceStore.instance.cached;
+        if (paired != null) {
+          final cfg = await api.saveSleepConfig(
+            mac: mac,
+            enabled: false,
+            startTime: _toHhMm(startTime),
+            endTime: _toHhMm(endTime),
+            timezoneOffsetMinutes: DateTime.now().timeZoneOffset.inMinutes,
+            pairingToken: paired.resolvedPairingToken,
+          );
+          return mqttOk || cfg != null;
+        }
+      }
+      return mqttOk;
     } catch (_) {
       return false;
     } finally {

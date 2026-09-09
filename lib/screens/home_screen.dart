@@ -54,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     DeviceStore.instance.revision.addListener(_onDeviceStoreRevision);
+    FrameApiClient.frameStatusRevision.addListener(_onFrameStatusRevision);
     ShellNavigation.activeTab.addListener(_onShellTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
@@ -66,6 +67,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     DeviceStore.instance.revision.removeListener(_onDeviceStoreRevision);
+    FrameApiClient.frameStatusRevision.removeListener(_onFrameStatusRevision);
     ShellNavigation.activeTab.removeListener(_onShellTabChanged);
     _removeCoach();
     _pollTimer?.cancel();
@@ -120,6 +122,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onDeviceStoreRevision() {
+    if (!mounted) return;
+    unawaited(_load());
+  }
+
+  /// A frame's live status changed (e.g. sleep toggled OFF) — refresh frame
+  /// status + telemetry immediately so "In Sleep Mode" -> "Online".
+  void _onFrameStatusRevision() {
     if (!mounted) return;
     unawaited(_load());
   }
@@ -645,10 +654,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                         style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant, fontFamily: 'monospace'),
                                       ),
                                     ],
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      '${s.frameModelDefault} · ${online ? s.statusOnline : s.statusOffline}',
-                                      style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+                                                    const SizedBox(height: 6),
+                                    _FrameStatusLine(
+                                      status: _frameStatuses[f.deviceId],
+                                      online: online,
+                                      strings: s,
+                                      colorScheme: cs,
                                     ),
                                     if (_metrics?.lastPhotoAt != null) ...[
                                       const SizedBox(height: 2),
@@ -714,6 +725,59 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (d.inMinutes < 60) return s.minutesAgo(d.inMinutes);
     if (d.inHours < 48) return s.hoursAgo(d.inHours);
     return s.daysAgo(d.inDays);
+  }
+}
+
+class _FrameStatusLine extends StatelessWidget {
+  const _FrameStatusLine({
+    this.status,
+    required this.online,
+    required this.strings,
+    required this.colorScheme,
+  });
+
+  final FrameStatus? status;
+  final bool online;
+  final AppStrings strings;
+  final ColorScheme colorScheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final sleeping = status?.sleeping == true || status?.isNetworkSleeping == true;
+    final wakeEnd = status?.sleepEnd;
+    if (sleeping) {
+      final label = strings.frameSleepModeLabel;
+      final wake = wakeEnd == null || wakeEnd.isEmpty
+          ? label
+          : '$label · ${_wakeLabel(strings, wakeEnd)}';
+      return Row(
+        children: [
+          const Icon(Icons.bedtime, size: 14, color: Color(0xFF7B1FA2)),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              wake,
+              style: TextStyle(fontSize: 12.5, color: const Color(0xFF7B1FA2)),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      );
+    }
+    return Text(
+      '${strings.frameModelDefault} · ${online ? strings.statusOnline : strings.statusOffline}',
+      style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+    );
+  }
+
+  String _wakeLabel(AppStrings s, String end) {
+    final parts = end.split(':');
+    var h = int.tryParse(parts.isEmpty ? '' : parts[0]) ?? 0;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h == 0) h = 12;
+    return s.frameSleepWakeScheduledAt('${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} $ampm');
   }
 }
 

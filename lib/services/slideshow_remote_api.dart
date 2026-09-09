@@ -21,7 +21,12 @@ class SlideshowRemoteApi {
   /// The device autonomously fetches the manifest + .bin files and rotates
   /// per the configured interval. The dispatch is fire-and-forget — a 2xx
   /// response is treated as immediate success (no task-id polling).
-  Future<void> publish({
+  ///
+  /// Returns the backend's tracked push-job `msgid` when this publish created
+  /// one (true multi-image playlists only), or `null` otherwise. The caller can
+  /// hand that msgid to `UploadQueueController.trackPush` so the frame's first
+  /// render ACK drives the progress banner.
+  Future<String?> publish({
     String? bearerToken,
     String? pairingToken,
     required String macSlug,
@@ -40,7 +45,7 @@ class SlideshowRemoteApi {
     /// (`'direct_cast'` | `'playlist'`).
     String source = 'direct_cast',
   }) async {
-    if (imageIds.isEmpty) return;
+    if (imageIds.isEmpty) return null;
     final encoded = Uri.encodeComponent(macSlug);
     final uri = Uri.parse('$_origin/api/frames/$encoded/slideshow');
     final headers = <String, String>{
@@ -84,6 +89,16 @@ class SlideshowRemoteApi {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw SlideshowPublishException(res.statusCode, res.body);
     }
+    // A 2xx slideshow publish may create a backend-tracked playlist job; surface
+    // its msgid so the client can poll the hardware ACK progress.
+    try {
+      final decoded = jsonDecode(res.body) as Map<String, dynamic>?;
+      final msgid = decoded?['msgid'];
+      if (msgid is String && msgid.isNotEmpty) return msgid;
+    } catch (_) {
+      // Non-JSON body (or no msgid) → nothing to track.
+    }
+    return null;
   }
 
   /// Clear frame slideshow, MQTT stop, play last single / connected fallback.

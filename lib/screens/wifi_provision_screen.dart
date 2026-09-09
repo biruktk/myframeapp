@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,9 +22,11 @@ import 'frame_profile_setup_screen.dart';
 import '../services/permission_gate.dart';
 import '../navigation/pairing_flow_nav.dart';
 import '../services/app_diag_log.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 // import '../widgets/debug_slog_overlay.dart';
 import '../widgets/progress_action_button.dart';
 import '../widgets/shell_navigation.dart';
+import '../widgets/wifi_password_guide_overlay.dart';
 
 const _kRed = Color(0xFFE5252A);
 
@@ -73,6 +76,14 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   String? _frameMac;
   bool _isAuthError = false;
 
+  /// Coach mark for the Wi‑Fi password field. [GlobalKey] anchors the
+  /// spotlight cutout to the password input; [FocusNode] receives focus after
+  /// the guide is dismissed so the keyboard opens.
+  final _passwordFocusNode = FocusNode();
+  final _passwordFieldKey = GlobalKey();
+  bool _showPasswordGuide = false;
+  OverlayEntry? _guideOverlay;
+
   @override
   void initState() {
     super.initState();
@@ -82,19 +93,83 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       _ssidCtrl.text = normalizeWifiSsid(paired.wifiSsid);
       _frameMac = paired.deviceId;
     }
+    // Adopt the discovery screen's MAC immediately so the header is correct and
+    // "Connect now" always has a valid target even before DeviceStore refreshes.
+    if (_frameMac == null || _frameMac!.isEmpty) {
+      final devMac = widget.initialDevice?.remoteId.str;
+      if (devMac != null && devMac.isNotEmpty) _frameMac = devMac;
+    }
     _passCtrl.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_scanWifiNetworks());
+      unawaited(_maybeShowPasswordGuideOnEntry());
     });
   }
 
   @override
   void dispose() {
+    _removeGuideOverlay();
+    _passwordFocusNode.dispose();
     _scrollController.dispose();
     _ssidCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
+  }
+
+  static const _kSeenPasswordGuide = 'has_seen_wifi_password_guide';
+
+  /// Show the password coach-mark on first pairing, or when the user taps
+  /// "Connect now" on a secured network with an empty password. Best-effort —
+  /// never blocks the Wi‑Fi/BLE flow.
+  Future<void> _maybeShowPasswordGuideOnEntry() async {
+    if (!mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool(_kSeenPasswordGuide) ?? false;
+    if (seen) return;
+    // Only guide when a network is selected to type into.
+    if (_selectedSsid == null && _ssidCtrl.text.trim().isEmpty) return;
+    _presentPasswordGuide();
+  }
+
+  void _presentPasswordGuide() {
+    if (_showPasswordGuide || !mounted) return;
+    // Guard: the password field must be laid out to anchor the spotlight.
+    if (_passwordFieldKey.currentContext?.findRenderObject() == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_showPasswordGuide && _passwordFieldKey.currentContext != null) {
+          _presentPasswordGuide();
+        }
+      });
+      if (_passwordFieldKey.currentContext == null) return;
+    }
+    _showPasswordGuide = true;
+    setState(() {});
+    _guideOverlay = WifiPasswordGuideOverlay.build(
+      context: context,
+      targetKey: _passwordFieldKey,
+      onDismiss: _dismissPasswordGuide,
+    );
+    Overlay.of(context, rootOverlay: true).insert(_guideOverlay!);
+  }
+
+  void _dismissPasswordGuide() {
+    // Persist the seen-flag so the guide only auto-shows once.
+    unawaited(() async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kSeenPasswordGuide, true);
+    }());
+    _removeGuideOverlay();
+    if (!mounted) return;
+    setState(() => _showPasswordGuide = false);
+    // Auto-focus so the cursor blinks + keyboard opens.
+    _passwordFocusNode.requestFocus();
+  }
+
+  void _removeGuideOverlay() {
+    _guideOverlay?.remove();
+    _guideOverlay = null;
+    _showPasswordGuide = false;
   }
 
   Future<void> _scanWifiNetworks() async {
@@ -280,7 +355,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     AuthSessionManager.instance.suppressUnauthorizedHandling(true);
     try {
       final s = AppStrings.of(context);
-      final paired = DeviceStore.instance.cached;
+      var paired = DeviceStore.instance.cached;
       final currentSsid = normalizeWifiSsid(_ssidCtrl.text);
       // Password is only what the user typed — never cached/saved auto-fill.
       // Trim only trailing/leading spaces; empty string = open network.
@@ -299,9 +374,12 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         return;
       }
       if (listedSecure && !treatAsOpen && effectivePassword.isEmpty) {
+        // Defensive coach-mark: guide the user to the password field instead
+        // of only showing an error, while keeping the error visible.
         setState(() {
           _error = s.wifiRequiresPasswordError;
         });
+        _presentPasswordGuide();
         return;
       }
 
@@ -319,13 +397,14 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       if (widget.initialDevice != null) {
         blufi.activeDevice = widget.initialDevice;
       }
+      final warmDevice = blufi.activeDevice;
 
       // Defensive guard: the BLE link can drop while the user is typing
       // credentials. If we hold a warm handle, attempt a non-blocking
       // auto-reconnect before failing, so the "No frame paired yet" banner is
       // only shown when the device is genuinely unreachable — not because of an
       // unawaited future or a transient drop.
-      if (blufi.activeDevice != null) {
+      if (warmDevice != null) {
         final reachable = await blufi.ensureActiveDeviceConnected();
         if (!reachable) {
           setState(() {
@@ -333,6 +412,31 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
             _error = s.noFramePaired;
           });
           return;
+        }
+      }
+
+      // Race guard: tapping "Connect" on a freshly scanned frame navigates
+      // here BEFORE the selected frame has necessarily been committed to
+      // DeviceStore (or the cached entry hasn't refreshed yet). The MAC is
+      // already visible on this screen / carried by the warm BLE handle — adopt
+      // it immediately so "Connect now" never throws "No frame paired yet"
+      // while a valid target is in hand.
+      if (paired == null) {
+        final bluetoothMac =
+            (warmDevice?.remoteId.str ??
+                    widget.initialDevice?.remoteId.str ??
+                    '')
+                .trim();
+        if (bluetoothMac.isNotEmpty) {
+          final advName = (warmDevice?.advName ?? '').trim().isNotEmpty
+              ? warmDevice!.advName.trim()
+              : (widget.initialDevice?.advName ?? '').trim();
+          await DeviceStore.instance.saveManualPairing(
+            deviceId: bluetoothMac,
+            bleNamePrefix: advName.isNotEmpty ? advName : bluetoothMac,
+            bleRemoteId: bluetoothMac,
+          );
+          paired = DeviceStore.instance.cached;
         }
       }
 
@@ -352,11 +456,18 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         '[WiFi] connect start ssid="$currentSsid" pwdLen=${effectivePassword.length} open=$treatAsOpen',
       );
 
+      final locale = ui.PlatformDispatcher.instance.locale;
+      final countryCode = locale.countryCode?.trim().toUpperCase();
       final selfHostedMqtt = SelfHostedMqttConfig(
         host: VpsDefaults.host,
         port: VpsDefaults.mqttPort,
         user: VpsDefaults.mqttUser,
         password: VpsDefaults.mqttPass,
+        countryCode: countryCode != null && RegExp(r'^[A-Z]{2}$').hasMatch(countryCode)
+            ? countryCode
+            : null,
+        timezone: DateTime.now().timeZoneName,
+        timezoneOffsetMinutes: DateTime.now().timeZoneOffset.inMinutes,
       );
 
       final provision = await blufi.provision(
@@ -902,8 +1013,18 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
+                              // Lightweight bouncing coach pill; hides itself on
+                              // focus/typing. Superseded by the full spotlight
+                              // overlay (first-pairing) which has a Got it step.
+                              if (!_showPasswordGuide)
+                                WifiPasswordCoachMark(
+                                  controller: _passCtrl,
+                                  focusNode: _passwordFocusNode,
+                                ),
                               TextField(
+                                key: _passwordFieldKey,
                                 controller: _passCtrl,
+                                focusNode: _passwordFocusNode,
                                 obscureText: _hide,
                                 textInputAction: TextInputAction.done,
                                 onSubmitted: (_) => _connect(),

@@ -39,6 +39,9 @@ class SelfHostedMqttConfig {
     this.httpPort = 80,
     this.user = '',
     this.password = '',
+    this.countryCode,
+    this.timezone,
+    this.timezoneOffsetMinutes,
   });
   final String host;
   final int port;
@@ -47,6 +50,9 @@ class SelfHostedMqttConfig {
   final int httpPort;
   final String user;
   final String password;
+  final String? countryCode;
+  final String? timezone;
+  final int? timezoneOffsetMinutes;
 }
 
 class BlufiProvisioningService {
@@ -750,6 +756,9 @@ class BlufiProvisioningService {
           'port': cfg.port,
           'usr': cfg.user,
           'pwd': cfg.password,
+          if (cfg.countryCode?.trim().isNotEmpty == true) 'country_code': cfg.countryCode!.trim().toUpperCase(),
+          if (cfg.timezone?.trim().isNotEmpty == true) 'timezone': cfg.timezone!.trim(),
+          if (cfg.timezoneOffsetMinutes != null) 'timezone_offset_minutes': cfg.timezoneOffsetMinutes,
         },
       }),
     );

@@ -41,6 +41,13 @@ class ShareExtensionCache {
   static const String globalPlaybackModeKey = 'global_playback_mode';
   static const String globalDurationTypeKey = 'global_duration_type';
 
+  /// Pending external shares written by the native Share Extension (JSON list of
+  /// `{filePaths, isPlaylist, timestamp, pushes:[{mac,msgid}]}`). The extension
+  /// cannot run Flutter, so the MAIN app ingests them (persist to Personal /
+  /// Playlists + attach UploadQueueController tracking) on launch/resume.
+  static const String pendingExternalSharesKey = 'pending_external_shares';
+  static const String autoSendKey = 'ShareExtensionAutoSend';
+
   bool _bootstrapped = false;
   bool _isApple = false;
   AppSettings? _settings;
@@ -206,7 +213,6 @@ class ShareExtensionCache {
   Future<List<String>> consumeAutoSend() async {
     if (!_isApple) return const [];
     try {
-      const autoSendKey = 'ShareExtensionAutoSend';
       final flagged = await _channel.invokeMethod<bool?>(
         'readBool',
         {'key': autoSendKey},
@@ -220,4 +226,89 @@ class ShareExtensionCache {
       return const [];
     }
   }
+
+  /// Consumes any external shares the native Share Extension recorded in the
+  /// App Group (list of `{filePaths, isPlaylist, timestamp, pushes[]}`), then
+  /// clears the queue. The extension pushes silently to the backend in its own
+  /// process; the HOST app ingests the payloads locally (Personal / Playlists)
+  /// and attaches [UploadQueueController] tracking via the recorded msgid+mac.
+  Future<List<PendingExternalShare>> consumePendingExternalShares() async {
+    if (!_isApple) return const [];
+    try {
+      final raw = await _channel.invokeMethod<String?>(
+        'readString',
+        {'key': pendingExternalSharesKey},
+      );
+      if (raw == null || raw.trim().isEmpty) return const [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final out = <PendingExternalShare>[];
+      for (final e in decoded) {
+        if (e is! Map) continue;
+        final paths = (e['filePaths'] as List?)
+                ?.whereType<String>()
+                .map((p) => p.trim())
+                .where((p) => p.isNotEmpty)
+                .toList() ??
+            const <String>[];
+        if (paths.isEmpty) continue;
+        final pushes = <PendingExternalPush>[];
+        final rawPushes = e['pushes'];
+        if (rawPushes is List) {
+          for (final p in rawPushes) {
+            if (p is! Map) continue;
+            final mac = '${p['mac'] ?? ''}'.trim();
+            final msgid = '${p['msgid'] ?? ''}'.trim();
+            if (mac.isNotEmpty && msgid.isNotEmpty) {
+              pushes.add(PendingExternalPush(mac: mac, msgid: msgid));
+            }
+          }
+        }
+        out.add(PendingExternalShare(
+          paths: paths,
+          isPlaylist: e['isPlaylist'] == true || paths.length > 1,
+          pushes: pushes,
+        ));
+      }
+      if (out.isNotEmpty) {
+        await _channel.invokeMethod<void>('remove', {'key': pendingExternalSharesKey});
+      }
+      return out;
+    } catch (e) {
+      AppDiagLog.verbose('[ShareExtensionCache] consumePendingExternalShares failed: $e');
+      return const [];
+    }
+  }
+}
+
+/// A share recorded by the native iOS Share Extension for deferred ingestion by
+/// the host Flutter app. Files live in the shared App Group container.
+class PendingExternalShare {
+  const PendingExternalShare({
+    required this.paths,
+    required this.isPlaylist,
+    this.pushes = const [],
+  });
+
+  /// Transcoded JPEG paths inside the shared App Group container.
+  final List<String> paths;
+
+  /// true = 2+ images (Playlists tab), false = single image (Personal tab).
+  final bool isPlaylist;
+
+  /// Tracked backend push jobs (per target frame) that the extension fired —
+  /// used to attach [UploadQueueController.trackPush] so the progress banner
+  /// shows the render progress when the host app next opens.
+  final List<PendingExternalPush> pushes;
+}
+
+/// A backend push job (mac + msgid) already dispatched by the Share Extension.
+class PendingExternalPush {
+  const PendingExternalPush({required this.mac, required this.msgid});
+
+  /// Upload target MAC (12-hex station MAC) the push job was created for.
+  final String mac;
+
+  /// Push-queue job msgid returned by the backend at dispatch time.
+  final String msgid;
 }

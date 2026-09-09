@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -518,6 +519,12 @@ class AccountSyncService {
       if (name != null && name.isNotEmpty) body['frame_name'] = name;
       final ssid = wifiSsid?.trim();
       if (ssid != null && ssid.isNotEmpty) body['wifi_ssid'] = ssid;
+      final locale = ui.PlatformDispatcher.instance.locale;
+      final country = locale.countryCode?.trim().toUpperCase() ?? '';
+      if (RegExp(r'^[A-Z]{2}$').hasMatch(country)) body['country_code'] = country;
+      body['timezone_offset_minutes'] = DateTime.now().timeZoneOffset.inMinutes;
+      final tzName = DateTime.now().timeZoneName.trim();
+      if (tzName.isNotEmpty) body['timezone'] = tzName;
       final res = await _api
           .post(
             uri,

@@ -8,6 +8,7 @@ import 'constants/splash_branding.dart';
 import 'app_scope.dart';
 import 'services/ble_frame_device_transport.dart';
 import 'services/device_transport.dart';
+import 'l10n/app_strings.dart';
 import 'settings/app_settings.dart';
 import 'theme/app_theme.dart';
 import 'navigation/app_routes.dart';
@@ -35,6 +36,8 @@ Future<void> main() async {
     await _guardStartup('app settings', settings.load);
     // Global 401 handler: refresh-or-reset + redirect to login.
     AuthSessionManager.instance.configure(settings: settings);
+    // Keep localized strings available to non-widget services (notifications).
+    syncAppStringsLocale(settings);
     FlutterError.onError = (details) {
       AppDiagLog.verbose('[FlutterError] ${details.exceptionAsString()}');
       if (kDebugMode) {
@@ -74,6 +77,20 @@ Future<void> _guardStartup(String label, Future<void> Function() action) async {
     AppDiagLog.verbose('[startup] $label failed: $e');
     AppDiagLog.verbose('$st');
   }
+}
+
+/// Keep [AppStrings.current] in sync so non-widget services (e.g. notification
+/// titles) resolve the user's chosen language without a [BuildContext].
+void syncAppStringsLocale(AppSettings settings) {
+  final code = settings.languageCode?.trim() ?? '';
+  AppStrings.current = switch (code.toLowerCase()) {
+    'zh' => AppStrings(AppLocale.zh),
+    'es' => AppStrings(AppLocale.es),
+    'fr' => AppStrings(AppLocale.fr),
+    'de' => AppStrings(AppLocale.de),
+    'ja' => AppStrings(AppLocale.ja),
+    _ => AppStrings(AppLocale.en),
+  };
 }
 
 class MyFrameApp extends StatelessWidget {

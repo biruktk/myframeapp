@@ -27,6 +27,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    FrameApiClient.frameStatusRevision.addListener(_onFrameStatusRevision);
     _load();
     _startPolling();
   }
@@ -34,9 +35,18 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    FrameApiClient.frameStatusRevision.removeListener(_onFrameStatusRevision);
     _pollTimer?.cancel();
     _api.close();
     super.dispose();
+  }
+
+  /// A frame status changed (e.g. sleep toggled OFF) — force-refresh telemetry
+  /// immediately so battery / SD-card / RSSI + "In Sleep Mode" -> "Online" show
+  /// instantly.
+  void _onFrameStatusRevision() {
+    if (!mounted) return;
+    unawaited(_fetch(force: true));
   }
 
   @override
@@ -59,7 +69,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
     }
   }
 
-  Future<void> _fetch() async {
+  Future<void> _fetch({bool force = false}) async {
     final p = _paired;
     if (p == null) return;
     final mac = _resolveMac;
@@ -68,6 +78,8 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
       final st = await _api.fetchFrameStatus(
         mac: mac,
         timeout: const Duration(seconds: 5),
+        force: force,
+        pairingToken: p.resolvedPairingToken,
       );
       if (mounted) setState(() => _status = st);
     } catch (_) {}
@@ -284,7 +296,7 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _heroCard(_deviceName, _macAddress, isOnline, s),
+              _heroCard(_deviceName, _macAddress, isOnline, s, st),
               const SizedBox(height: 16),
               if (st?.isNetworkSleeping == true) ...[
                 _powerSavingBanner(s),
@@ -342,17 +354,71 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
                             ),
                           ),
                           const SizedBox(width: 12),
-                          Text(
-                            _storageText(),
-                            style: tt.bodySmall?.copyWith(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: cs.onSurface,
+                            Text(
+                              _storageText(),
+                              style: tt.bodySmall?.copyWith(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: cs.onSurface,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                    // Live SD-card + charging + Wi-Fi signal (accurate telemetry).
+                    if (_status?.sdCardMounted != null ||
+                        _status?.isCharging != null ||
+                        _status?.wifiRssi != null) ...[
+                      const SizedBox(height: 12),
+                      _statusRow(
+                        icon: Icons.wifi,
+                        label: s.networkSignalLabel,
+                        child: Text(
+                          _wifiSignalText(),
+                          style: tt.bodySmall?.copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                      ),
+                      if (_status?.isCharging != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              (_status!.isCharging == true)
+                                  ? Icons.battery_charging_full
+                                  : Icons.battery_std,
+                              size: 16,
+                              color: (_status!.isCharging == true)
+                                  ? const Color(0xFF4CAF50)
+                                  : cs.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              (_status!.isCharging == true)
+                                  ? s.chargingState
+                                  : s.dischargingState,
+                              style: tt.bodySmall?.copyWith(
+                                fontSize: 12,
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (_status?.sdCardMounted == false) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          s.sdCardNotMounted,
+                          style: tt.bodySmall?.copyWith(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ],
                   ],
                 ),
               ),
@@ -431,9 +497,18 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
     );
   }
 
-  Widget _heroCard(String name, String mac, bool online, AppStrings s) {
+  Widget _heroCard(String name, String mac, bool online, AppStrings s, FrameStatus? status) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final sleeping = status?.sleeping == true || status?.isNetworkSleeping == true;
+    // Sleep is a distinct state: show a moon "In Sleep Mode" (purple/amber)
+    // badge instead of Online or the grey Offline dot.
+    final badgeColor = sleeping
+        ? const Color(0xFF7B1FA2) // deep purple
+        : (online ? const Color(0xFF4CAF50) : cs.onSurfaceVariant);
+    final badgeText = sleeping ? s.frameSleepModeLabel : (online ? s.onlineStatus : s.offlineStatus);
+    final wakeText = _sleepWakeLabel(s);
+
     return _card(
       child: Column(
         children: [
@@ -483,24 +558,49 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                Icons.circle,
-                size: 8,
-                color: online ? const Color(0xFF4CAF50) : cs.onSurfaceVariant,
+                sleeping ? Icons.bedtime : Icons.circle,
+                size: sleeping ? 16 : 8,
+                color: badgeColor,
               ),
               const SizedBox(width: 6),
               Text(
-                online ? s.onlineStatus : s.offlineStatus,
+                badgeText,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: online ? const Color(0xFF4CAF50) : cs.onSurfaceVariant,
+                  color: badgeColor,
                 ),
               ),
             ],
           ),
+          if (sleeping && wakeText != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              wakeText,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  /// Local 12-hour "Scheduled wake-up at …" string from the sleep window.
+  String? _sleepWakeLabel(AppStrings s) {
+    final end = _status?.sleepEnd;
+    if (end == null || end.isEmpty) return null;
+    final parts = end.split(':');
+    if (parts.isEmpty) return null;
+    var h = int.tryParse(parts[0]) ?? 0;
+    final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h == 0) h = 12;
+    return s.frameSleepWakeScheduledAt('${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')} $ampm');
   }
 
   Widget _powerSavingBanner(AppStrings s) {
@@ -622,6 +722,20 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen>
 
   String _storageText() {
     final st = _status;
+    // Prefer live SD-card capacity when present, else fall back to storage fields.
+    if (st != null && st.sdCardMounted == true && st.sdCardFreeMb != null) {
+      final used = (st.sdCardTotalMb ?? 0) - (st.sdCardFreeMb ?? 0);
+      final usedGb = (used / 1024).toStringAsFixed(1);
+      final totalGb = ((st.sdCardTotalMb ?? 0) / 1024).toStringAsFixed(1);
+      return '$usedGb / $totalGb GB';
+    }
     return '${st?.storageUsedFormatted ?? '0.0 GB'} / ${st?.storageTotalFormatted ?? '32.0 GB'}';
+  }
+
+  String _wifiSignalText() {
+    final rssi = _status?.wifiRssi;
+    if (rssi == null) return '--';
+    String strength = rssi >= -55 ? 'Strong' : (rssi >= -70 ? 'Good' : (rssi >= -85 ? 'Fair' : 'Weak'));
+    return '$rssi dBm · $strength';
   }
 }

@@ -13,6 +13,7 @@ import '../services/device_store.dart';
 import '../services/frame_api_client.dart';
 import '../services/frame_ble_mac_slug.dart';
 import '../services/frame_cloud_cast_service.dart';
+import '../services/upload_queue_controller.dart';
 import '../services/frame_online_guard.dart';
 import '../services/slideshow_playlist_store.dart';
 import '../services/slideshow_remote_api.dart';
@@ -212,6 +213,9 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
           // exclude these from GET /api/user/gallery.
           source: UploadSource.playlist,
           playlistId: widget.albumId,
+          // Multi-image albums: the banner is powered by ONE strategy_bin job
+          // (tracked after publish). A lone photo still registers its single push.
+          registerPushProgress: sendFiles.length == 1,
         );
 
         if (!cast.ok) {
@@ -259,17 +263,30 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
         intervalMinutes: profile.intervalMinutes,
         albumId: widget.albumId,
       ));
-      unawaited(SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
-        bearerToken: authToken,
-        pairingToken: pairingToken,
-        macSlug: frameBleMacSlug(activePaired),
-        imageIds: allIds,
-        intervalMinutes: profile.intervalMinutes,
-        strategy: profile.playbackMode == FramePlaybackProfile.modeRandom ? 2 : 1,
-        durationHours: profile.durationHours,
-        skipPlay: true,
-        source: 'playlist',
-      ));
+      try {
+        final playlistMsgid = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+          bearerToken: authToken,
+          pairingToken: pairingToken,
+          macSlug: frameBleMacSlug(activePaired),
+          imageIds: allIds,
+          intervalMinutes: profile.intervalMinutes,
+          strategy: profile.playbackMode == FramePlaybackProfile.modeRandom ? 2 : 1,
+          durationHours: profile.durationHours,
+          skipPlay: true,
+          source: 'playlist',
+        );
+        // Track the ONE playlist push job (banner completes on first render ACK).
+        if (playlistMsgid != null && playlistMsgid.isNotEmpty) {
+          UploadQueueController.instance.trackPush(
+            mac: FrameCloudCastService.instance.uploadDeviceId(activePaired),
+            msgid: playlistMsgid,
+            pairingToken: pairingToken,
+            userAuthToken: authToken,
+          );
+        }
+      } catch (e) {
+        AppDiagLog.verbose('[EditColorGrade] playlist publish failed: $e');
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -282,7 +299,7 @@ class _EditColorGradeScreenState extends State<EditColorGradeScreen> {
 
       await SchedulerBinding.instance.endOfFrame;
       if (!mounted) return;
-      ShellNavigation.returnToSendAfterCast(context);
+      ShellNavigation.routeToGalleryAfterCast(context, isPlaylist: true);
     } catch (e, st) {
       AppDiagLog.verbose('[EditColorGrade] send error: $e\n$st');
       if (mounted) {

@@ -16,6 +16,7 @@ import 'slideshow_remote_api.dart';
 import 'transport_kind.dart';
 import 'app_diag_log.dart';
 import 'frame_ble_mac_slug.dart';
+import 'upload_queue_controller.dart';
 
 class FrameCloudCastService {
   FrameCloudCastService._();
@@ -51,6 +52,12 @@ class FrameCloudCastService {
     UploadSource source = UploadSource.directCast,
     String? playlistId,
     String? albumId,
+    /// Register the async single `play` push + progress banner for this photo.
+    /// Multi-image playlist/album uploads MUST pass `false` — they are followed
+    /// by ONE strategy_bin publish whose tracked job drives the banner; leaving
+    /// this true would enqueue N per-photo `play`s that fight the playlist and
+    /// leave the tracked job stuck at "Queued 0%" behind the backlog.
+    bool registerPushProgress = true,
   }) async {
     void report(CastProgress p) => onProgress?.call(p);
 
@@ -125,6 +132,24 @@ final res = await api.uploadPhoto(
           message: 'Photo uploaded — frame will update shortly.',
           progress: 1,
         ));
+
+        // Non-blocking: register the async push and surface live hardware
+        // progress via the global banner (see PushProgressBanner). The frame
+        // ACK (download_complete -> play_ack) drives the 0.30 -> 0.65 -> 1.00
+        // progression in the banner; no immediate "success" promise here.
+        //
+        // Multi-image playlist uploads pass registerPushProgress:false — their
+        // banner is driven by the single strategy_bin playlist job instead.
+        if (registerPushProgress) {
+          unawaited(
+            UploadQueueController.instance.registerPushAfterUpload(
+              mac: deviceId,
+              mediaUrl: res.imageUrl ?? '',
+              pairingToken: paired.resolvedPairingToken,
+              userAuthToken: userAuthToken,
+            ),
+          );
+        }
 
         if (syncSlideshowAfterSuccess) {
           unawaited(_syncSlideshowAfterSingleCast(

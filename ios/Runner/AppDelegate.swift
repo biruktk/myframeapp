@@ -2,6 +2,7 @@ import Flutter
 import UIKit
 import NetworkExtension
 import FirebaseCore
+import Intents
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -33,6 +34,11 @@ import FirebaseCore
     if let cacheRegistrar = engineBridge.pluginRegistry
       .registrar(forPlugin: "ShareExtensionCachePlugin") {
       ShareExtensionCachePlugin.register(with: cacheRegistrar)
+    }
+
+    if let shortcutRegistrar = engineBridge.pluginRegistry
+      .registrar(forPlugin: "FrameShortcutPlugin") {
+      FrameShortcutPlugin.register(with: shortcutRegistrar)
     }
 
     if let icloud = engineBridge.pluginRegistry.registrar(forPlugin: "ICloudPhotosPlugin") {
@@ -118,5 +124,117 @@ import FirebaseCore
       NSLog("[myframe] sanitizeImageToJPEG: write failed \(error)")
       return nil
     }
+  }
+}
+
+/// Donates iOS `INInteraction` shortcuts so MyFrame frame targets can appear in
+/// the native Share Sheet suggestion row. Kept in AppDelegate.swift so it is
+/// guaranteed to be part of the existing Runner target.
+final class FrameShortcutPlugin: NSObject, FlutterPlugin {
+  static let channelName = "myframe/frame_shortcuts"
+
+  static func register(with registrar: FlutterPluginRegistrar) {
+    let channel = FlutterMethodChannel(
+      name: channelName,
+      binaryMessenger: registrar.messenger()
+    )
+    let instance = FrameShortcutPlugin()
+    registrar.addMethodCallDelegate(instance, channel: channel)
+  }
+
+  func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "donateFrame", "donateFrameSelected":
+      guard let args = call.arguments as? [String: Any],
+            let frameName = args["frameName"] as? String,
+            let frameMac = args["frameMac"] as? String else {
+        result(FlutterError(code: "bad_args", message: "frameName/frameMac required", details: nil))
+        return
+      }
+      donateFrame(
+        frameName: frameName,
+        frameMac: frameMac,
+        withAppIcon: call.method == "donateFrameSelected",
+        result: result
+      )
+    case "deleteAllDonations":
+      if #available(iOS 12.0, *) {
+        INInteraction.deleteAll { error in
+          if let error = error {
+            result(FlutterError(code: "donation_clear_failed", message: error.localizedDescription, details: nil))
+          } else {
+            result(nil)
+          }
+        }
+      } else {
+        result(FlutterError(code: "unsupported", message: "iOS < 12", details: nil))
+      }
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func donateFrame(
+    frameName: String,
+    frameMac: String,
+    withAppIcon: Bool,
+    result: @escaping FlutterResult
+  ) {
+    let cleanName = frameName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let name = cleanName.isEmpty ? "MyFrame" : cleanName
+    let mac = frameMac.trimmingCharacters(in: .whitespacesAndNewlines)
+    let handle = INPersonHandle(value: mac.isEmpty ? name : mac, type: .unknown)
+    let image: INImage?
+    if withAppIcon,
+       let icon = UIImage(named: "AppIcon") ?? Bundle.main.frameShortcutIcon(),
+       let data = icon.pngData() {
+      image = INImage(imageData: data)
+    } else {
+      image = nil
+    }
+    var nameComponents = PersonNameComponents()
+    nameComponents.givenName = name
+    let recipient = INPerson(
+      personHandle: handle,
+      nameComponents: nameComponents,
+      displayName: name,
+      image: image,
+      contactIdentifier: nil,
+      customIdentifier: mac.isEmpty ? nil : mac
+    )
+
+    guard #available(iOS 14.0, *) else {
+      result(FlutterError(code: "unsupported", message: "Direct share targets require iOS 14+", details: nil))
+      return
+    }
+    let intent = INSendMessageIntent(
+      recipients: [recipient],
+      outgoingMessageType: .outgoingMessageText,
+      content: name,
+      speakableGroupName: INSpeakableString(spokenPhrase: name),
+      conversationIdentifier: mac.isEmpty ? name : mac,
+      serviceName: nil,
+      sender: nil,
+      attachments: nil
+    )
+    let interaction = INInteraction(intent: intent, response: nil)
+    interaction.direction = INInteractionDirection.outgoing
+    interaction.donate { error in
+      if let error = error {
+        result(FlutterError(code: "donation_failed", message: error.localizedDescription, details: nil))
+      } else {
+        result(nil)
+      }
+    }
+  }
+}
+
+private extension Bundle {
+  func frameShortcutIcon() -> UIImage? {
+    guard let icons = object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any],
+          let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+          let files = primary["CFBundleIconFiles"] as? [String],
+          let last = files.last else { return nil }
+    return UIImage(named: last)
   }
 }

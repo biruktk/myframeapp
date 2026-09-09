@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
 import '../services/device_store.dart';
+import '../services/frame_api_client.dart';
 import '../services/sleep_mode_store.dart';
 
 /// Sleep Mode & Power Management.
@@ -79,6 +80,33 @@ class _SleepSettingsScreenState extends State<SleepSettingsScreen> {
     await store.setEnabled(_enabled);
     await store.setSchedule(start: _start, end: _end);
     final pushed = await store.pushConfigToFrame();
+
+    // Disabling sleep → the backend immediately clears the sleep lock and the
+    // frame wakes + republishes telemetry. Invalidate the status cache and pull
+    // fresh telemetry at 500ms + 2000ms so "In Sleep Mode" -> "Online" and the
+    // battery / SD-card numbers update without an app restart or 30s delay.
+    if (!_enabled) {
+      final paired = DeviceStore.instance.cached;
+      if (paired != null) {
+        final mac = DeviceStore.macForPairedFrame(paired) ?? paired.deviceId;
+        FrameApiClient().invalidateStatusCache(mac);
+        for (final delay in [const Duration(milliseconds: 500), const Duration(seconds: 2)]) {
+          unawaited(() async {
+            await Future<void>.delayed(delay);
+            if (!mounted) return;
+            final api = FrameApiClient();
+            await api.fetchFrameStatus(
+              mac: mac,
+              pairingToken: paired.resolvedPairingToken,
+              force: true,
+            );
+            api.invalidateStatusCache(mac, notify: true);
+            api.close();
+          }());
+        }
+      }
+    }
+
     if (!mounted) return;
     setState(() => _saving = false);
     ScaffoldMessenger.of(context).showSnackBar(

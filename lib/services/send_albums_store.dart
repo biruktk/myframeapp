@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'gallery_image_cache.dart';
 import 'local_storage_service.dart';
 
@@ -26,6 +28,11 @@ class SendAlbumsStore {
   static final SendAlbumsStore instance = SendAlbumsStore._();
 
   List<SendAlbumEntry> _albums = [];
+
+  /// Bumped on every local album mutation so mounted UI (e.g. the Gallery
+  /// Playlists grid) can reload — albums are often changed from flows that are
+  /// NOT the Gallery (Send flow, external share "My Playlist" ingestion).
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   /// Local timestamp id → cloud id after [rebindAlbumId].
   final Map<String, String> _idAliases = {};
@@ -249,6 +256,7 @@ class SendAlbumsStore {
       jsonEncode(_albums.map((e) => e.toJson()).toList()),
       userId: userId,
     );
+    revision.value++;
   }
 
   /// Apply cloud playlist / album metadata.

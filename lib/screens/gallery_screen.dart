@@ -18,6 +18,8 @@ import '../services/send_albums_store.dart';
 import '../widgets/app_status_toast.dart';
 import '../widgets/busy_status_dialog.dart';
 import '../widgets/custom_segmented_toggle.dart';
+import '../widgets/push_progress_banner.dart';
+import '../widgets/shell_navigation.dart';
 import '../widgets/text_input_bottom_sheet.dart';
 import 'album_detail_screen.dart';
 import 'image_editor_screen.dart';
@@ -40,13 +42,37 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
   void initState() {
     super.initState();
     PersonalGalleryStore.instance.revision.addListener(_onPersonalGalleryChanged);
+    // Albums can be created/appended from outside the Gallery (Send flow,
+    // external-share "My Playlist" ingestion), so reload when they change.
+    SendAlbumsStore.instance.revision.addListener(_onAlbumsChanged);
+    ShellNavigation.gallerySubTabRequest.addListener(_onGallerySubTabRequest);
     _reload();
   }
 
   @override
   void dispose() {
     PersonalGalleryStore.instance.revision.removeListener(_onPersonalGalleryChanged);
+    SendAlbumsStore.instance.revision.removeListener(_onAlbumsChanged);
+    ShellNavigation.gallerySubTabRequest.removeListener(_onGallerySubTabRequest);
     super.dispose();
+  }
+
+  void _onAlbumsChanged() {
+    if (!mounted) return;
+    unawaited(_reload());
+  }
+
+  /// Route an incoming push completion straight to the correct inner segment:
+  /// 0 = Personal, 1 = Playlists. One-shot request (reset to null).
+  void _onGallerySubTabRequest() {
+    final sub = ShellNavigation.gallerySubTabRequest.value;
+    if (sub == null || sub == _tab) {
+      if (sub != null) ShellNavigation.gallerySubTabRequest.value = null;
+      return;
+    }
+    ShellNavigation.gallerySubTabRequest.value = null;
+    if (!mounted) return;
+    setState(() => _tab = sub);
   }
 
   void _onPersonalGalleryChanged() {
@@ -264,6 +290,8 @@ class _GalleryScreenState extends State<GalleryScreen> with AutomaticKeepAliveCl
       ),
       body: Column(
         children: [
+          // Live async push progress, pinned directly beneath the tab selector.
+          const PushProgressBanner(),
           Expanded(
             child: IndexedStack(
               index: _tab,

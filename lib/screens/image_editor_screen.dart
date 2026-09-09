@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ import '../services/sync_pipeline.dart';
 // import '../widgets/debug_slog_overlay.dart';
 import '../widgets/shell_navigation.dart';
 import '../services/frame_cloud_cast_service.dart';
+import '../services/upload_queue_controller.dart';
 import '../services/editor_settings_cache.dart';
 import '../services/image_processor_service.dart';
 import '../services/image_send_isolate_worker.dart';
@@ -225,7 +227,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
   }
 
   String get _overlayLocationValue {
-    final s = _strings ?? AppStrings(AppLocale.en);
+    final s = _strings ?? AppStrings.current;
     final ovr = widget.overlayLocationOverride?.trim();
     if (_oLocation && ovr != null && ovr.isNotEmpty) {
       return ovr;
@@ -308,7 +310,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
       InAppNotificationStore.instance.photoSent(
         frameName:
             _paired?.frameName ??
-            _paired?.listDisplayTitle(_strings ?? AppStrings(AppLocale.en)),
+            _paired?.listDisplayTitle(_strings ?? AppStrings.current),
       ),
     );
     if (sentJpeg != null && sentJpeg.isNotEmpty) {
@@ -320,7 +322,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
       );
     }
 
-    // Show beautiful success overlay, then land on Send Photo tab
+    // Show the modern "Pushing to Frame" confirmation, then route to Gallery
     // (unless another queued photo still needs the editor).
     await _showSendSuccessOverlay(status);
     if (!mounted) return;
@@ -335,100 +337,29 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
     _leaveEditorAfterSend();
   }
 
+  /// Brand-red frosted success sheet that auto-dismisses after ~1.5s (or on
+  /// "View in Gallery"), then hands off to [_leaveEditorAfterSend] for routing.
   Future<void> _showSendSuccessOverlay(String status) async {
     if (!mounted) return;
     final frameName = _paired?.frameName ?? _strings?.frameDefaultDisplayName ?? 'MyFrame';
-    final completer = Completer<void>();
-    showDialog(
+    final strings = _strings;
+    await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black.withValues(alpha: 0.6),
-      builder: (ctx) => PopScope(
-        canPop: false,
-        child: Center(
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.elasticOut,
-            builder: (context, value, child) => Transform.scale(
-              scale: value,
-              alignment: Alignment.center,
-              child: Opacity(
-                opacity: value.clamp(0, 1),
-                child: child,
-              ),
-            ),
-            child: Container(
-              width: 300,
-              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 28),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(32),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    blurRadius: 50,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _AnimatedCheckmark(size: 80),
-                  const SizedBox(height: 28),
-                  Text(
-                    _strings?.pushingToFrameBackground ??
-                        'Pushing to frame in background…',
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1C1C1E),
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _strings?.toFrame(frameName) ?? 'to $frameName',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.grey.shade400,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        _strings?.frameIsRefreshing ?? 'Frame is refreshing…',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      builder: (_) => _PushingBackgroundDialog(
+        frameName: frameName,
+        strings: strings,
       ),
-    ).then((_) => completer.complete());
-    await Future.delayed(const Duration(seconds: 3));
-    if (mounted) Navigator.of(context, rootNavigator: true).pop();
-    await completer.future;
+    );
+  }
+
+  /// Pop any remaining send/picker sheets and route straight to Gallery with
+  /// the matching inner segment (Personal for single photo, Playlists for an
+  /// album/playlist) — never leave the user on the Send menu.
+  void _leaveEditorAfterSend() {
+    if (!mounted) return;
+    ShellNavigation.routeToGalleryAfterCast(context, isPlaylist: _isPlaylist);
   }
 
   Future<void> _saveSentPhotoToGallery(
@@ -502,11 +433,6 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
     } catch (e, st) {
       AppDiagLog.log('[Editor] cloud copy failed: $e\n$st');
     }
-  }
-
-  void _leaveEditorAfterSend() {
-    if (!mounted) return;
-    ShellNavigation.returnToSendAfterCast(context);
   }
 
   @override
@@ -1082,6 +1008,9 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
             // to exclude these from GET /api/user/gallery.
             source: UploadSource.playlist,
             playlistId: widget.albumId,
+            // One strategy_bin playlist job (tracked after publish) powers the
+            // banner — never N per-photo single `play` pushes.
+            registerPushProgress: false,
           );
           if (!cast.ok) {
             AppDiagLog.verbose('[Playlist] cast failed photo ${i + 1}: ${cast.message}');
@@ -1111,7 +1040,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
         );
 
         try {
-          await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+          final playlistMsgid = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
             bearerToken: authToken,
             pairingToken: pairingToken,
             macSlug: frameBleMacSlug(activePaired),
@@ -1120,6 +1049,17 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
             skipPlay: true,
             source: 'playlist',
           );
+          // Track the ONE playlist push job so the banner shows the frame's
+          // first-render ACK progression (0.30 -> 0.65 -> 1.00) and auto-
+          // dismisses; the rest of the playlist cycles on the frame.
+          if (playlistMsgid != null && playlistMsgid.isNotEmpty) {
+            UploadQueueController.instance.trackPush(
+              mac: FrameCloudCastService.instance.uploadDeviceId(activePaired),
+              msgid: playlistMsgid,
+              pairingToken: pairingToken,
+              userAuthToken: authToken,
+            );
+          }
         } on SlideshowPublishException catch (e) {
           AppDiagLog.verbose('[Playlist] VPS publish failed ${e.statusCode}: ${e.body}');
           if (mounted) {
@@ -3123,7 +3063,8 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
 
 class _AnimatedCheckmark extends StatefulWidget {
   final double size;
-  const _AnimatedCheckmark({required this.size});
+  final Color color;
+  const _AnimatedCheckmark({required this.size, this.color = _kEditorRed});
 
   @override
   State<_AnimatedCheckmark> createState() => _AnimatedCheckmarkState();
@@ -3177,16 +3118,16 @@ class _AnimatedCheckmarkState extends State<_AnimatedCheckmark>
             decoration: BoxDecoration(
               gradient: SweepGradient(
                 colors: [
-                  _kEditorRed,
-                  _kEditorRed.withValues(alpha: 0.85),
-                  _kEditorRed.withValues(alpha: 0.7),
-                  _kEditorRed,
+                  widget.color,
+                  widget.color.withValues(alpha: 0.85),
+                  widget.color.withValues(alpha: 0.7),
+                  widget.color,
                 ],
               ),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: _kEditorRed.withValues(alpha: 0.35),
+                  color: widget.color.withValues(alpha: 0.35),
                   blurRadius: widget.size * 0.3,
                   offset: const Offset(0, 4),
                 ),
@@ -3200,6 +3141,128 @@ class _AnimatedCheckmarkState extends State<_AnimatedCheckmark>
           ),
         );
       },
+    );
+  }
+}
+
+/// Brand-red frosted "Pushing to Frame" confirmation. Compact (~56px animated
+/// red check), soft neutral glass, an animated status line, a "View in Gallery"
+/// primary action, and auto-dismiss after ~1.5s. Dismissing hands off to the
+/// editor which routes to the Gallery tab.
+class _PushingBackgroundDialog extends StatefulWidget {
+  const _PushingBackgroundDialog({
+    required this.frameName,
+    required this.strings,
+  });
+
+  final String frameName;
+  final AppStrings? strings;
+
+  @override
+  State<_PushingBackgroundDialog> createState() => _PushingBackgroundDialogState();
+}
+
+class _PushingBackgroundDialogState extends State<_PushingBackgroundDialog> {
+  Timer? _autoDismiss;
+
+  @override
+  void initState() {
+    super.initState();
+    _autoDismiss = Timer(const Duration(milliseconds: 1500), _dismiss);
+  }
+
+  @override
+  void dispose() {
+    _autoDismiss?.cancel();
+    super.dispose();
+  }
+
+  void _dismiss() {
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.strings ?? AppStrings.current;
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: Container(
+                width: 300,
+                padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+                decoration: BoxDecoration(
+                  color: (isDark ? cs.surface : Colors.white)
+                      .withValues(alpha: isDark ? 0.78 : 0.92),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+                      blurRadius: 32,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _AnimatedCheckmark(size: 56, color: AppTheme.primaryRed),
+                    const SizedBox(height: 14),
+                    Text(
+                      s.pushingToFrameTitle,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: cs.onSurface,
+                        height: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      s.pushInBackgroundSubtitle(widget.frameName),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FilledButton.icon(
+                      onPressed: _dismiss,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppTheme.primaryRed,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                      ),
+                      icon: const Icon(Icons.photo_library_outlined, size: 20),
+                      label: Text(
+                        s.viewInGalleryLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

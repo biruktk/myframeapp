@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/material.dart';
 
@@ -9,15 +10,20 @@ import '../screens/home_screen.dart';
 import '../screens/send_screen.dart';
 import '../screens/settings_screen.dart';
 import '../services/account_sync_service.dart';
+import '../services/app_diag_log.dart';
 import '../services/device_store.dart';
 import '../services/external_share_cast_service.dart';
 import '../services/fcm_service.dart';
 import '../services/gallery_image_cache.dart';
 import '../services/share_extension_cache.dart';
 import '../services/share_incoming_service.dart';
+import '../services/personal_gallery_store.dart';
+import '../services/upload_queue_controller.dart';
+import '../services/user_gallery_cloud_service.dart';
 import '../services/sync_pipeline.dart';
 import '../settings/app_settings.dart';
 import 'share_auto_send_progress.dart';
+import 'push_progress_banner.dart';
 import 'shell_navigation.dart';
 import 'share_target_bottom_sheet.dart';
 
@@ -45,6 +51,7 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
     ShareIncomingService.instance.revision.addListener(_onShareIncomingRevision);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _consumeSharedPaths();
+      _consumePendingNativeShare();
       _startSyncPipeline();
       _syncFcmTokenIfSignedIn();
     });
@@ -54,6 +61,10 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _startSyncPipeline();
+      // Native iOS Share Extension hand-off: reads any pending share the
+      // extension wrote to the App Group and routes it through the normal
+      // auto-send pipeline (persist → trackPush → banner → Gallery).
+      unawaited(_consumePendingNativeShare());
       // Soft tick — not replaceFrames pull (that re-imported ghosts).
       unawaited(SyncPipeline.instance.tick(
         forceFrames: true,
@@ -64,6 +75,112 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
         state == AppLifecycleState.detached) {
       SyncPipeline.instance.stop();
       AccountSyncService.instance.stopPeriodicSync();
+    }
+  }
+
+  /// iOS-only: pick up external shares the native Share Extension uploaded
+  /// silently in its own process and recorded in the App Group. On the next
+  /// launch/resume we:
+  ///   1. persist the shared images to the correct local gallery folder
+  ///      (single → Personal tab, 2+ → "My Playlist" on the Playlists tab),
+  ///   2. attach UploadQueueController tracking for each recorded
+  ///      {mac, msgid} so the in-app progress banner renders the live (or just
+  ///      finished) frame ACK progress in the Gallery.
+  /// Nothing here opens the app — the extension completed silently.
+  Future<void> _consumePendingNativeShare() async {
+    if (!Platform.isIOS) return;
+    if (!ShareExtensionCache.instance.isSupported) return;
+    if (_shareSheetOpen) return;
+    try {
+      final pendingList =
+          await ShareExtensionCache.instance.consumePendingExternalShares();
+      if (pendingList.isEmpty) return;
+      AppDiagLog.verbose('[MainShell] pending native shares=${pendingList.length}');
+      int? lastSubTab;
+      for (final pending in pendingList) {
+        await _ingestPendingShare(pending);
+        // Files are now durable-copied into the app's own gallery storage;
+        // remove the App-Group staging copies to avoid re-processing.
+        await _removeStagedShareFiles(pending.paths);
+        lastSubTab = pending.isPlaylist ? 1 : 0;
+      }
+      // Land on the Gallery tab (Personal 0 / Playlists 1) so the status-bar
+      // pill for the just-shared content is visible right away — even when the
+      // push already completed server-side (it shows "Completed 100%").
+      if (mounted && lastSubTab != null) {
+        ShellNavigation.goToGallery(subTab: lastSubTab);
+      }
+    } catch (e) {
+      AppDiagLog.verbose('[MainShell] consume pending native share: $e');
+    }
+  }
+
+  /// Best-effort cleanup of the Share Extension's staged JPEGs in the App Group
+  /// container after they have been durable-copied into the app gallery.
+  Future<void> _removeStagedShareFiles(List<String> paths) async {
+    for (final path in paths) {
+      try {
+        final f = File(path);
+        if (await f.exists()) await f.delete();
+      } catch (e) {
+        AppDiagLog.verbose('[MainShell] staged file cleanup skipped: $e');
+      }
+    }
+  }
+
+  /// Persists one deferred external share into the local gallery database and
+  /// attaches progress-banner tracking for the pushes the extension fired.
+  Future<void> _ingestPendingShare(PendingExternalShare pending) async {
+    if (!mounted) return;
+    final app = AppSettingsScope.of(context);
+    final s = AppStrings.of(context);
+    try {
+      // 1. Local folder separation: single → Personal, multi → Playlists.
+      if (pending.isPlaylist) {
+        await routeSharedToMyPlaylist(pending.paths, app.authToken, s);
+      } else if (pending.paths.isNotEmpty) {
+        await _persistSharedSingleToPersonal(
+          pending.paths.first,
+          app.authToken,
+        );
+      }
+
+      // 2. Attach live progress for every recorded backend push so the status
+      //    bar shows in the Gallery (queued/downloading/completed or failed).
+      for (final push in pending.pushes) {
+        if (push.mac.isEmpty || push.msgid.isEmpty) continue;
+        UploadQueueController.instance.trackPush(
+          mac: push.mac,
+          msgid: push.msgid,
+          userAuthToken: app.authToken.trim().isEmpty ? null : app.authToken.trim(),
+        );
+      }
+    } catch (e) {
+      AppDiagLog.verbose('[MainShell] ingest pending share failed: $e');
+    }
+  }
+
+  /// Single-image deferred ingestion: register in the Personal gallery grid and
+  /// best-effort cloud copy (mirrors ExternalShareCastService single-share).
+  Future<void> _persistSharedSingleToPersonal(
+    String durablePath,
+    String authToken,
+  ) async {
+    try {
+      await PersonalGalleryStore.instance.addPaths([durablePath]);
+    } catch (e) {
+      AppDiagLog.verbose('[MainShell] addPaths failed: $e');
+    }
+    try {
+      if (authToken.trim().isNotEmpty) {
+        await UserGalleryCloudService.instance.uploadFile(
+          authToken: authToken,
+          localPath: durablePath,
+          source: 'personal_album',
+        );
+      }
+    } catch (e) {
+      AppDiagLog.verbose('[MainShell] personal upload failed: $e');
     }
   }
 
@@ -125,7 +242,14 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
           return;
         }
         try {
-          await showShareTargetBottomSheet(context, items: items);
+          final result = await showShareTargetBottomSheet(context, items: items);
+          // A completed send surfaced a tracked push on UploadQueueController —
+          // land on the Gallery tab so the live PushProgressBanner is visible,
+          // routing single images to the Personal tab and batches to Playlists.
+          if (mounted && result != null && !result.navigatedAway) {
+            final subTab = result.paths.length > 1 ? 1 : 0;
+            ShellNavigation.goToGallery(subTab: subTab);
+          }
         } finally {
           _shareSheetOpen = false;
           // Drain any share that arrived while the sheet was open.
@@ -200,6 +324,17 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
       );
       // Multi-image external shares collect into the default "My Playlist".
       unawaited(routeSharedToMyPlaylist(paths, app.authToken, s));
+
+      // Surface the live push progress (see PushProgressBanner). The upload
+      // already registered a tracked job on UploadQueueController; switch to the
+      // Gallery tab where the banner is mounted so the user watches hardware
+      // ACK progress instead of a stale "sent" toast. Single images land on the
+      // Personal tab, multi-image batches on the Playlists tab.
+      final subTab = paths.length > 1 ? 1 : 0;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ShellNavigation.goToGallery(subTab: subTab);
+      });
       return true;
     } finally {
       progress.dismiss();
@@ -250,21 +385,40 @@ class MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
     return Scaffold(
       extendBody: true,
-      body: Padding(
-        padding: EdgeInsets.only(bottom: ShellNavigation.contentBottomOverlap(context)),
-        child: IndexedStack(
-          index: _index,
-          children: [
-            const HomeScreen(),
-            const GalleryScreen(),
-            SendScreen(
-              galleryPickNonce: sendGalleryPickNonce,
-              sharedPathsNonce: sendSharedPathsNonce,
+      body: Stack(
+        children: [
+          Padding(
+            padding: EdgeInsets.only(
+                bottom: ShellNavigation.contentBottomOverlap(context)),
+            child: IndexedStack(
+              index: _index,
+              children: [
+                const HomeScreen(),
+                const GalleryScreen(),
+                SendScreen(
+                  galleryPickNonce: sendGalleryPickNonce,
+                  sharedPathsNonce: sendSharedPathsNonce,
+                ),
+                const FamilyScreen(),
+                const SettingsScreen(),
+              ],
             ),
-            const FamilyScreen(),
-            const SettingsScreen(),
-          ],
-        ),
+          ),
+          // Live push progress floating pill on every shell tab EXCEPT Gallery
+          // (Gallery pins its own copy beneath the tab selector). This makes the
+          // banner visible the moment an external share starts tracking, even if
+          // the user is on Home / Send / Settings when the app comes to front.
+          if (_index != 1)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: const PushProgressBanner(),
+              ),
+            ),
+        ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       floatingActionButton: Tooltip(

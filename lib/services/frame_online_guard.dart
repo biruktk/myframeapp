@@ -59,27 +59,43 @@ class FrameOnlineGuard {
   /// During the [provisionGrace] window a freshly provisioned frame stays
   /// online until [offlineAfterMisses] consecutive live probes miss.
   static Future<bool> isFrameEffectivelyOnline(PairedFrame frame) async {
+    final status = await fetchFrameStatus(frame);
     final mac = DeviceStore.macForPairedFrame(frame) ?? FrameMacUtil.normalizeSlug(frame.deviceId);
     if (mac == null || mac.isEmpty) return true;
-    final client = FrameApiClient();
-    try {
-      final status = await client.fetchFrameStatus(
-        mac: mac,
-        pairingToken: frame.resolvedPairingToken,
-      );
-      if (status != null && _isFreshlyOnline(status)) {
-        _consecutiveMisses[mac] = 0;
-        return true;
-      }
-      _consecutiveMisses[mac] = (_consecutiveMisses[mac] ?? 0) + 1;
-    } catch (_) {} finally {
-      client.close();
+    if (status != null && _isFreshlyOnline(status)) {
+      _consecutiveMisses[mac] = 0;
+      return true;
     }
+    _consecutiveMisses[mac] = (_consecutiveMisses[mac] ?? 0) + 1;
     if (_withinProvisionGrace(frame)) {
       final v = _consecutiveMisses[mac] ?? 0;
       return v < offlineAfterMisses;
     }
     return false;
+  }
+
+  /// Fetch the live [FrameStatus] for [frame], or null on failure.
+  static Future<FrameStatus?> fetchFrameStatus(PairedFrame frame) async {
+    final mac = DeviceStore.macForPairedFrame(frame) ?? FrameMacUtil.normalizeSlug(frame.deviceId);
+    if (mac == null || mac.isEmpty) return null;
+    final client = FrameApiClient();
+    try {
+      return await client.fetchFrameStatus(
+        mac: mac,
+        pairingToken: frame.resolvedPairingToken,
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// True when the frame is in its scheduled sleep window (powered down radio
+  /// for battery saving) — a distinct state from "offline".
+  static Future<bool> isFrameAsleep(PairedFrame frame) async {
+    final status = await fetchFrameStatus(frame);
+    return status?.sleeping == true || status?.isNetworkSleeping == true;
   }
 
   /// Returns `true` when [frame] (or the active paired frame) is reachable and
@@ -96,6 +112,16 @@ class FrameOnlineGuard {
     if (paired == null) {
       if (!context.mounted) return false;
       await showConnectFrameFirstDialog(context);
+      return false;
+    }
+
+    // Distinct sleep state: the frame is reachable but has powered down its
+    // radio for battery saving. Show a sleep-specific message instead of the
+    // generic "offline" dialog (and do NOT try to wake it — that defeats sleep).
+    final asleep = await isFrameAsleep(paired);
+    if (asleep) {
+      if (!context.mounted) return false;
+      await showFrameAsleepSendDialog(context);
       return false;
     }
 

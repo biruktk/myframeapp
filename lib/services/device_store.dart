@@ -14,6 +14,7 @@ import '../config/vps_defaults.dart';
 import '../l10n/app_strings.dart';
 import '../models/pairing_payload.dart';
 import 'frame_mac_util.dart';
+import 'frame_shortcut_service.dart';
 
 /// Persisted pairing(s): multiple frames in JSON + legacy keys mirroring the **active** frame.
 class DeviceStore {
@@ -695,6 +696,22 @@ class DeviceStore {
     await p.setString(_kActiveDeviceId, id);
     final a = cached;
     if (a != null) await _writeLegacyFromFrame(p, a);
+    // iOS: donate a Siri/Shortcuts interaction so this frame surfaces as a
+    // 1-tap target in the share sheet's top circular row (Frameo/QQ style).
+    if (a != null) {
+      final name = a.frameName?.trim().isNotEmpty == true
+          ? a.frameName!.trim()
+          : a.deviceId;
+      final mac = macForPairedFrame(a) ?? a.deviceId;
+      if (name.isNotEmpty && mac.isNotEmpty) {
+        unawaited(
+          FrameShortcutService.instance.donateFrame(
+            frameName: name,
+            frameMac: mac,
+          ),
+        );
+      }
+    }
   }
 
   /// Removes one frame and all persisted data tied to it (slideshow, MAC, legacy keys).
@@ -884,6 +901,17 @@ class DeviceStore {
     await savePairedFrameMac(station);
     await _persistAll();
     await dedupeRelatedFrames();
+    // iOS: donate a Siri/Shortcuts shortcut for the freshly paired frame so it
+    // surfaces immediately in the share sheet's top circular row.
+    final name = merged.frameName?.trim().isNotEmpty == true
+        ? merged.frameName!.trim()
+        : station;
+    final mac = macForPairedFrame(merged) ?? station;
+    if (name.isNotEmpty && mac.isNotEmpty) {
+      unawaited(
+        FrameShortcutService.instance.donateFrame(frameName: name, frameMac: mac),
+      );
+    }
     // Do NOT cloud-bind on BLE pair — wait until Wi‑Fi + name (saveFrameProfile).
   }
 

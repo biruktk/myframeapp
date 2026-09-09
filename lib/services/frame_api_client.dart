@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
@@ -30,6 +31,16 @@ class FrameStatus {
     this.latestVersion,
     this.provisioning = false,
     this.appPaired = false,
+    this.sleepStart,
+    this.sleepEnd,
+    this.wifiRssi,
+    this.isCharging,
+    this.sdCardMounted,
+    this.sdCardTotalMb,
+    this.sdCardFreeMb,
+    this.countryCode,
+    this.timezone,
+    this.timezoneOffsetMinutes,
     this.deliveryStatus,
     this.deliveryTotal,
     this.deliveryDownloaded,
@@ -71,6 +82,20 @@ class FrameStatus {
   final bool provisioning;
   /// True when the frame has a DB record (paired in the app account).
   final bool appPaired;
+  /// Configured sleep window (LOCAL HH:mm) for the wake-up subtext.
+  final String? sleepStart;
+  final String? sleepEnd;
+  /// Live Wi-Fi RSSI (dBm) reported by the device.
+  final int? wifiRssi;
+  /// Battery charging state reported by the device (is_charging).
+  final bool? isCharging;
+  /// SD card mount state + capacity reported by the device.
+  final bool? sdCardMounted;
+  final int? sdCardTotalMb;
+  final int? sdCardFreeMb;
+  final String? countryCode;
+  final String? timezone;
+  final int? timezoneOffsetMinutes;
 
   /// True when the frame confirmed the playlist/slideshow was halted.
   bool get isStopped => deliveryStatus == 'stopped';
@@ -100,13 +125,15 @@ class FrameStatus {
   factory FrameStatus.fromJson(Map<String, dynamic> json) {
     final status = json['status'] as String? ?? 'unknown';
     final sleeping = json['sleeping'] == true || status == 'sleeping';
-    // Prefer explicit online; also treat idle/sleeping as connected for UI.
+    // Prefer explicit online; a fresh heartbeat (online) or sleeping count as
+    // connected for the UI. An "idle"/"offline"/"unknown" frame (heartbeat gap
+    // beyond the online window) is treated as OFFLINE so a frame that lost
+    // Wi-Fi no longer keeps showing "online".
     final onlineRaw = json['online'] == true;
     final reachable = json['reachable'] == true;
     final online = onlineRaw ||
         reachable ||
         status == 'online' ||
-        status == 'idle' ||
         status == 'sleeping';
     return FrameStatus(
       deviceId: json['device_id'] as String? ?? '',
@@ -128,6 +155,19 @@ class FrameStatus {
       latestVersion: (json['ota'] as Map<String, dynamic>?)?['latestVersion'] as String?,
       provisioning: json['provisioning'] == true,
       appPaired: json['app_paired'] == true,
+      sleepStart: json['sleep_start'] as String?,
+      sleepEnd: json['sleep_end'] as String?,
+      wifiRssi: (json['wifi_rssi'] ?? json['wifi_signal_dbm']) as int?,
+      isCharging: json['is_charging'] as bool?,
+      sdCardMounted:
+          json['sd_card']?['mounted'] as bool? ?? json['sdcard_mounted'] as bool?,
+      sdCardTotalMb:
+          json['sd_card']?['total_mb'] as int? ?? json['sdcard_total_mb'] as int?,
+      sdCardFreeMb:
+          json['sd_card']?['free_mb'] as int? ?? json['sdcard_free_mb'] as int?,
+      countryCode: json['country_code'] as String?,
+      timezone: json['timezone'] as String?,
+      timezoneOffsetMinutes: json['timezone_offset_minutes'] as int?,
       deliveryStatus: json['delivery_status'] as String?,
       deliveryTotal: json['delivery_total'] as int?,
       deliveryDownloaded: json['delivery_downloaded'] as int?,
@@ -139,7 +179,7 @@ class FrameStatus {
   }
 
   /// User-facing connection label key.
-  bool get isEffectivelyOnline => online || sleeping || status == 'idle';
+  bool get isEffectivelyOnline => online || sleeping;
 }
 
 class _CachedFrameStatus {
@@ -192,6 +232,11 @@ enum UploadSource {
 class FrameApiClient {
   FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 90)})
       : _api = ApiClient(inner: httpClient);
+
+  /// Bumped whenever a frame's live status changes in a user-visible way (e.g.
+  /// sleep toggled OFF) so the Home / Device-Detail screens can refresh their
+  /// status without an app restart or a 30s poll.
+  static final ValueNotifier<int> frameStatusRevision = ValueNotifier<int>(0);
 
   final ApiClient _api;
   final Duration defaultTimeout;
@@ -369,6 +414,85 @@ Future<PhotoUploadResponse> uploadPhoto({
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
+  /// POST `/api/v1/frames/:mac/push` — register an async image push job.
+  ///
+  /// Non-blocking: returns `{ msgid, status: "queued", progress }` immediately;
+  /// the client polls [fetchPushStatus] to observe queued (0) -> dispatched
+  /// (0.30) -> downloaded (0.65) -> completed (1.00) or timeout_failed.
+  Future<Map<String, dynamic>> pushToFrame({
+    required String deviceId,
+    required String type,
+    required List<Map<String, String>> imgs,
+    String? pairingToken,
+    String? userAuthToken,
+    String? baseUrlOverride,
+    Duration? timeout,
+  }) async {
+    final cleanMac = deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    final macSlug = cleanMac.length >= 12
+        ? cleanMac.substring(cleanMac.length - 12)
+        : cleanMac;
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(baseUrlOverride);
+    final uri = Uri.parse('$base/api/v1/frames/$macSlug/push');
+
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final bearer = userAuthToken?.trim() ?? '';
+    if (bearer.isNotEmpty) headers['Authorization'] = 'Bearer $bearer';
+    final pt = pairingToken?.trim() ?? '';
+    if (pt.isNotEmpty) headers['x-pairing-token'] = pt;
+
+    final res = await _api
+        .post(
+          uri,
+          headers: headers,
+          body: jsonEncode({'type': type, 'imgs': imgs}),
+        )
+        .timeout(t, onTimeout: () => throw TimeoutException('POST /push', t));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw FrameApiException(res.statusCode, res.body);
+    }
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  /// GET `/api/v1/frames/:mac/push-status?msgid=...` — poll a push job.
+  Future<Map<String, dynamic>?> fetchPushStatus({
+    required String deviceId,
+    required String msgid,
+    String? pairingToken,
+    String? userAuthToken,
+    String? baseUrlOverride,
+    Duration? timeout,
+  }) async {
+    final cleanMac = deviceId.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    final macSlug = cleanMac.length >= 12
+        ? cleanMac.substring(cleanMac.length - 12)
+        : cleanMac;
+    final t = timeout ?? const Duration(seconds: 8);
+    final base = _base(baseUrlOverride);
+    final uri = Uri.parse(
+      '$base/api/v1/frames/$macSlug/push-status?msgid=${Uri.encodeComponent(msgid)}',
+    );
+
+    final headers = <String, String>{'Accept': 'application/json'};
+    final bearer = userAuthToken?.trim() ?? '';
+    if (bearer.isNotEmpty) headers['Authorization'] = 'Bearer $bearer';
+    final pt = pairingToken?.trim() ?? '';
+    if (pt.isNotEmpty) headers['x-pairing-token'] = pt;
+
+    try {
+      final res = await _api.get(uri, headers: headers).timeout(t);
+      if (res.statusCode != 200) return null;
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      return json['ok'] == true ? json : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Quick reachability check before a large upload (optional).
   Future<Map<String, dynamic>> getDeviceStatus({
     String? baseUrlOverride,
@@ -447,6 +571,64 @@ Future<PhotoUploadResponse> uploadPhoto({
       }
     }
     return null;
+  }
+
+  /// Drop the cached status for [mac] so the next [fetchFrameStatus] re-queries
+  /// the backend (used after a sleep toggle-off to show fresh telemetry), and
+  /// notify listeners that a frame's status changed.
+  void invalidateStatusCache(String mac, {bool notify = true}) {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length >= 12) {
+      _statusCache.remove(cleanMac.substring(cleanMac.length - 12));
+    }
+    if (notify) frameStatusRevision.value++;
+  }
+
+  /// POST `/api/frames/:mac/sleep-config` — persist sleep mode. When `enabled`
+  /// is false the backend immediately clears the sleep lock, publishes a wake +
+  /// `update_config` (request_telemetry) to the frame, and responds with the
+  /// fresh live status so clients can flip to "Online" instantly.
+  Future<Map<String, dynamic>?> saveSleepConfig({
+    required String mac,
+    required bool enabled,
+    required String startTime,
+    required String endTime,
+    int? timezoneOffsetMinutes,
+    String? pairingToken,
+    String? userAuthToken,
+    Duration? timeout,
+  }) async {
+    final cleanMac = mac.replaceAll(RegExp(r'[^0-9a-fA-F]'), '').toUpperCase();
+    if (cleanMac.length < 12) return null;
+    final slug = cleanMac.substring(cleanMac.length - 12);
+    final t = timeout ?? const Duration(seconds: 12);
+    final base = _base(null);
+    final uri = Uri.parse('$base/api/frames/$slug/sleep-config');
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    final bearer = userAuthToken?.trim() ?? '';
+    if (bearer.isNotEmpty) headers['Authorization'] = 'Bearer $bearer';
+    try {
+      final res = await _api
+          .post(
+            uri,
+            headers: headers,
+            body: jsonEncode({
+              'enabled': enabled,
+              'startTime': startTime,
+              'endTime': endTime,
+              'timezoneOffsetMinutes': timezoneOffsetMinutes ?? DateTime.now().timeZoneOffset.inMinutes,
+            }),
+          )
+          .timeout(t);
+      if (res.statusCode < 200 || res.statusCode >= 300) return null;
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      return json['ok'] == true ? json : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// GET `/api/frames/:mac/firmware` — dynamic firmware version + OTA availability.
