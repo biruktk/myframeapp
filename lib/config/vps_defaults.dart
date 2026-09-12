@@ -8,23 +8,24 @@ class VpsDefaults {
   /// Marketing hostname (same VPS when DNS works — often flaky on cellular).
   static const String hostnameInk = 'myframe.ink';
 
-  /// HTTP API via direct IP (avoids DNS flakiness + Cloudflare HTTPS for frame compatibility).
-  static String get publicApiBase => 'http://$host:$apiPort';
+  /// Mobile uploads use the same HTTPS reverse proxy as the Mini-Program.
+  static String get publicApiBase => 'https://myframe.ink';
 
   /// Alternate base if DNS resolves (`http://myframe.ink:3001`).
   /// Prefer [apiBase] (raw IP) for reliability (see pairing coercion).
-  static String get apiBaseHostname => 'http://$hostnameInk:$apiPort';
+  static String get apiBaseHostname => 'https://myframe.ink';
   static const int mqttPort = 1883;
   static const String mqttUser = 'device';
   static const String mqttPass = 'framepass2026';
   static const String pairingToken = 'framepass2026';
 
-  /// Use direct IP + HTTP for all API calls. Frames also get HTTP+IP for .bin downloads.
-  static String get apiBase => 'http://$host:$apiPort';
+  /// Client API traffic uses HTTPS; firmware download URLs remain server-controlled.
+  static String get apiBase => 'https://myframe.ink';
 
   static final Set<String> _dnsFragileHosts = {
     'myframe.ink',
     'www.myframe.ink',
+    '47.76.164.162',
   };
 
   static bool shouldUseIpInsteadOfHostname(String host) =>

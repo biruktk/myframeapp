@@ -59,8 +59,8 @@ final class ShareUploader {
           NSLocalizedString("The frame server returned HTTP %d.", comment: "Share upload error"),
           status
         )
-      case .network(let message):
-        return message
+      case .network:
+        return NSLocalizedString("Network connection interrupted. Please check your connection and try again.", comment: "Share upload error")
       }
     }
   }
@@ -89,7 +89,7 @@ final class ShareUploader {
     onReceipt: @escaping (_ mac: String, _ msgid: String) -> Void
   ) async -> [FileResult] {
     let session = URLSession(
-      configuration: .default,
+      configuration: { let c = URLSessionConfiguration.default; c.timeoutIntervalForRequest = 60; c.timeoutIntervalForResource = 60; c.httpMaximumConnectionsPerHost = 1; return c }(),
       delegate: nil,
       delegateQueue: OperationQueue()
     )
@@ -114,6 +114,9 @@ final class ShareUploader {
         }
       }
 
+      if let url = URL(string: cleanUrl), ["myframe.ink", "www.myframe.ink", "47.76.164.162"].contains(url.host?.lowercased() ?? "") {
+        cleanUrl = "https://myframe.ink"
+      }
       let macSlug = Self.sanitizeMac(target.mac)
       guard !macSlug.isEmpty, let base = URL(string: cleanUrl) else {
         let msg = ShareUploadError.missingMacOrUrl.localizedDescription
@@ -206,7 +209,7 @@ final class ShareUploader {
           onReceipt(macSlug, mid)
         }
         } catch {
-          results.append(FileResult(filename: "playlist", success: false, message: error.localizedDescription))
+          results.append(FileResult(filename: "playlist", success: false, message: "Unable to send playlist. Please try again."))
         }
       } else if jpegFiles.count > 1 {
         results.append(FileResult(filename: "playlist", success: false, message: "Not every photo has a playlist image ID."))
@@ -282,7 +285,7 @@ final class ShareUploader {
   ) async throws -> Data {
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
-    request.timeoutInterval = 90
+    request.timeoutInterval = 60
     request.setValue(
       "multipart/form-data; boundary=\(boundary)",
       forHTTPHeaderField: "Content-Type"

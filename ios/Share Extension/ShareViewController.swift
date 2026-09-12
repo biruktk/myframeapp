@@ -210,56 +210,78 @@ final class ShareViewController: UIViewController {
 
     pending = attachmentProviders.count
 
-    for provider in attachmentProviders {
-      // Determine conforming type identifier
-      let typeId: String
-      if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-        typeId = UTType.image.identifier
-      } else if provider.hasItemConformingToTypeIdentifier("public.image") {
-        typeId = "public.image"
-      } else if provider.hasItemConformingToTypeIdentifier("public.jpeg") {
-        typeId = "public.jpeg"
-      } else if provider.hasItemConformingToTypeIdentifier("public.png") {
-        typeId = "public.png"
-      } else if provider.hasItemConformingToTypeIdentifier("public.heic") {
-        typeId = "public.heic"
-      } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-        typeId = UTType.url.identifier
-      } else {
-        typeId = UTType.image.identifier
-      }
+    // Process strictly ONE provider at a time. Loading/decoding several 10-20 MB
+    // photos concurrently can exceed the Share Extension's ~120 MB memory limit
+    // and get the process killed by the iOS watchdog (invisible OOM).
+    loadProviderSequentially(0)
+  }
 
-      // Asynchronous iCloud Resolution: loadFileRepresentation fetches iCloud offloaded images automatically
-      provider.loadFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, error in
+  /// Loads attachment [index] (iCloud-aware), then advances to the next one.
+  /// Exactly one completion path runs per provider.
+  private func loadProviderSequentially(_ index: Int) {
+    guard index < attachmentProviders.count else { return }
+    let provider = attachmentProviders[index]
+
+    // Determine conforming type identifier
+    let typeId: String
+    if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+      typeId = UTType.image.identifier
+    } else if provider.hasItemConformingToTypeIdentifier("public.image") {
+      typeId = "public.image"
+    } else if provider.hasItemConformingToTypeIdentifier("public.jpeg") {
+      typeId = "public.jpeg"
+    } else if provider.hasItemConformingToTypeIdentifier("public.png") {
+      typeId = "public.png"
+    } else if provider.hasItemConformingToTypeIdentifier("public.heic") {
+      typeId = "public.heic"
+    } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+      typeId = UTType.url.identifier
+    } else {
+      typeId = UTType.image.identifier
+    }
+
+    var advanced = false
+    let advance: () -> Void = { [weak self] in
+      guard let self = self else { return }
+      if advanced { return }
+      advanced = true
+      DispatchQueue.main.async {
+        self.finishOne()
+        self.loadProviderSequentially(index + 1)
+      }
+    }
+
+    // Asynchronous iCloud Resolution: loadFileRepresentation fetches iCloud offloaded images automatically
+    provider.loadFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, error in
+      if let url = url, error == nil {
+        self?.prepareImage(from: url)
+        advance()
+        return
+      }
+      // Fallback to loadInPlaceFileRepresentation
+      provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, _, error in
         if let url = url, error == nil {
           self?.prepareImage(from: url)
-          self?.finishOne()
-        } else {
-          // Fallback to loadInPlaceFileRepresentation
-          provider.loadInPlaceFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, _, error in
-            if let url = url, error == nil {
-              self?.prepareImage(from: url)
-              self?.finishOne()
-            } else {
-              // Final fallback to loadItem
-              provider.loadItem(forTypeIdentifier: typeId, options: nil) { [weak self] item, error in
-                defer { self?.finishOne() }
-                guard let self = self, error == nil else {
-                  self?.hasFailedDecode = true
-                  return
-                }
-                if let url = item as? URL {
-                  self.prepareImage(from: url)
-                } else if let image = item as? UIImage {
-                  self.prepareImage(image, nameHint: "image.jpg")
-                } else if let data = item as? Data {
-                  self.prepareImage(data)
-                } else {
-                  self.hasFailedDecode = true
-                }
-              }
-            }
+          advance()
+          return
+        }
+        // Final fallback to loadItem
+        provider.loadItem(forTypeIdentifier: typeId, options: nil) { [weak self] item, error in
+          guard let self = self, error == nil else {
+            self?.hasFailedDecode = true
+            advance()
+            return
           }
+          if let url = item as? URL {
+            self.prepareImage(from: url)
+          } else if let image = item as? UIImage {
+            self.prepareImage(image, nameHint: "image.jpg")
+          } else if let data = item as? Data {
+            self.prepareImage(data)
+          } else {
+            self.hasFailedDecode = true
+          }
+          advance()
         }
       }
     }
@@ -303,8 +325,8 @@ final class ShareViewController: UIViewController {
     let filename = "share_\(UUID().uuidString).jpg"
     let destinationURL = uploadDir.appendingPathComponent(filename)
 
-    // Downsample using CGImageSource (Memory-efficient: max pixel size 2048 to prevent 120MB Extension Jetsam crash)
-    if let downsampledImage = downsample(imageAt: url, toMaxPixelSize: 2048) {
+    // Downsample using CGImageSource (Memory-efficient: max pixel size 1600 to prevent 120MB Extension Jetsam crash)
+    if let downsampledImage = downsample(imageAt: url, toMaxPixelSize: 1600) {
       saveAndPrepare(image: downsampledImage, destinationURL: destinationURL, filename: filename)
       return
     }
@@ -376,7 +398,13 @@ final class ShareViewController: UIViewController {
       image.draw(in: CGRect(origin: .zero, size: size))
     }
 
-    guard let jpegData = rgb.jpegData(compressionQuality: jpegQuality) else {
+    var quality = jpegQuality
+    var encoded = rgb.jpegData(compressionQuality: quality)
+    while (encoded?.count ?? 0) >= 500000 && quality > 0.15 {
+      quality -= 0.1
+      encoded = rgb.jpegData(compressionQuality: quality)
+    }
+    guard let jpegData = encoded, jpegData.count < 500000 else {
       hasFailedDecode = true
       return
     }
@@ -411,7 +439,7 @@ final class ShareViewController: UIViewController {
     }
     let extent = ci.extent
     guard extent.width > 0, extent.height > 0 else { return nil }
-    let maxSide: CGFloat = 2048
+    let maxSide: CGFloat = 1600
     var scale: CGFloat = 1
     if max(extent.width, extent.height) > maxSide {
       scale = maxSide / max(extent.width, extent.height)

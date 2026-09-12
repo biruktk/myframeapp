@@ -1,3 +1,4 @@
+import '../core/utils/error_sanitizer.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
@@ -165,10 +166,15 @@ final res = await api.uploadPhoto(
         );
       } on SocketException catch (e) {
         if (ti == targets.length - 1) {
-          final msg = _socketMessage(strings, paired, e);
+          final msg = ErrorSanitizer.getUserFriendlyMessage(e);
           report(CastProgress(phase: CastPhase.failed, message: msg));
           return FrameCloudCastResult.failed(msg);
         }
+      } catch (e) {
+        debugPrint('[UploadError] $e');
+        final message = ErrorSanitizer.getUserFriendlyMessage(e);
+        report(CastProgress(phase: CastPhase.failed, message: message));
+        return FrameCloudCastResult.failed(message);
       }
     }
 

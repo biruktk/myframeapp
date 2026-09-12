@@ -1,10 +1,11 @@
+import 'playlist_image_compressor.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart' show ValueNotifier, debugPrint;
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
@@ -230,7 +231,7 @@ enum UploadSource {
 }
 
 class FrameApiClient {
-  FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 90)})
+  FrameApiClient({http.Client? httpClient, this.defaultTimeout = const Duration(seconds: 60)})
       : _api = ApiClient(inner: httpClient);
 
   /// Bumped whenever a frame's live status changes in a user-visible way (e.g.
@@ -261,6 +262,18 @@ Future<PhotoUploadResponse> uploadPhoto({
     String? albumId,
     String? displayName,
   }) async {
+    if (source == UploadSource.playlist) {
+      // Compress playlist photos (max 1600px, <500 KB). If the compressor can't
+      // decode this format (e.g. an exotic camera/HEIC variant), DO NOT abort
+      // the whole playlist — upload the original bytes and let the server
+      // normalize/encode them instead.
+      try {
+        fileBytes = await compressPlaylistImage(fileBytes);
+        filename = filename.replaceFirst(RegExp(r'\.[^.]+$'), '') + '.jpg';
+      } catch (e) {
+        debugPrint('[Upload] playlist compress skipped (uploading original): $e');
+      }
+    }
     final checksum = sha256.convert(fileBytes).toString();
     final effectiveTimeout = timeout ?? defaultTimeout;
     final bases = _candidateBases(baseUrlOverride);

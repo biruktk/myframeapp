@@ -1,3 +1,4 @@
+import '../core/utils/error_sanitizer.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -26,6 +27,7 @@ import '../services/in_app_notification_store.dart';
 import '../services/sync_pipeline.dart';
 // import '../widgets/debug_slog_overlay.dart';
 import '../widgets/shell_navigation.dart';
+import '../widgets/frame_target_selector.dart';
 import '../services/frame_cloud_cast_service.dart';
 import '../services/upload_queue_controller.dart';
 import '../services/editor_settings_cache.dart';
@@ -158,6 +160,18 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
   int _sendTotal = 0;
   final List<String> _castLogLines = [];
   bool _sendSucceeded = false;
+
+  /// Multi-target selection (deviceIds). Empty = just the active frame.
+  final Set<String> _targetIds = {};
+
+  /// Paired frames selected as extra destinations (excluding [active]).
+  List<PairedFrame> _extraTargets(PairedFrame? active) {
+    if (active == null || _targetIds.isEmpty) return const [];
+    return DeviceStore.instance.pairedFrames
+        .where((f) => f.canUploadToServer && f.deviceId != active.deviceId)
+        .where((f) => _targetIds.contains(f.deviceId))
+        .toList();
+  }
   bool _decodeFailed = false;
   ProcessedFrameResult? _cachedProcess;
   PairedFrame? _paired;
@@ -1013,8 +1027,7 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
             registerPushProgress: false,
           );
           if (!cast.ok) {
-            AppDiagLog.verbose('[Playlist] cast failed photo ${i + 1}: ${cast.message}');
-            continue;
+            throw StateError(cast.message);
           }
           final id = cast.slideshowImageId?.trim();
           if (id != null && id.isNotEmpty && !allIds.contains(id)) {
@@ -1069,7 +1082,33 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
         } catch (e) {
           AppDiagLog.verbose('[Playlist] VPS publish: $e');
           if (mounted) {
-            setState(() => _status = (_strings?.slideshowPublishError('$e') ?? 'Slideshow publish error: $e'));
+            setState(() => _status = ErrorSanitizer.getUserFriendlyMessage(e));
+          }
+        }
+
+        // Multi-target fan-out: images are already uploaded server-side; commit
+        // the SAME playlist to every extra selected frame, isolated per frame.
+        for (final extra in _extraTargets(activePaired)) {
+          try {
+            final extraMsgid = await SlideshowRemoteApi(baseUrl: ApiConfig.baseUrl).publish(
+              bearerToken: authToken,
+              pairingToken: extra.resolvedPairingToken,
+              macSlug: frameBleMacSlug(extra),
+              imageIds: allIds,
+              intervalMinutes: _playlistIntervalMinutes,
+              skipPlay: true,
+              source: 'playlist',
+            );
+            if (extraMsgid != null && extraMsgid.isNotEmpty) {
+              UploadQueueController.instance.trackPush(
+                mac: FrameCloudCastService.instance.uploadDeviceId(extra),
+                msgid: extraMsgid,
+                pairingToken: extra.resolvedPairingToken,
+                userAuthToken: authToken,
+              );
+            }
+          } catch (e) {
+            AppDiagLog.verbose('[Playlist] extra frame publish failed: $e');
           }
         }
 
@@ -1143,6 +1182,27 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
       );
       if (!mounted) return;
       if (cast.ok) {
+        // Multi-target fan-out: send the same edited photo to each extra frame,
+        // isolated so one failure never rolls back the primary success.
+        for (final extra in _extraTargets(activePaired)) {
+          try {
+            await FrameCloudCastService.instance.castPhoto(
+              api: _api,
+              paired: extra,
+              jpegBytes: _previewBytes ?? compressed,
+              filename: 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+              slideshowStyle: _slideshow.apiValue,
+              displaySeconds: widget.displaySeconds,
+              strings: s,
+              userAuthToken: authToken,
+              syncSlideshowAfterSuccess: false,
+              editsJson: edits,
+              onProgress: (_) {},
+            );
+          } catch (e) {
+            AppDiagLog.verbose('[Editor] extra frame send failed: $e');
+          }
+        }
         await _finishSuccessfulSend(cast.message, sentJpeg: _previewBytes);
         return;
       }
@@ -1353,6 +1413,40 @@ class _ImageEditorScreenState extends State<ImageEditorScreen>
                 child: const Icon(CupertinoIcons.refresh, size: 22, color: Color(0xFF0A0A0A)),
               ),
             ],
+            bottom: DeviceStore.instance.pairedFrames.length > 1
+                ? PreferredSize(
+                    preferredSize: const Size.fromHeight(56),
+                    child: Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      alignment: Alignment.centerLeft,
+                      child: FrameTargetSelector(
+                        frames: DeviceStore.instance.pairedFrames
+                            .where((f) => f.canUploadToServer)
+                            .toList(),
+                        selectedIds: _targetIds.isEmpty
+                            ? {
+                                if (_paired?.deviceId != null) _paired!.deviceId,
+                              }
+                            : _targetIds,
+                        onToggle: (id) {
+                          setState(() {
+                            final activeId = _paired?.deviceId;
+                            if (_targetIds.isEmpty && activeId != null) {
+                              _targetIds.add(activeId);
+                            }
+                            if (_targetIds.contains(id)) {
+                              if (_targetIds.length > 1) _targetIds.remove(id);
+                            } else {
+                              _targetIds.add(id);
+                            }
+                          });
+                        },
+                        title: 'Send to:',
+                      ),
+                    ),
+                  )
+                : null,
           ),
           body: _decoded == null
               ? Center(child: Text(_status ?? s.noImage))

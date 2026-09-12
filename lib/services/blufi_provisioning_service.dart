@@ -18,17 +18,36 @@ enum BlufiErrorType {
   unknown,
 }
 
+/// Explicit provisioning phases so the UI can show step-by-step progress and
+/// map a failure to an actionable message instead of a generic "Connection
+/// failed". Mirrors the WeChat mini-program step UX.
+enum PairingStage {
+  idle,
+  scanning,
+  connectingBle,
+  discoveringServices,
+  sendingCredentials,
+  waitingFrameWifi,
+  verifyingCloud,
+  done,
+  unknown,
+}
+
 class BlufiProvisionResult {
   const BlufiProvisionResult({
     required this.ok,
     required this.message,
     this.confirmed = false,
     this.errorType = BlufiErrorType.none,
+    this.stage = PairingStage.unknown,
   });
   final bool ok;
   final String message;
   final bool confirmed;
   final BlufiErrorType errorType;
+
+  /// Phase that produced this result (used for stage-specific UI messaging).
+  final PairingStage stage;
 }
 
 /// After Wi‑Fi, optional `mqtt_config` JSON (`host`, `port`, `usr`, `pwd` in `data`).
@@ -114,7 +133,15 @@ class BlufiProvisioningService {
 
     /// True when [reconfigureServer] already sent mqtt_config in a prior BLE session.
     bool serverConfigAlreadySent = false,
+
+    /// Optional phase callback so the UI can render step-by-step progress.
+    void Function(PairingStage stage)? onStage,
   }) async {
+    void stage(PairingStage s) {
+      try {
+        onStage?.call(s);
+      } catch (_) {}
+    }
     try {
       _d(
         'provision start ssid="$ssid" pwdLen=${password.length} '
@@ -127,6 +154,7 @@ class BlufiProvisioningService {
         return const BlufiProvisionResult(
           ok: false,
           message: 'Bluetooth permission denied',
+          stage: PairingStage.connectingBle,
         );
       }
       if (!await FlutterBluePlus.isSupported) {
@@ -134,6 +162,7 @@ class BlufiProvisioningService {
         return const BlufiProvisionResult(
           ok: false,
           message: 'Bluetooth LE not supported',
+          stage: PairingStage.connectingBle,
         );
       }
       final adapterState = await FlutterBluePlus.adapterState.first;
@@ -142,6 +171,7 @@ class BlufiProvisioningService {
         return const BlufiProvisionResult(
           ok: false,
           message: 'Bluetooth is off',
+          stage: PairingStage.connectingBle,
         );
       }
       // Ensure no stale scan / GATT session competes with provisioning
@@ -167,6 +197,7 @@ class BlufiProvisioningService {
       }
       await Future<void>.delayed(const Duration(milliseconds: 300));
 
+      stage(PairingStage.scanning);
       final candidates = await _scanProvisionCandidates(paired);
       if (candidates.isEmpty) {
         _d('abort: scan finished with zero BLE candidates');
@@ -174,6 +205,7 @@ class BlufiProvisioningService {
           ok: false,
           message:
               'No frame found over Bluetooth. Turn it on, stay close, and try again (names like IJ_…, ink_joy…, or 3837… companion).',
+          stage: PairingStage.scanning,
         );
       }
       for (var i = 0; i < candidates.length; i++) {
@@ -190,8 +222,10 @@ class BlufiProvisioningService {
       for (var ci = 0; ci < candidates.length; ci++) {
         final remote = candidates[ci];
         try {
+          stage(PairingStage.connectingBle);
           await _connectWithRetry(remote);
           _d('connected state=${remote.isConnected} mtu=${remote.mtuNow}');
+          stage(PairingStage.discoveringServices);
           _d('discoverServices (timeout 12s)…');
           var services = await remote.discoverServices(timeout: 12);
           _d(
@@ -257,6 +291,7 @@ class BlufiProvisioningService {
                 );
               }
             }
+            stage(PairingStage.sendingCredentials);
             final blufiResult = await _sendBlufiStaFrames(
               writeChar: picked!.write,
               services: services,
@@ -293,14 +328,22 @@ class BlufiProvisioningService {
               ok: true,
               confirmed: true,
               message: 'Frame confirmed Wi-Fi connection',
+              stage: PairingStage.done,
             );
           }
           // If we got a specific error type, return a targeted message
           if (blufiErrorType != BlufiErrorType.none) {
+            final isFrameWifiFailure = blufiErrorType == BlufiErrorType.authFailure ||
+                blufiErrorType == BlufiErrorType.apNotFound ||
+                blufiErrorType == BlufiErrorType.assocFailure ||
+                blufiErrorType == BlufiErrorType.handshakeTimeout;
             return BlufiProvisionResult(
               ok: false,
               confirmed: false,
               errorType: blufiErrorType,
+              stage: isFrameWifiFailure
+                  ? PairingStage.waitingFrameWifi
+                  : PairingStage.sendingCredentials,
               message: _errorMessageForType(blufiErrorType),
             );
           }
@@ -333,6 +376,7 @@ class BlufiProvisioningService {
         return const BlufiProvisionResult(
           ok: false,
           confirmed: false,
+          stage: PairingStage.waitingFrameWifi,
           message:
               'The frame did not confirm Wi-Fi over Bluetooth. Check the password, stay close to the frame, and try again.',
         );
@@ -516,7 +560,8 @@ class BlufiProvisioningService {
         lastError = e;
         _d('connect attempt=$attempt failed: $e');
         await _forceDisconnectQuiet(remote);
-        await Future<void>.delayed(Duration(milliseconds: 350 * attempt));
+        // Up to 2 immediate retries with a 1s settle (requirement).
+        await Future<void>.delayed(const Duration(seconds: 1));
       }
     }
     throw lastError ?? StateError('connect failed');

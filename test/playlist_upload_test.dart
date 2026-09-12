@@ -14,12 +14,12 @@ void main() {
   test('playlist multipart requests opt out of individual notifications only', () async {
     final bodies = <String>[];
     final api = FrameApiClient(httpClient: MockClient((request) async {
-      bodies.add(request.body);
+      bodies.add(utf8.decode(request.bodyBytes, allowMalformed: true));
       return http.Response(jsonEncode({'ok': true, 'stored_path': 'test.bin'}), 200);
     }));
     for (final source in [UploadSource.playlist, UploadSource.directCast]) {
       await api.uploadPhoto(
-        fileBytes: Uint8List.fromList([1, 2, 3]),
+        fileBytes: Uint8List.fromList(img.encodeJpg(img.Image(width: 16, height: 24))),
         filename: 'test.jpg',
         deviceId: 'D0CF13E03618',
         source: source,

@@ -7730,6 +7730,106 @@ class AppStrings {
         de: 'Wi-Fi-Passwort hier eingeben',
         ja: 'ここに Wi-Fi パスワードを入力',
       );
+
+  // ── BLE pairing progress (step-by-step) ────────────────────────────────────
+  String get pairingStageScanning => _l6(
+        en: 'Scanning for the frame…',
+        zh: '正在扫描相框…',
+        es: 'Buscando el marco…',
+        fr: 'Recherche du cadre…',
+        de: 'Rahmen wird gesucht…',
+        ja: 'フレームを検索中…',
+      );
+  String get pairingStageConnectingBle => _l6(
+        en: 'Connecting via Bluetooth…',
+        zh: '正在通过蓝牙连接…',
+        es: 'Conectando por Bluetooth…',
+        fr: 'Connexion Bluetooth…',
+        de: 'Verbindung über Bluetooth…',
+        ja: 'Bluetooth で接続中…',
+      );
+  String get pairingStageDiscovering => _l6(
+        en: 'Reading frame services…',
+        zh: '正在读取相框服务…',
+        es: 'Leyendo servicios del marco…',
+        fr: 'Lecture des services du cadre…',
+        de: 'Dienste werden gelesen…',
+        ja: 'サービスを読み込み中…',
+      );
+  String get pairingStageSending => _l6(
+        en: 'Sending Wi-Fi details…',
+        zh: '正在发送 Wi-Fi 信息…',
+        es: 'Enviando datos de Wi-Fi…',
+        fr: 'Envoi des informations Wi-Fi…',
+        de: 'Wi-Fi-Daten werden gesendet…',
+        ja: 'Wi-Fi 情報を送信中…',
+      );
+  String get pairingStageWaitingWifi => _l6(
+        en: 'Frame is joining Wi-Fi…',
+        zh: '相框正在连接 Wi-Fi…',
+        es: 'El marco se conecta al Wi-Fi…',
+        fr: 'Le cadre rejoint le Wi-Fi…',
+        de: 'Rahmen verbindet sich mit Wi-Fi…',
+        ja: 'フレームが Wi-Fi に接続中…',
+      );
+  String get pairingStageVerifyingCloud => _l6(
+        en: 'Verifying connection…',
+        zh: '正在验证连接…',
+        es: 'Verificando la conexión…',
+        fr: 'Vérification de la connexion…',
+        de: 'Verbindung wird überprüft…',
+        ja: '接続を確認中…',
+      );
+
+  // ── BLE pairing stage-specific errors ──────────────────────────────────────
+  String get pairingErrScanning => _l6(
+        en: 'Frame not found. Make sure the frame is on the pairing screen and nearby.',
+        zh: '未找到相框。请确保相框处于配网界面并在附近。',
+        es: 'No se encontró el marco. Asegúrate de que esté en la pantalla de emparejamiento y cerca.',
+        fr: 'Cadre introuvable. Assurez-vous qu’il est sur l’écran d’appairage et à proximité.',
+        de: 'Rahmen nicht gefunden. Er muss sich im Kopplungsmodus in der Nähe befinden.',
+        ja: 'フレームが見つかりません。ペアリング画面にして近くに置いてください。',
+      );
+  String get pairingErrConnectingBle => _l6(
+        en: 'Could not connect to frame via Bluetooth. Toggle your phone’s Bluetooth off and on, then retry.',
+        zh: '无法通过蓝牙连接相框。请关闭并重新打开手机蓝牙后重试。',
+        es: 'No se pudo conectar por Bluetooth. Apaga y enciende el Bluetooth del teléfono y reintenta.',
+        fr: 'Connexion Bluetooth impossible. Désactivez puis réactivez le Bluetooth, puis réessayez.',
+        de: 'Bluetooth-Verbindung fehlgeschlagen. Bluetooth aus- und wieder einschalten, dann erneut versuchen.',
+        ja: 'Bluetooth で接続できません。スマホの Bluetooth を入れ直して再試行してください。',
+      );
+  String get pairingErrDiscovering => _l6(
+        en: 'Bluetooth communication interrupted. Please keep your phone close to the frame.',
+        zh: '蓝牙通信中断。请让手机靠近相框。',
+        es: 'Comunicación Bluetooth interrumpida. Mantén el teléfono cerca del marco.',
+        fr: 'Communication Bluetooth interrompue. Gardez le téléphone près du cadre.',
+        de: 'Bluetooth-Kommunikation unterbrochen. Halten Sie das Telefon nahe am Rahmen.',
+        ja: 'Bluetooth 通信が中断しました。スマホをフレームの近くに置いてください。',
+      );
+  String get pairingErrSendingCredentials => _l6(
+        en: 'Failed to send Wi-Fi details. Please re-check the network name and password.',
+        zh: '发送 Wi-Fi 信息失败。请检查网络名称与密码。',
+        es: 'No se pudieron enviar los datos de Wi-Fi. Revisa el nombre de red y la contraseña.',
+        fr: 'Échec de l’envoi des informations Wi-Fi. Vérifiez le nom du réseau et le mot de passe.',
+        de: 'Senden der Wi-Fi-Daten fehlgeschlagen. Netzwerkname und Passwort prüfen.',
+        ja: 'Wi-Fi 情報の送信に失敗しました。ネットワーク名とパスワードを確認してください。',
+      );
+  String get pairingErrWaitingFrameWifi => _l6(
+        en: 'Frame could not join Wi-Fi. Please verify the password and ensure your router supports 2.4 GHz.',
+        zh: '相框无法连接 Wi-Fi。请确认密码正确，并确保路由器支持 2.4GHz。',
+        es: 'El marco no pudo unirse al Wi-Fi. Verifica la contraseña y que el router sea 2.4 GHz.',
+        fr: 'Le cadre n’a pas pu rejoindre le Wi-Fi. Vérifiez le mot de passe et le routeur 2,4 GHz.',
+        de: 'Rahmen konnte dem Wi-Fi nicht beitreten. Passwort prüfen und 2,4-GHz-Router sicherstellen.',
+        ja: 'フレームが Wi-Fi に接続できません。パスワードと 2.4GHz 対応を確認してください。',
+      );
+  String get pairingErrVerifyingCloud => _l6(
+        en: 'Frame joined Wi-Fi but could not reach the server. Please check your internet connection.',
+        zh: '相框已连接 Wi-Fi 但无法连接服务器。请检查网络连接。',
+        es: 'El marco se conectó al Wi-Fi pero no al servidor. Revisa tu conexión a internet.',
+        fr: 'Le cadre a rejoint le Wi-Fi mais pas le serveur. Vérifiez votre connexion internet.',
+        de: 'Rahmen ist im Wi-Fi, erreicht aber den Server nicht. Internetverbindung prüfen.',
+        ja: 'Wi-Fi には接続しましたがサーバーに到達できません。ネット接続を確認してください。',
+      );
   String get wifiConnectingSavedPassword => _l6(
         en: 'Connecting with saved password…',
         zh: '正在使用保存的密码连接…',

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 
@@ -23,7 +24,7 @@ import 'protocol_logger_service.dart';
 class ApiClient {
   ApiClient({String? bearerToken, http.Client? inner})
     : _token = (bearerToken ?? '').trim(),
-      _inner = inner ?? http.Client();
+      _inner = inner ?? HttpOverrides.runWithHttpOverrides(() => http.Client(), _UploadHttpOverrides());
 
   String _token;
   final http.Client _inner;
@@ -136,4 +137,18 @@ class ApiClient {
     const prefix = 'bearer ';
     return auth.toLowerCase().startsWith(prefix) && auth.length > prefix.length;
   }
+}
+
+class _UploadHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) =>
+      super.createHttpClient(context)
+        ..connectionTimeout = const Duration(seconds: 20)
+        // Keep the client's idle window SHORTER than the upstream keep-alive
+        // (nginx proxy_read_timeout ~60s / backend keepAliveTimeout 65s) so we
+        // never reuse a socket the proxy/server already closed — the cause of
+        // intermittent "Connection reset by peer" during sequential playlist
+        // uploads.
+        ..idleTimeout = const Duration(seconds: 15)
+        ..maxConnectionsPerHost = 1;
 }

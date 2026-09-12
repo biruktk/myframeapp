@@ -476,32 +476,59 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
         password: effectivePassword,
         selfHostedMqtt: selfHostedMqtt,
         serverConfigAlreadySent: widget.serverConfigAlreadySent,
+        onStage: (stage) {
+          if (!mounted) return;
+          setState(() {
+            _status = _pairingStageLabel(s, stage);
+          });
+        },
       );
 
       AppDiagLog.verbose(
-        '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} message="${provision.message}" errorType=${provision.errorType}',
+        '[WiFi] provision result ok=${provision.ok} confirmed=${provision.confirmed} stage=${provision.stage} message="${provision.message}" errorType=${provision.errorType}',
       );
 
       if (!mounted) return;
 
       if (!provision.ok || !provision.confirmed) {
-        // Never persist a failed SSID as "connected".
-        await DeviceStore.instance.clearWifiProvision();
-        if (!mounted) return;
-        final isAuthError = provision.errorType == BlufiErrorType.authFailure;
-        setState(() {
-          _busy = false;
-          _wifiConfirmed = false;
-          _status = null;
-          _isAuthError = isAuthError;
-          _error = isAuthError
-              ? provision.message
-              : AppDiagLog.userFacingStatus(
-                  provision.message,
-                  fallback: s.wifiConnectionFailed,
-                );
-        });
-        return;
+        // Radio-handover tolerance: after credentials are written the frame may
+        // reboot its BLE radio to join Wi-Fi, dropping the GATT link BEFORE the
+        // status ack arrives. Do NOT treat that as a Bluetooth failure — confirm
+        // through the backend first.
+        if (provision.stage == PairingStage.waitingFrameWifi) {
+          setState(() => _status = s.pairingStageVerifyingCloud);
+          final online = await _pollFrameOnlineAfterProvision(
+            DeviceStore.macForPairedFrame(nonNullPaired) ?? nonNullPaired.deviceId,
+            pairingToken: nonNullPaired.resolvedPairingToken,
+          );
+          if (!online) {
+            await DeviceStore.instance.clearWifiProvision();
+            if (!mounted) return;
+            setState(() {
+              _busy = false;
+              _wifiConfirmed = false;
+              _status = null;
+              _error = s.pairingErrWaitingFrameWifi;
+            });
+            return;
+          }
+          // Frame IS online — fall through to the success path below.
+        } else {
+          // Never persist a failed SSID as "connected".
+          await DeviceStore.instance.clearWifiProvision();
+          if (!mounted) return;
+          final isAuthError = provision.errorType == BlufiErrorType.authFailure;
+          setState(() {
+            _busy = false;
+            _wifiConfirmed = false;
+            _status = null;
+            _isAuthError = isAuthError;
+            _error = isAuthError
+                ? s.pairingErrWaitingFrameWifi
+                : _pairingStageError(s, provision.stage);
+          });
+          return;
+        }
       }
 
       AppDiagLog.verbose('[WiFi] frame confirmed Wi‑Fi — saving SSID, opening profile setup…');
@@ -591,7 +618,51 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
   /// and only fails after the full grace window expires. Intermediate 404 /
   /// not-paired responses are suppressed; only a genuinely "never provisioned"
   /// response or a full timeout triggers the error dialog upstream.
-  Future<void> _pollFrameOnlineAfterProvision(
+  /// Localized progress label for a provisioning phase.
+  String _pairingStageLabel(AppStrings s, PairingStage stage) {
+    switch (stage) {
+      case PairingStage.scanning:
+        return s.pairingStageScanning;
+      case PairingStage.connectingBle:
+        return s.pairingStageConnectingBle;
+      case PairingStage.discoveringServices:
+        return s.pairingStageDiscovering;
+      case PairingStage.sendingCredentials:
+        return s.pairingStageSending;
+      case PairingStage.waitingFrameWifi:
+        return s.pairingStageWaitingWifi;
+      case PairingStage.verifyingCloud:
+        return s.pairingStageVerifyingCloud;
+      case PairingStage.idle:
+      case PairingStage.done:
+      case PairingStage.unknown:
+        return s.connectingWifi;
+    }
+  }
+
+  /// Localized, actionable error for the phase that failed.
+  String _pairingStageError(AppStrings s, PairingStage stage) {
+    switch (stage) {
+      case PairingStage.scanning:
+        return s.pairingErrScanning;
+      case PairingStage.connectingBle:
+        return s.pairingErrConnectingBle;
+      case PairingStage.discoveringServices:
+        return s.pairingErrDiscovering;
+      case PairingStage.sendingCredentials:
+        return s.pairingErrSendingCredentials;
+      case PairingStage.waitingFrameWifi:
+        return s.pairingErrWaitingFrameWifi;
+      case PairingStage.verifyingCloud:
+        return s.pairingErrVerifyingCloud;
+      case PairingStage.idle:
+      case PairingStage.done:
+      case PairingStage.unknown:
+        return s.wifiConnectionFailed;
+    }
+  }
+
+  Future<bool> _pollFrameOnlineAfterProvision(
     String mac, {
     String? pairingToken,
   }) async {
@@ -600,7 +671,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
     final client = FrameApiClient();
     try {
       for (var attempt = 1; attempt <= maxAttempts; attempt++) {
-        if (!mounted) return;
+        if (!mounted) return false;
         AppDiagLog.verbose(
           '[WiFi] post-provision poll attempt $attempt/$maxAttempts for $mac',
         );
@@ -614,7 +685,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
             AppDiagLog.verbose(
               '[WiFi] post-provision poll: frame is online after $attempt attempt(s)',
             );
-            return;
+            return true;
           }
           // While the backend reports the frame is in the provisioning
           // grace window, keep spinning silently.
@@ -629,6 +700,7 @@ class _WifiProvisionScreenState extends State<WifiProvisionScreen> {
       AppDiagLog.verbose(
         '[WiFi] post-provision poll: grace window expired for $mac',
       );
+      return false;
     } finally {
       client.close();
     }
